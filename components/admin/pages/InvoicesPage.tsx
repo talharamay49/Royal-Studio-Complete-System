@@ -15,10 +15,14 @@ import { useStudioData } from '../context/StudioDataContext';
 import { useAuth } from '../context/AuthContext';
 import { formatPKR, formatDate } from '../utils/calculations';
 import { StatusBadge } from '../components/common/StatusBadge';
-import { generateInvoicePDF, generateQuotationPDF } from '../utils/pdfGenerator';
+import {
+  generateInvoicePDF,
+  generateQuotationPDF,
+  generatePaymentReceiptPDF,
+} from '../utils/pdfGenerator';
 import { Modal } from '../components/common/Modal';
 import { BrandedDocumentView } from '../components/billing/BrandedDocumentView';
-import { PaymentMethod, Invoice, Quotation, Event, Client } from '../types';
+import { PaymentMethod, Invoice, Quotation, Payment, Event, Client } from '../types';
 
 interface InvoicesPageProps {
   navigate: (path: string) => void;
@@ -28,15 +32,16 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
   const { invoices, quotations, events, clients, daySchedules, payments, profile, createPayment, deleteInvoice, addToast } = useStudioData();
   const { isAdmin } = useAuth();
 
-  const [mainTab, setMainTab] = useState<'invoices' | 'quotations'>('invoices');
+  const [mainTab, setMainTab] = useState<'invoices' | 'quotations' | 'receipts'>('invoices');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
   // Preview Document Modal state
   const [previewDocData, setPreviewDocData] = useState<{
-    type: 'INVOICE' | 'QUOTATION';
+    type: 'INVOICE' | 'QUOTATION' | 'RECEIPT' | 'EVENT_SUMMARY';
     invoice?: Invoice;
     quotation?: Quotation;
+    selectedPayment?: Payment;
     event: Event;
     client: Client;
   } | null>(null);
@@ -123,21 +128,50 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
     }
   };
 
-  const handleOpenGeneralPreview = (docType: 'INVOICE' | 'QUOTATION') => {
+  const handleOpenGeneralPreview = (docType: 'INVOICE' | 'QUOTATION' | 'RECEIPT') => {
     const firstEvent = events[0];
     const firstClient = firstEvent ? clients.find(c => c.id === firstEvent.clientId) : clients[0];
     if (firstEvent && firstClient) {
       const firstInvoice = invoices.find(i => i.eventId === firstEvent.id) || invoices[0];
       const firstQuotation = quotations.find(q => q.eventId === firstEvent.id) || quotations[0];
+      const firstPayment = payments.find(p => p.eventId === firstEvent.id) || payments[0];
       setPreviewDocData({
         type: docType,
         invoice: firstInvoice,
         quotation: firstQuotation,
+        selectedPayment: firstPayment,
         event: firstEvent,
         client: firstClient
       });
     } else {
       addToast('No events available to populate template preview.', 'warning');
+    }
+  };
+
+  const handleViewReceipt = (pay: Payment) => {
+    const evt = events.find(e => e.id === pay.eventId);
+    const cli = evt ? clients.find(c => c.id === evt.clientId) : undefined;
+    if (evt && cli) {
+      setPreviewDocData({
+        type: 'RECEIPT',
+        selectedPayment: pay,
+        event: evt,
+        client: cli,
+      });
+    } else {
+      addToast('Cannot find associated event or client for receipt preview.', 'error');
+    }
+  };
+
+  const handleDownloadReceiptPDF = async (pay: Payment) => {
+    const evt = events.find(e => e.id === pay.eventId);
+    const cli = evt ? clients.find(c => c.id === evt.clientId) : undefined;
+    if (evt && cli && profile) {
+      const relPayments = payments.filter(p => p.eventId === evt.id);
+      await generatePaymentReceiptPDF(pay, evt, cli, profile, relPayments);
+      addToast(`Payment Receipt PDF downloaded.`);
+    } else {
+      addToast('Missing event or client information for this receipt.', 'error');
     }
   };
 
@@ -174,11 +208,11 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
         </div>
 
         {/* Top Quick Preview Action Buttons */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => handleOpenGeneralPreview('INVOICE')}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-300 rounded-lg text-xs font-bold text-amber-950 hover:bg-amber-100 shadow-2xs cursor-pointer transition-colors"
-            title="Preview the official branded Invoice template with camera lens background and Royal Studio logos"
+            title="Preview the official branded Invoice template on image.png stationery with RoyalLogo.png"
           >
             <Eye className="w-3.5 h-3.5 text-amber-700" />
             <span>Invoice Template</span>
@@ -186,16 +220,24 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
           <button
             onClick={() => handleOpenGeneralPreview('QUOTATION')}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-bold text-blue-900 hover:bg-blue-100 shadow-2xs cursor-pointer transition-colors"
-            title="Preview the official branded Quotation template with camera lens background and Royal Studio logos"
+            title="Preview the official branded Quotation template on image.png stationery with RoyalLogo.png"
           >
             <Eye className="w-3.5 h-3.5 text-blue-600" />
             <span>Quotation Template</span>
           </button>
+          <button
+            onClick={() => handleOpenGeneralPreview('RECEIPT')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-900 hover:bg-emerald-100 shadow-2xs cursor-pointer transition-colors"
+            title="Preview the official Payment Receipt template on image.png stationery with RoyalLogo.png"
+          >
+            <Eye className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Receipt Template</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Tabs (Invoices vs Quotations) */}
-      <div className="flex items-center gap-2 border-b border-gray-200 pb-2">
+      {/* Main Tabs (Invoices vs Quotations vs Payment Receipts) */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-2">
         <button
           onClick={() => setMainTab('invoices')}
           className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 ${
@@ -218,6 +260,18 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
         >
           <FileText className="w-4 h-4 text-blue-400" />
           <span>Quotations & Proposals ({filteredQuotations.length})</span>
+        </button>
+
+        <button
+          onClick={() => setMainTab('receipts')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center gap-2 ${
+            mainTab === 'receipts'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          <CreditCard className="w-4 h-4 text-emerald-400" />
+          <span>Payment Receipts ({payments.length})</span>
         </button>
       </div>
 
@@ -399,6 +453,79 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
         </div>
       )}
 
+      {/* TAB 3: PAYMENT RECEIPTS TABLE */}
+      {mainTab === 'receipts' && (
+        <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                <tr>
+                  <th className="py-3 px-4">Receipt #</th>
+                  <th className="py-3 px-4">Client &amp; Event</th>
+                  <th className="py-3 px-4">Payment Date</th>
+                  <th className="py-3 px-4">Method &amp; Ref</th>
+                  <th className="py-3 px-4">Amount Received</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {payments.map((pay) => {
+                  const evt = events.find((e) => e.id === pay.eventId);
+                  const cli = evt ? clients.find((c) => c.id === evt.clientId) : undefined;
+                  return (
+                    <tr key={pay.id} className="hover:bg-emerald-50/40">
+                      <td className="py-3.5 px-4 font-mono font-bold text-gray-900">
+                        RS-RCPT-{pay.id.slice(-4).toUpperCase()}
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-gray-900">
+                        <div>{cli?.name || 'Client'}</div>
+                        <div
+                          onClick={() => navigate(`/events/${pay.eventId}`)}
+                          className="text-[11px] text-emerald-700 hover:underline cursor-pointer"
+                        >
+                          {evt?.title || 'View Event'}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-gray-600 font-medium">
+                        {formatDate(pay.paymentDate)}
+                      </td>
+                      <td className="py-3.5 px-4 text-gray-700">
+                        <span className="font-semibold">{pay.method}</span>
+                        {pay.reference && (
+                          <span className="font-mono text-gray-400 ml-1">({pay.reference})</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 font-mono font-bold text-emerald-700">
+                        {formatPKR(pay.amount)}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleViewReceipt(pay)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded text-[11px] font-bold transition-colors cursor-pointer"
+                            title="Preview Official Payment Receipt on image.png Stationery"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>View Receipt</span>
+                          </button>
+                          <button
+                            onClick={() => handleDownloadReceiptPDF(pay)}
+                            className="p-1.5 text-gray-600 hover:text-slate-950 hover:bg-gray-100 rounded cursor-pointer"
+                            title="Download Official Payment Receipt PDF"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* RECORD PAYMENT MODAL */}
       <Modal
         isOpen={isPaymentModalOpen}
@@ -479,6 +606,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
           type={previewDocData.type}
           invoice={previewDocData.invoice}
           quotation={previewDocData.quotation}
+          selectedPayment={previewDocData.selectedPayment}
           event={previewDocData.event}
           client={previewDocData.client}
           profile={profile}

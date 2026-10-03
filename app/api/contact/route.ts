@@ -81,6 +81,37 @@ export async function POST(request: Request) {
         remainingBalance: 0,
       };
       db.events.unshift(newInquiryEvent);
+
+      if (!db.cms) {
+        db.cms = {
+          portfolioItems: [],
+          pricingPackages: [],
+          detailedServices: [],
+          testimonials: [],
+          blogPosts: [],
+          websiteLeads: [],
+        };
+      }
+      if (!Array.isArray(db.cms.websiteLeads)) {
+        db.cms.websiteLeads = [];
+      }
+      db.cms.websiteLeads.unshift({
+        id: `lead-${Date.now().toString().slice(-6)}`,
+        brideName: data.brideName,
+        groomName: data.groomName,
+        phone: data.phone,
+        email: data.email || '',
+        weddingDate: data.weddingDate,
+        venue: data.venue || '',
+        city: data.city || 'Burewala',
+        services: Array.isArray(data.services) ? data.services.join(', ') : String(data.services || ''),
+        budget: data.budget || '',
+        message: data.message || '',
+        status: 'New',
+        submittedAt: new Date().toISOString(),
+        linkedEventId: newInquiryEvent.id,
+      });
+
       dbInstance.save();
     } catch (dbErr) {
       console.warn('Could not record contact submission to studio_db:', dbErr);

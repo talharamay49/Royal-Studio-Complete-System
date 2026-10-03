@@ -2,7 +2,23 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import type { AdminProfile } from "@/components/admin/types";
-import { siteConfig } from "@/lib/data";
+import type { PortfolioItem, PricingPackage, Service, Testimonial, BlogPost } from "@/types";
+import {
+  siteConfig,
+  portfolioItems as defaultPortfolioItems,
+  pricingPackages as defaultPricingPackages,
+  detailedServices as defaultDetailedServices,
+  testimonials as defaultTestimonials,
+  blogPosts as defaultBlogPosts,
+} from "@/lib/data";
+
+export interface PublicWebsiteCMS {
+  portfolioItems: PortfolioItem[];
+  pricingPackages: PricingPackage[];
+  detailedServices: Service[];
+  testimonials: Testimonial[];
+  blogPosts: BlogPost[];
+}
 
 const fallbackProfile: AdminProfile = {
   studioName: siteConfig.name,
@@ -55,10 +71,20 @@ const fallbackProfile: AdminProfile = {
   },
 };
 
+const fallbackCMS: PublicWebsiteCMS = {
+  portfolioItems: defaultPortfolioItems,
+  pricingPackages: defaultPricingPackages,
+  detailedServices: defaultDetailedServices,
+  testimonials: defaultTestimonials,
+  blogPosts: defaultBlogPosts,
+};
+
 const StudioProfileContext = createContext<AdminProfile>(fallbackProfile);
+const PublicCMSContext = createContext<PublicWebsiteCMS>(fallbackCMS);
 
 export function StudioProfileProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<AdminProfile>(fallbackProfile);
+  const [cms, setCms] = useState<PublicWebsiteCMS>(fallbackCMS);
 
   useEffect(() => {
     let mounted = true;
@@ -72,6 +98,39 @@ export function StudioProfileProvider({ children }: { children: React.ReactNode 
       .catch(() => {
         // Fallback to default siteConfig
       });
+
+    fetch("/api/cms")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (mounted && data) {
+          setCms({
+            portfolioItems:
+              Array.isArray(data.portfolioItems) && data.portfolioItems.length > 0
+                ? data.portfolioItems
+                : defaultPortfolioItems,
+            pricingPackages:
+              Array.isArray(data.pricingPackages) && data.pricingPackages.length > 0
+                ? data.pricingPackages
+                : defaultPricingPackages,
+            detailedServices:
+              Array.isArray(data.detailedServices) && data.detailedServices.length > 0
+                ? data.detailedServices
+                : defaultDetailedServices,
+            testimonials:
+              Array.isArray(data.testimonials) && data.testimonials.length > 0
+                ? data.testimonials
+                : defaultTestimonials,
+            blogPosts:
+              Array.isArray(data.blogPosts) && data.blogPosts.length > 0
+                ? data.blogPosts
+                : defaultBlogPosts,
+          });
+        }
+      })
+      .catch(() => {
+        // Fallback to default CMS data
+      });
+
     return () => {
       mounted = false;
     };
@@ -79,11 +138,17 @@ export function StudioProfileProvider({ children }: { children: React.ReactNode 
 
   return (
     <StudioProfileContext.Provider value={profile}>
-      {children}
+      <PublicCMSContext.Provider value={cms}>
+        {children}
+      </PublicCMSContext.Provider>
     </StudioProfileContext.Provider>
   );
 }
 
 export function usePublicStudioProfile(): AdminProfile {
   return useContext(StudioProfileContext);
+}
+
+export function usePublicWebsiteCMS(): PublicWebsiteCMS {
+  return useContext(PublicCMSContext);
 }

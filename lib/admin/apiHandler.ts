@@ -3,6 +3,13 @@ import { dbInstance, getDefaultStudioProfile } from '@/lib/admin/db';
 import { computeInvoiceStatus } from '@/components/admin/utils/calculations';
 import { User, AuditLogEntry } from '@/components/admin/types';
 import { GoogleGenAI } from '@google/genai';
+import {
+  portfolioItems as defaultPortfolioItems,
+  pricingPackages as defaultPricingPackages,
+  detailedServices as defaultDetailedServices,
+  testimonials as defaultTestimonials,
+  blogPosts as defaultBlogPosts,
+} from '@/lib/data';
 
 // In-memory session store (persists across requests in node process)
 // Also supports global memory across HMR/reloads
@@ -297,6 +304,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     return NextResponse.json({
       profile: db.profile,
       profileAuditLogs: db.profileAuditLogs || [],
+      cms: db.cms,
       users: db.users.map(({ password: _, ...u }) => u),
       clients: db.clients,
       events: db.events,
@@ -316,6 +324,61 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       tasks: db.tasks,
       tempHireRecommendations: db.tempHireRecommendations,
     });
+  }
+
+  // ================= PUBLIC WEBSITE & PORTFOLIO CMS =================
+  if (pathStr === 'cms' && method === 'GET') {
+    if (!db.cms) {
+      db.cms = {
+        portfolioItems: [...defaultPortfolioItems],
+        pricingPackages: [...defaultPricingPackages],
+        detailedServices: [...defaultDetailedServices],
+        testimonials: [...defaultTestimonials],
+        blogPosts: [...defaultBlogPosts],
+        websiteLeads: [],
+      };
+      dbInstance.save();
+    }
+    return NextResponse.json(db.cms);
+  }
+
+  if (pathStr === 'cms' && method === 'PUT') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    const body = await parseJsonBody(req);
+    if (!db.cms) {
+      db.cms = {
+        portfolioItems: [...defaultPortfolioItems],
+        pricingPackages: [...defaultPricingPackages],
+        detailedServices: [...defaultDetailedServices],
+        testimonials: [...defaultTestimonials],
+        blogPosts: [...defaultBlogPosts],
+        websiteLeads: [],
+      };
+    }
+    if (Array.isArray(body.portfolioItems)) db.cms.portfolioItems = body.portfolioItems;
+    if (Array.isArray(body.pricingPackages)) db.cms.pricingPackages = body.pricingPackages;
+    if (Array.isArray(body.detailedServices)) db.cms.detailedServices = body.detailedServices;
+    if (Array.isArray(body.testimonials)) db.cms.testimonials = body.testimonials;
+    if (Array.isArray(body.blogPosts)) db.cms.blogPosts = body.blogPosts;
+    if (Array.isArray(body.websiteLeads)) db.cms.websiteLeads = body.websiteLeads;
+    dbInstance.save();
+    return NextResponse.json(db.cms);
+  }
+
+  if (pathStr === 'cms/reset' && method === 'POST') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    db.cms = {
+      portfolioItems: [...defaultPortfolioItems],
+      pricingPackages: [...defaultPricingPackages],
+      detailedServices: [...defaultDetailedServices],
+      testimonials: [...defaultTestimonials],
+      blogPosts: [...defaultBlogPosts],
+      websiteLeads: db.cms?.websiteLeads || [],
+    };
+    dbInstance.save();
+    return NextResponse.json(db.cms);
   }
 
   // ================= PROFILE =================
@@ -1448,7 +1511,7 @@ Rules:
       try {
         const ai = new GoogleGenAI({ apiKey });
         const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
+          model: 'gemini-3-flash-preview',
           contents: `Here is the current live data from Royal Studio database:\n${JSON.stringify(dataSummary, null, 2)}`,
           config: {
             systemInstruction: systemPrompt,

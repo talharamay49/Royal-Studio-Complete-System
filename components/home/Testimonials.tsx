@@ -3,19 +3,25 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Quote, Star } from "lucide-react";
-import { googleRating, testimonials } from "@/lib/data";
+import { googleRating } from "@/lib/data";
+import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import SectionHeading from "@/components/shared/SectionHeading";
 import AnimatedSection from "@/components/shared/AnimatedSection";
 
 export default function Testimonials() {
+  const { testimonials } = usePublicWebsiteCMS();
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
+    if (!testimonials.length) return;
     const interval = setInterval(() => {
       setCurrent((prev) => (prev + 1) % testimonials.length);
     }, 7000);
     return () => clearInterval(interval);
-  }, []);
+  }, [testimonials.length]);
+
+  const activeTestimonial = testimonials[current % Math.max(1, testimonials.length)] || testimonials[0];
+  if (!activeTestimonial) return null;
 
   return (
     <section className="section-padding bg-surface">
@@ -55,15 +61,15 @@ export default function Testimonials() {
                 transition={{ duration: 0.45 }}
               >
                 <blockquote className="font-display text-xl leading-relaxed text-primary italic md:text-2xl">
-                  &ldquo;{testimonials[current].quote}&rdquo;
+                  &ldquo;{activeTestimonial.quote}&rdquo;
                 </blockquote>
                 <div className="mt-8">
                   <p className="text-sm font-medium text-accent">
-                    {testimonials[current].author}
+                    {activeTestimonial.author}
                   </p>
                   <p className="mt-1 text-xs text-text-muted">
-                    {testimonials[current].event}
-                    {testimonials[current].location && ` · ${testimonials[current].location}`}
+                    {activeTestimonial.event}
+                    {activeTestimonial.location && ` · ${activeTestimonial.location}`}
                   </p>
                 </div>
               </motion.div>

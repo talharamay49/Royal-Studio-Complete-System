@@ -125,7 +125,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [isEditEventModalOpen, setIsEditEventModalOpen] = useState(initialEdit);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [previewDoc, setPreviewDoc] = useState<'INVOICE' | 'QUOTATION' | null>(null);
+  const [previewDoc, setPreviewDoc] = useState<'INVOICE' | 'QUOTATION' | 'RECEIPT' | 'EVENT_SUMMARY' | null>(null);
 
   // Edit Day Schedule state & modal
   const [isEditDayModalOpen, setIsEditDayModalOpen] = useState(false);
@@ -556,6 +556,15 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
           >
             <RotateCw className="w-3.5 h-3.5" />
             <span>Recalculate</span>
+          </button>
+
+          <button
+            onClick={() => setPreviewDoc('EVENT_SUMMARY')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 hover:bg-slate-200 transition-colors shadow-2xs cursor-pointer"
+            title="Preview Official Branded Event Dossier on image.png stationery"
+          >
+            <Eye className="w-3.5 h-3.5 text-slate-700" />
+            <span>Event Doc</span>
           </button>
 
           <button

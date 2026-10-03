@@ -15,7 +15,8 @@ import {
   ShieldAlert,
   Lightbulb,
   Target,
-  Edit
+  Edit,
+  Globe
 } from 'lucide-react';
 import { useStudioData } from '../context/StudioDataContext';
 import { formatPKR, formatDate } from '../utils/calculations';
@@ -112,10 +113,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ navigate }) => {
             Royal Studio Command Center
           </h2>
           <p className="text-xs md:text-sm text-slate-300 mt-1 max-w-xl">
-            Live operations, wedding schedules, crew availability, and financial performance across Lahore & Pakistan.
+            Live operations, wedding schedules, crew availability, public portfolio CMS, and financial performance across Burewala, Lahore &amp; Pakistan.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => navigate('/website-cms')}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-xs rounded-xl transition-all cursor-pointer"
+          >
+            <Globe className="w-4 h-4" />
+            <span>Manage Public Portfolio &amp; Website</span>
+          </button>
           <button
             onClick={handleGenerateAI}
             disabled={isGeneratingAI}

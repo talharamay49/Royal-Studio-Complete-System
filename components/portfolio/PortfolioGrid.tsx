@@ -7,9 +7,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Camera, X } from "lucide-react";
 import {
   portfolioCategories,
-  portfolioItems,
 } from "@/lib/data";
-import type { PortfolioCategory } from "@/types";
+import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
+import type { PortfolioCategory, PortfolioItem } from "@/types";
 import SectionHeading from "@/components/shared/SectionHeading";
 import AnimatedSection from "@/components/shared/AnimatedSection";
 import { Button } from "@/components/ui/button";
@@ -25,10 +25,9 @@ export default function PortfolioGrid({
   showHeading = true,
   showViewAll = true,
 }: PortfolioGridProps) {
+  const { portfolioItems } = usePublicWebsiteCMS();
   const [activeFilter, setActiveFilter] = useState<PortfolioCategory>("all");
-  const [lightbox, setLightbox] = useState<
-    (typeof portfolioItems)[0] | null
-  >(null);
+  const [lightbox, setLightbox] = useState<PortfolioItem | null>(null);
   const [visibleCount, setVisibleCount] = useState(limit ?? 9);
 
   const filtered =
@@ -123,14 +122,23 @@ export default function PortfolioGrid({
                       : "aspect-square"
                 }`}
               >
-                <Image
-                  src={item.image}
-                  alt={item.title}
-                  fill
-                  loading="lazy"
-                  className="object-cover transition-transform duration-700 group-hover:scale-105"
-                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                />
+                {item.image.startsWith("data:") || item.image.startsWith("http") ? (
+                  <img
+                    src={item.image}
+                    alt={item.title}
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                  />
+                ) : (
+                  <Image
+                    src={item.image}
+                    alt={item.title}
+                    fill
+                    loading="lazy"
+                    className="object-cover transition-transform duration-700 group-hover:scale-105"
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                  />
+                )}
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-primary/60 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
                   <h3 className="font-display text-xl text-secondary">
                     {item.title}
@@ -194,13 +202,21 @@ export default function PortfolioGrid({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="relative aspect-[16/10] w-full overflow-hidden rounded-[12px]">
-                <Image
-                  src={lightbox.image}
-                  alt={lightbox.title}
-                  fill
-                  className="object-contain"
-                  sizes="90vw"
-                />
+                {lightbox.image.startsWith("data:") || lightbox.image.startsWith("http") ? (
+                  <img
+                    src={lightbox.image}
+                    alt={lightbox.title}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <Image
+                    src={lightbox.image}
+                    alt={lightbox.title}
+                    fill
+                    className="object-contain"
+                    sizes="90vw"
+                  />
+                )}
               </div>
               <div className="mt-4 text-center text-secondary">
                 <h3 className="font-display text-2xl">{lightbox.title}</h3>

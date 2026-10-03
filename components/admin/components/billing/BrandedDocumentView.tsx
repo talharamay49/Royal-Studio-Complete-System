@@ -10,13 +10,19 @@ import {
   Payment,
 } from '../../types';
 import { formatPKR, formatDate } from '../../utils/calculations';
-import { generateInvoicePDF, generateQuotationPDF } from '../../utils/pdfGenerator';
+import {
+  generateInvoicePDF,
+  generateQuotationPDF,
+  generatePaymentReceiptPDF,
+  generateEventDocumentPDF,
+} from '../../utils/pdfGenerator';
 import { useStudioData } from '../../context/StudioDataContext';
 
 interface BrandedDocumentViewProps {
-  type: 'INVOICE' | 'QUOTATION';
+  type: 'INVOICE' | 'QUOTATION' | 'RECEIPT' | 'EVENT_SUMMARY';
   invoice?: Invoice;
   quotation?: Quotation;
+  selectedPayment?: Payment;
   event: Event;
   client: Client;
   profile: AdminProfile;
@@ -29,6 +35,7 @@ export const BrandedDocumentView: React.FC<BrandedDocumentViewProps> = ({
   type,
   invoice,
   quotation,
+  selectedPayment,
   event,
   client,
   profile,
@@ -37,14 +44,20 @@ export const BrandedDocumentView: React.FC<BrandedDocumentViewProps> = ({
   onClose,
 }) => {
   const printContainerRef = useRef<HTMLDivElement>(null);
-  const [activeDocType, setActiveDocType] = useState<'INVOICE' | 'QUOTATION'>(type);
+  const [activeDocType, setActiveDocType] = useState<'INVOICE' | 'QUOTATION' | 'RECEIPT' | 'EVENT_SUMMARY'>(type);
   const { packages } = useStudioData();
 
   const selectedPackage = packages.find((p) => p.id === event.packageId);
 
   const isInvoice = activeDocType === 'INVOICE';
+  const isReceipt = activeDocType === 'RECEIPT';
+  const isEventDoc = activeDocType === 'EVENT_SUMMARY';
   const docNumber = isInvoice
     ? invoice?.invoiceNumber || `${profile.invoicePrefix || 'RS-INV-'}${event.id.slice(-4).toUpperCase()}`
+    : isReceipt
+    ? `RS-RCPT-${(selectedPayment?.id || event.id).slice(-4).toUpperCase()}`
+    : isEventDoc
+    ? `RS-EVT-${event.id.slice(-4).toUpperCase()}`
     : quotation?.quotationNumber || `${profile.quotationPrefix || 'RS-QUO-'}${event.id.slice(-4).toUpperCase()}`;
 
   const issueDate = isInvoice
@@ -90,6 +103,12 @@ export const BrandedDocumentView: React.FC<BrandedDocumentViewProps> = ({
       stampText = 'UNPAID';
       stampColor = 'border-rose-600 text-rose-800 bg-rose-50/95';
     }
+  } else if (isReceipt) {
+    stampText = 'OFFICIAL RECEIPT';
+    stampColor = 'border-emerald-600 text-emerald-800 bg-emerald-50/95';
+  } else if (isEventDoc) {
+    stampText = 'OFFICIAL DOSSIER';
+    stampColor = 'border-slate-700 text-slate-900 bg-slate-100/95';
   }
 
   const eventTypeDisplay = event.weddingSubtype
@@ -141,6 +160,28 @@ export const BrandedDocumentView: React.FC<BrandedDocumentViewProps> = ({
     profile.documentLogo || profile.primaryLogo || profile.logo || '/RoyalLogo.png';
 
   const handleDownloadPDF = async () => {
+    if (isReceipt) {
+      const paymentRecord: Payment = selectedPayment ||
+        relevantPayments[0] || {
+          id: `pay-${event.id.slice(-4)}`,
+          eventId: event.id,
+          invoiceId: invoice?.id,
+          amount: amountPaid || grandTotal,
+          paymentDate: issueDate,
+          method: 'Bank Transfer',
+          reference: docNumber,
+          notes: `Payment received for ${event.title}`,
+          receivedBy: profile.studioName || 'Royal Studio',
+        };
+      await generatePaymentReceiptPDF(paymentRecord, event, client, profile, relevantPayments);
+      return;
+    }
+
+    if (isEventDoc) {
+      await generateEventDocumentPDF(event, client, profile, daySchedules, selectedPackage);
+      return;
+    }
+
     if (isInvoice) {
       const invToPrint: Invoice = invoice || {
         id: 'inv-dl',
@@ -263,7 +304,7 @@ export const BrandedDocumentView: React.FC<BrandedDocumentViewProps> = ({
                     : 'text-gray-300 hover:text-white'
                 }`}
               >
-                Invoice View
+                Invoice
               </button>
               <button
                 type="button"
@@ -274,7 +315,29 @@ export const BrandedDocumentView: React.FC<BrandedDocumentViewProps> = ({
                     : 'text-gray-300 hover:text-white'
                 }`}
               >
-                Quotation View
+                Quotation
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveDocType('RECEIPT')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                  activeDocType === 'RECEIPT'
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                Receipt
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveDocType('EVENT_SUMMARY')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                  activeDocType === 'EVENT_SUMMARY'
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                Event Sheet
               </button>
             </div>
           </div>
@@ -356,7 +419,11 @@ export const BrandedDocumentView: React.FC<BrandedDocumentViewProps> = ({
                   />
                   <div>
                     <h1 className="text-3xl sm:text-4xl font-black tracking-tight text-slate-900 font-serif">
-                      {activeDocType}
+                      {isReceipt
+                        ? 'PAYMENT RECEIPT'
+                        : isEventDoc
+                        ? 'EVENT DOSSIER'
+                        : activeDocType}
                     </h1>
                     <p className="text-[11px] font-bold tracking-[0.18em] text-[#a58137] uppercase">
                       {profile.letterheadText ||

@@ -833,3 +833,270 @@ export async function generateQuotationPDF(
 
   doc.save(`${quotation.quotationNumber}_${client.name.replace(/\s+/g, '_')}.pdf`);
 }
+
+export async function generatePaymentReceiptPDF(
+  payment: Payment,
+  event: Event,
+  client: Client,
+  profile: AdminProfile,
+  allPayments: Payment[] = []
+): Promise<void> {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const bgSrc = profile.receiptBackground || profile.documentBackground || '/image.png';
+  await applyOfficialStationeryAndLogo(doc, profile, bgSrc, 'PAYMENT RECEIPT');
+
+  // Official Receipt Badge
+  doc.setDrawColor(16, 185, 129);
+  doc.setFillColor(209, 250, 229);
+  doc.roundedRect(pageWidth - 58, 17, 43, 8, 1.5, 1.5, 'FD');
+  doc.setTextColor(6, 95, 70);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('OFFICIAL RECEIPT', pageWidth - 36.5, 22.3, { align: 'center' });
+
+  const receiptNo = `RS-RCPT-${payment.id.slice(-4).toUpperCase()}`;
+  doc.setFontSize(8.5);
+  doc.setTextColor(40, 45, 55);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Receipt No:', pageWidth - 62, 31);
+  doc.text('Payment Date:', pageWidth - 62, 36);
+  doc.text('Payment Method:', pageWidth - 62, 41);
+
+  doc.setFont('helvetica', 'normal');
+  doc.text(receiptNo, pageWidth - 15, 31, { align: 'right' });
+  doc.text(formatDate(payment.paymentDate), pageWidth - 15, 36, { align: 'right' });
+  doc.text(payment.method, pageWidth - 15, 41, { align: 'right' });
+
+  // RECEIVED FROM / STUDIO DETAILS
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(165, 129, 55);
+  doc.text('RECEIVED FROM (CLIENT)', 15, 49);
+
+  doc.setFontSize(10.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(client.name, 15, 54.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(55, 65, 81);
+  doc.text(`Phone: ${client.phone}`, 15, 59.5);
+  doc.text(`Event: ${event.title} (${formatDate(event.eventDate)})`, 15, 64);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(165, 129, 55);
+  doc.text('RECEIVED BY (OFFICIAL STUDIO)', 105, 49);
+
+  doc.setFontSize(10.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(profile.studioName || 'Royal Studio', 105, 54.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(55, 65, 81);
+  const fullAddr =
+    profile.publicDisplayAddress ||
+    profile.address ||
+    'Al Jannat Town Entrance, Canal Bungalow Road, Opposite Habib Mall, Burewala, Punjab 61010, Pakistan';
+  const addrLines = doc.splitTextToSize(fullAddr, 88);
+  doc.text(addrLines, 105, 59.5);
+  const phoneY = 59.5 + addrLines.length * 4.2;
+  doc.text(
+    `Tel: ${profile.phone || '0308-4877073'}${profile.phone2 ? ' / ' + profile.phone2 : ''}`,
+    105,
+    phoneY
+  );
+
+  // PAYMENT RECEIPT TABLE
+  autoTable(doc, {
+    startY: Math.max(74, phoneY + 6),
+    head: [['RECEIPT #', 'PAYMENT DATE', 'METHOD & REFERENCE', 'NOTES', 'AMOUNT RECEIVED']],
+    body: [
+      [
+        receiptNo,
+        formatDate(payment.paymentDate),
+        `${payment.method}${payment.reference ? ` (${payment.reference})` : ''}`,
+        payment.notes || `Payment towards ${event.title}`,
+        formatPKR(payment.amount),
+      ],
+    ],
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      cellPadding: 3.5,
+    },
+    bodyStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [15, 23, 42],
+      fontSize: 8.5,
+      cellPadding: 4,
+      fontStyle: 'bold',
+    },
+    theme: 'grid',
+    margin: { left: 15, right: 15 },
+  });
+
+  const tableEndY = (doc as any).lastAutoTable.finalY || 105;
+  const contractTotal = event.packagePrice - (event.discount || 0) + (event.tax || 0);
+  const totalPaidToDate =
+    allPayments.length > 0
+      ? allPayments.reduce((s, p) => s + p.amount, 0)
+      : event.totalClientPayments || payment.amount;
+  const remainingBalance = Math.max(0, contractTotal - totalPaidToDate);
+
+  let curY = tableEndY + 10;
+  const summaryX = pageWidth - 85;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(60, 70, 85);
+  doc.text('Total Contract Value:', summaryX, curY);
+  doc.text(formatPKR(contractTotal), pageWidth - 15, curY, { align: 'right' });
+
+  curY += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(21, 128, 61);
+  doc.text('This Payment Received:', summaryX, curY);
+  doc.text(formatPKR(payment.amount), pageWidth - 15, curY, { align: 'right' });
+
+  curY += 6;
+  doc.text('Total Paid to Date:', summaryX, curY);
+  doc.text(formatPKR(totalPaidToDate), pageWidth - 15, curY, { align: 'right' });
+
+  curY += 6;
+  doc.setTextColor(190, 18, 60);
+  doc.text('Remaining Balance Due:', summaryX, curY);
+  doc.text(formatPKR(remainingBalance), pageWidth - 15, curY, { align: 'right' });
+
+  // Footer
+  const footerY = pageHeight - 12;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 95);
+  doc.text(
+    profile.documentFooterText ||
+      `Official Payment Receipt — ${profile.studioName || 'Royal Studio'}. Thank you for your payment!`,
+    pageWidth / 2,
+    footerY,
+    { align: 'center' }
+  );
+
+  doc.save(`${receiptNo}_${client.name.replace(/\s+/g, '_')}.pdf`);
+}
+
+export async function generateEventDocumentPDF(
+  event: Event,
+  client: Client,
+  profile: AdminProfile,
+  daySchedules: EventDaySchedule[] = [],
+  selectedPackage?: Package
+): Promise<void> {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  const bgSrc = profile.documentBackground || '/image.png';
+  await applyOfficialStationeryAndLogo(doc, profile, bgSrc, 'EVENT DOSSIER');
+
+  const docNo = `RS-EVT-${event.id.slice(-4).toUpperCase()}`;
+  doc.setFontSize(8.5);
+  doc.setTextColor(40, 45, 55);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Event Ref:', pageWidth - 62, 31);
+  doc.text('Event Date:', pageWidth - 62, 36);
+  doc.text('Status:', pageWidth - 62, 41);
+
+  doc.setFont('helvetica', 'normal');
+  doc.text(docNo, pageWidth - 15, 31, { align: 'right' });
+  doc.text(formatDate(event.eventDate), pageWidth - 15, 36, { align: 'right' });
+  doc.text(event.status, pageWidth - 15, 41, { align: 'right' });
+
+  // CLIENT & EVENT SUMMARY
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(165, 129, 55);
+  doc.text('CLIENT & BOOKING OVERVIEW', 15, 49);
+
+  doc.setFontSize(10.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`${client.name} — ${event.title}`, 15, 54.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(55, 65, 81);
+  doc.text(`Client Contact: ${client.phone} | Venue: ${event.venue}, ${event.city}`, 15, 59.5);
+  doc.text(
+    `Package: ${selectedPackage?.name || event.category} | Total Value: ${formatPKR(event.packagePrice - (event.discount || 0) + (event.tax || 0))}`,
+    15,
+    64
+  );
+
+  const scheduleRows =
+    daySchedules.length > 0
+      ? daySchedules.map((d, i) => [
+          `Day ${d.dayNumber || i + 1}: ${d.eventType}`,
+          formatDate(d.date),
+          `${d.startTime || '18:00'} - ${d.endTime || '23:30'} (Call: ${d.callTime || '16:30'})`,
+          d.venue || event.venue,
+          formatPKR(d.customPrice),
+        ])
+      : [
+          [
+            `${event.category} (${event.weddingSubtype || 'Main Event'})`,
+            formatDate(event.eventDate),
+            `${event.startTime || '18:00'} - ${event.endTime || '23:30'}`,
+            `${event.venue}, ${event.city}`,
+            formatPKR(event.packagePrice),
+          ],
+        ];
+
+  autoTable(doc, {
+    startY: 72,
+    head: [['CEREMONY / DAY', 'DATE', 'TIMINGS', 'VENUE', 'ALLOCATION']],
+    body: scheduleRows,
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      cellPadding: 3,
+    },
+    bodyStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [15, 23, 42],
+      fontSize: 8,
+      cellPadding: 3,
+    },
+    theme: 'grid',
+    margin: { left: 15, right: 15 },
+  });
+
+  const footerY = pageHeight - 12;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 95);
+  doc.text(
+    profile.documentFooterText ||
+      `Official Event Production Document — ${profile.studioName || 'Royal Studio'}`,
+    pageWidth / 2,
+    footerY,
+    { align: 'center' }
+  );
+
+  doc.save(`${docNo}_${event.title.replace(/\s+/g, '_')}.pdf`);
+}

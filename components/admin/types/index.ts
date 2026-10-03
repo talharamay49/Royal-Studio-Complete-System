@@ -88,6 +88,9 @@ export interface EventDaySchedule {
   notes: string;
   standardPackageId?: string;
   customPrice: number;
+  photographersCount?: number;
+  cinematographersCount?: number;
+  droneIncluded?: boolean;
 }
 
 export interface Event {

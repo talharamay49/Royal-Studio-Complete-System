@@ -46,6 +46,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const adminNavItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    { label: 'Website & Portfolio CMS', path: '/website-cms', icon: Globe },
     { label: 'Finance', path: '/finance', icon: DollarSign },
     { label: 'Events', path: '/events', icon: CalendarDays },
     { label: 'Calendar', path: '/calendar', icon: Calendar },

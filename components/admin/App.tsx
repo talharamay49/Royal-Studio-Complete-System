@@ -21,6 +21,7 @@ import { TasksPage } from './pages/TasksPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ProfilePage } from './pages/ProfilePage';
+import { WebsiteCmsPage } from './pages/WebsiteCmsPage';
 import { LoadingState } from './components/common/LoadingState';
 import { ShieldAlert } from 'lucide-react';
 
@@ -175,6 +176,11 @@ const MainContent: React.FC = () => {
 
     if (currentPath === '/profile') {
       return <ProfilePage />;
+    }
+
+    if (currentPath === '/website-cms' || currentPath === '/portfolio-cms' || currentPath === '/portfolio') {
+      if (!isAdmin) return renderRestricted('Public Website & Portfolio CMS');
+      return <WebsiteCmsPage navigate={navigate} />;
     }
 
     // Default fallback
