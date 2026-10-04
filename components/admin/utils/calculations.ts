@@ -5,9 +5,171 @@ import {
   EventTeamAssignment,
   EventEquipmentAssignment,
   Payment,
-  Invoice,
-  InvoiceStatus
+  InvoiceStatus,
+  CameraCategoryTier,
+  CrewCategoryTier,
+  TimingMode,
 } from '../types';
+
+export const CAMERA_CATEGORY_RATES: Record<
+  CameraCategoryTier,
+  { id: CameraCategoryTier; label: string; shortLabel: string; ratePerDay: number; description: string }
+> = {
+  CAT_1: {
+    id: 'CAT_1',
+    label: 'Category 1 — Standard 4K Mirrorless Rig',
+    shortLabel: 'Category 1 (PKR 10k/day)',
+    ratePerDay: 10000,
+    description: 'Sony A7 IV / Canon R6 Mark II standard event body',
+  },
+  CAT_2: {
+    id: 'CAT_2',
+    label: 'Category 2 — Pro Cinema Full-Frame Line',
+    shortLabel: 'Category 2 (PKR 15k/day)',
+    ratePerDay: 15000,
+    description: 'Sony FX3 / A7S III + G-Master prime cinema kit',
+  },
+  CAT_3: {
+    id: 'CAT_3',
+    label: 'Category 3 — Flagship 8K / Cinema Master Rig',
+    shortLabel: 'Category 3 (PKR 20k/day)',
+    ratePerDay: 20000,
+    description: 'RED V-Raptor / Sony FX6 / Ronin 4D 8K flagship cinema rig',
+  },
+};
+
+export const CREW_CATEGORY_RATES: Record<
+  CrewCategoryTier,
+  { id: CrewCategoryTier; label: string; shortLabel: string; ratePerDay: number; description: string }
+> = {
+  CREW_CAT_1: {
+    id: 'CREW_CAT_1',
+    label: 'Crew Category 1 — Associate Crew & Boys',
+    shortLabel: 'Tier 1 Crew (PKR 8k/day)',
+    ratePerDay: 8000,
+    description: 'Associate photographers, lighting boys & gimbal assistants',
+  },
+  CREW_CAT_2: {
+    id: 'CREW_CAT_2',
+    label: 'Crew Category 2 — Senior Photographers & Videographers',
+    shortLabel: 'Tier 2 Senior (PKR 12k/day)',
+    ratePerDay: 12000,
+    description: 'Lead bridal portraitists, senior candid shooters & DOPs',
+  },
+  CREW_CAT_3: {
+    id: 'CREW_CAT_3',
+    label: 'Crew Category 3 — Master Directors & 8K Cinema Crew',
+    shortLabel: 'Tier 3 Master (PKR 18k/day)',
+    ratePerDay: 18000,
+    description: 'Creative directors, crane/drone pilots & master cinema crew',
+  },
+};
+
+export function parseTimeToMinutes(timeStr: string): number {
+  const [hStr, mStr] = (timeStr || '12:00').split(':');
+  const h = Math.max(0, Math.min(23, parseInt(hStr || '12', 10) || 0));
+  const m = Math.max(0, Math.min(59, parseInt(mStr || '0', 10) || 0));
+  return h * 60 + m;
+}
+
+export function minutesToTimeStr(totalMinutes: number): string {
+  const clamped = Math.max(0, Math.min(23 * 60 + 59, Math.round(totalMinutes)));
+  const h = Math.floor(clamped / 60);
+  const m = clamped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Enforces the strict 5-hour Day Time (DM) window constraint when timingMode === 'DAY_TIME'.
+ */
+export function enforceDayTimeWindow(
+  startTime: string,
+  endTime: string,
+  timingMode: TimingMode
+): { startTime: string; endTime: string; durationHours: number; wasClamped: boolean } {
+  const startMins = parseTimeToMinutes(startTime);
+  let endMins = parseTimeToMinutes(endTime);
+
+  if (timingMode === 'DAY_TIME') {
+    const exactFiveHoursMins = Math.min(23 * 60 + 59, startMins + 5 * 60);
+    const diffMins = endMins - startMins;
+    if (diffMins <= 0 || diffMins > 5 * 60) {
+      return {
+        startTime: minutesToTimeStr(startMins),
+        endTime: minutesToTimeStr(exactFiveHoursMins),
+        durationHours: Number(((exactFiveHoursMins - startMins) / 60).toFixed(1)),
+        wasClamped: true,
+      };
+    }
+    return {
+      startTime: minutesToTimeStr(startMins),
+      endTime: minutesToTimeStr(endMins),
+      durationHours: Number((diffMins / 60).toFixed(1)),
+      wasClamped: false,
+    };
+  }
+
+  if (endMins <= startMins) {
+    endMins = Math.min(23 * 60 + 59, startMins + 5 * 60);
+  }
+  return {
+    startTime: minutesToTimeStr(startMins),
+    endTime: minutesToTimeStr(endMins),
+    durationHours: Number(((endMins - startMins) / 60).toFixed(1)),
+    wasClamped: false,
+  };
+}
+
+/**
+ * Dynamic Booking Pricing Formula:
+ * Total Cost = [(Number of Cameras * Camera Category Rate) + (Staff/Crew Count * Crew Category Rate)] * Number of Days
+ *              + Package Base Rate + Add-Ons - Discount
+ */
+export function calculateDynamicBookingPricing(params: {
+  cameraCount: number;
+  cameraCategoryRate: number;
+  crewCount: number;
+  crewCategoryRate: number;
+  daysCount: number;
+  packageBaseRate?: number;
+  addOnsTotal?: number;
+  discount?: number;
+}): {
+  cameraDailyCost: number;
+  crewDailyCost: number;
+  combinedDailyResourceCost: number;
+  multiDayResourceCost: number;
+  packageBaseRate: number;
+  addOnsTotal: number;
+  discount: number;
+  totalCost: number;
+} {
+  const days = Math.max(1, Number(params.daysCount || 1));
+  const cams = Math.max(0, Number(params.cameraCount || 0));
+  const camRate = Math.max(0, Number(params.cameraCategoryRate || 0));
+  const crew = Math.max(0, Number(params.crewCount || 0));
+  const crewRate = Math.max(0, Number(params.crewCategoryRate || 0));
+  const pkgBase = Math.max(0, Number(params.packageBaseRate || 0));
+  const addOns = Math.max(0, Number(params.addOnsTotal || 0));
+  const disc = Math.max(0, Number(params.discount || 0));
+
+  const cameraDailyCost = cams * camRate;
+  const crewDailyCost = crew * crewRate;
+  const combinedDailyResourceCost = cameraDailyCost + crewDailyCost;
+  const multiDayResourceCost = combinedDailyResourceCost * days;
+  const totalCost = Math.max(0, multiDayResourceCost + pkgBase + addOns - disc);
+
+  return {
+    cameraDailyCost,
+    crewDailyCost,
+    combinedDailyResourceCost,
+    multiDayResourceCost,
+    packageBaseRate: pkgBase,
+    addOnsTotal: addOns,
+    discount: disc,
+    totalCost,
+  };
+}
 
 export function calculateEventTotals(
   event: Partial<Event>,
@@ -27,9 +189,8 @@ export function calculateEventTotals(
   totalClientPayments: number;
   remainingBalance: number;
 } {
-  // If multi-day and day schedules have custom prices > 0, package price is sum of day prices
   let packagePrice = Number(event.packagePrice || 0);
-  if (event.isMultiDay && daySchedules.length > 0) {
+  if (event.isMultiDay && daySchedules.length > 0 && packagePrice <= 0) {
     const sumDayPrices = daySchedules.reduce((acc, day) => acc + Number(day.customPrice || 0), 0);
     if (sumDayPrices > 0) {
       packagePrice = sumDayPrices;
@@ -44,7 +205,10 @@ export function calculateEventTotals(
 
   // Calculate rental cost
   const rentalCost = equipmentAssignments.reduce((acc, item) => {
-    return acc + (Number(item.quantity || 0) * Number(item.rentalRate || 0));
+    if (typeof item.rentalCost === 'number' && item.rentalCost > 0) {
+      return acc + item.rentalCost;
+    }
+    return acc + Number(item.quantity || 0) * Number(item.rentalRate || 0);
   }, 0);
 
   // Calculate event expenses
@@ -70,7 +234,7 @@ export function calculateEventTotals(
     netProfit,
     netMargin: Number(netMargin.toFixed(1)),
     totalClientPayments,
-    remainingBalance
+    remainingBalance,
   };
 }
 
@@ -109,7 +273,7 @@ export function formatDate(dateStr: string | undefined | null): string {
     return d.toLocaleDateString('en-GB', {
       day: 'numeric',
       month: 'short',
-      year: 'numeric'
+      year: 'numeric',
     });
   } catch {
     return dateStr;

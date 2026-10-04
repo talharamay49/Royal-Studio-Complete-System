@@ -22,6 +22,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Modal } from '../components/common/Modal';
 import { ConfirmationDialog } from '../components/common/ConfirmationDialog';
 import { EventQrModal } from '../components/common/EventQrModal';
+import { IntegratedBookingModal } from '../components/common/IntegratedBookingModal';
 import { Event, EventCategory, WeddingSubtype, EventStatus } from '../types';
 
 interface EventsPageProps {
@@ -31,13 +32,16 @@ interface EventsPageProps {
 export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
   const {
     events,
+    daySchedules,
     clients,
     packages,
     tasks,
     teamMembers,
+    teamAssignments,
     equipment,
     equipmentAssignments,
     createClient,
+    createPackage,
     createEvent,
     updateEvent,
     deleteEvent,
@@ -691,330 +695,24 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
         </div>
       </div>
 
-      {/* Event Creation Workflow Modal (Section 10) */}
-      <Modal
+      {/* Unified 3-Step Integrated Event Booking Modal */}
+      <IntegratedBookingModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        title="Event Creation Workflow — New Booking"
-        maxWidth="2xl"
-      >
-        <form onSubmit={handleCreateSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Step 1: Client (Existing or Inline Quick-Create) */}
-            <div className="md:col-span-2 p-3.5 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-gray-800">
-                  1. Client Selection *
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setIsQuickClientMode((prev) => !prev)}
-                  className="text-xs font-semibold text-amber-700 hover:underline cursor-pointer"
-                >
-                  {isQuickClientMode ? '← Choose Existing Client' : '+ Quick-Create New Client'}
-                </button>
-              </div>
-
-              {!isQuickClientMode ? (
-                <select
-                  value={clientId}
-                  onChange={e => setClientId(e.target.value)}
-                  required={!isQuickClientMode}
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
-                >
-                  <option value="">-- Choose Client --</option>
-                  {clients.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.phone} - {c.city})
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                  <input
-                    type="text"
-                    value={newClientName}
-                    onChange={(e) => setNewClientName(e.target.value)}
-                    placeholder="Client / Couple Name *"
-                    className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs text-gray-900"
-                  />
-                  <input
-                    type="tel"
-                    value={newClientPhone}
-                    onChange={(e) => setNewClientPhone(e.target.value)}
-                    placeholder="Phone / WhatsApp *"
-                    className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs text-gray-900"
-                  />
-                  <input
-                    type="email"
-                    value={newClientEmail}
-                    onChange={(e) => setNewClientEmail(e.target.value)}
-                    placeholder="Email (Optional)"
-                    className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs text-gray-900"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Event Title */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Event Title (Auto-generated if left blank)
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
-                placeholder="e.g. Tariq & Ayesha Wedding Celebration"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            {/* Step 2: Category */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                2. Event Category *
-              </label>
-              <select
-                value={category}
-                onChange={e => setCategory(e.target.value as EventCategory)}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
-              >
-                <option value="Wedding">Wedding</option>
-                <option value="Birthday">Birthday</option>
-                <option value="Nikah">Nikah</option>
-                <option value="Corporate">Corporate</option>
-                <option value="Concert">Concert</option>
-                <option value="Engagement">Engagement</option>
-                <option value="Bridal Shower">Bridal Shower</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
-            {/* Step 3: Wedding Subtype */}
-            {category === 'Wedding' && (
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  3. Wedding Subtype
-                </label>
-                <select
-                  value={weddingSubtype}
-                  onChange={e => setWeddingSubtype(e.target.value as WeddingSubtype)}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
-                >
-                  <option value="Barat">Barat</option>
-                  <option value="Mehndi">Mehndi</option>
-                  <option value="Walima">Walima</option>
-                  <option value="Nikah">Nikah</option>
-                  <option value="Engagement">Engagement</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-            )}
-
-            {/* Step 4: Package */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                4. Studio Service Package
-              </label>
-              <select
-                value={packageId}
-                onChange={e => handlePackageChange(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
-              >
-                <option value="">-- Custom Package / None --</option>
-                {packages.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} - {formatPKR(p.price)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Step 5: Price */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                5. Agreed Package Price (PKR) *
-              </label>
-              <input
-                type="number"
-                value={packagePrice}
-                onChange={e => setPackagePrice(Number(e.target.value))}
-                min="0"
-                required
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500 font-mono"
-              />
-            </div>
-
-            {/* Step 6: Event Date */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                6. Main Event Date *
-              </label>
-              <input
-                type="date"
-                value={eventDate}
-                onChange={e => setEventDate(e.target.value)}
-                required
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            {/* Timings */}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">Start Time</label>
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={e => setStartTime(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">End Time</label>
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={e => setEndTime(e.target.value)}
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {/* Venue & City */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">Venue Name</label>
-              <input
-                type="text"
-                value={venue}
-                onChange={e => setVenue(e.target.value)}
-                placeholder="e.g. Royal Palm / Pearl Continental"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">City</label>
-              <input
-                type="text"
-                value={city}
-                onChange={e => setCity(e.target.value)}
-                placeholder="Lahore"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
-              />
-            </div>
-
-            {/* Advance Deposit */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Advance Paid on Booking (PKR)
-              </label>
-              <input
-                type="number"
-                value={advancePaid}
-                onChange={e => setAdvancePaid(Number(e.target.value))}
-                min="0"
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none font-mono"
-              />
-            </div>
-
-            {/* Discount & Tax */}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Discount (PKR)
-                </label>
-                <input
-                  type="number"
-                  value={bookingDiscount}
-                  onChange={e => setBookingDiscount(Number(e.target.value))}
-                  min="0"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none font-mono"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Tax (PKR)
-                </label>
-                <input
-                  type="number"
-                  value={bookingTax}
-                  onChange={e => setBookingTax(Number(e.target.value))}
-                  min="0"
-                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none font-mono"
-                />
-              </div>
-            </div>
-
-            {/* Multi-Day Toggle */}
-            <div className="md:col-span-2 flex items-center gap-3 pt-1">
-              <input
-                type="checkbox"
-                id="isMultiDay"
-                checked={isMultiDay}
-                onChange={e => setIsMultiDay(e.target.checked)}
-                className="w-4 h-4 text-amber-600 rounded-xs border-gray-300 focus:ring-amber-500"
-              />
-              <label htmlFor="isMultiDay" className="text-xs font-semibold text-gray-900 cursor-pointer">
-                Multi-Day Wedding System (Enable Mehndi, Barat, Walima schedule tabs)
-              </label>
-            </div>
-          </div>
-
-          {/* Live Contract Financial Summary Bar */}
-          <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div>
-              <span className="text-gray-500 font-medium">Net Contract Value: </span>
-              <span className="font-mono font-bold text-gray-900 text-sm">
-                {formatPKR(Math.max(0, Number(packagePrice || 0) - Number(bookingDiscount || 0) + Number(bookingTax || 0)))}
-              </span>
-            </div>
-            <div className="flex items-center gap-4">
-              <div>
-                <span className="text-gray-500 font-medium">Advance Paid: </span>
-                <span className="font-mono font-bold text-emerald-700">
-                  {formatPKR(Number(advancePaid || 0))}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-500 font-medium">Est. Balance: </span>
-                <span className="font-mono font-bold text-amber-800">
-                  {formatPKR(Math.max(0, Number(packagePrice || 0) - Number(bookingDiscount || 0) + Number(bookingTax || 0) - Number(advancePaid || 0)))}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1">Notes / Instructions</label>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              rows={2}
-              placeholder="Drone clearance, VIP couple shots, specific music taste..."
-              className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none"
-            />
-          </div>
-
-          <div className="pt-4 border-t border-gray-200 flex justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => setIsCreateModalOpen(false)}
-              className="px-4 py-2 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 hover:bg-gray-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-lg shadow-sm transition-colors cursor-pointer"
-            >
-              {isSubmitting ? 'Creating Event...' : 'Create Booking & Open Control Room'}
-            </button>
-          </div>
-        </form>
-      </Modal>
+        initialDate={eventDate}
+        clients={clients}
+        events={events}
+        daySchedules={daySchedules}
+        packages={packages}
+        teamMembers={teamMembers}
+        teamAssignments={teamAssignments}
+        equipment={equipment}
+        equipmentAssignments={equipmentAssignments}
+        createClient={createClient}
+        createPackage={createPackage}
+        createEvent={createEvent}
+        addToast={addToast}
+      />
 
       {/* EDIT EVENT MODAL */}
       <Modal

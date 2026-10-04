@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import firebaseConfig from '../../firebase-applet-config.json';
+import { db as firestoreDb, testFirestoreConnection } from '@/lib/firebase';
 import {
   User,
   Client,
@@ -31,6 +33,8 @@ import {
 } from '@/lib/data';
 import type { PortfolioItem, PricingPackage, Service, Testimonial, BlogPost } from '@/types';
 import { getDatabaseAdapter, DatabaseEngineStats } from '@/lib/db/storageAdapter';
+
+export { firebaseConfig, firestoreDb, testFirestoreConnection };
 
 export interface WebsiteLead {
   id: string;

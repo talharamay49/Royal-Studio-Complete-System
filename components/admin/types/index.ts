@@ -74,6 +74,12 @@ export type EventStatus =
   | 'Completed'
   | 'Cancelled';
 
+export type TimingMode = 'DAY_TIME' | 'NIGHT_TIME';
+
+export type CameraCategoryTier = 'CAT_1' | 'CAT_2' | 'CAT_3';
+
+export type CrewCategoryTier = 'CREW_CAT_1' | 'CREW_CAT_2' | 'CREW_CAT_3';
+
 export interface EventDaySchedule {
   id: string;
   eventId: string;
@@ -81,13 +87,24 @@ export interface EventDaySchedule {
   date: string;
   eventType: string; // e.g. Mehndi, Barat, Walima
   venue: string;
+  timingMode?: TimingMode; // 'DAY_TIME' (DM strict 5-hr window) | 'NIGHT_TIME'
+  durationHours?: number;
   startTime: string;
   endTime: string;
   callTime: string;
   dressCode: string;
   notes: string;
   standardPackageId?: string;
+  customPackageName?: string;
   customPrice: number;
+  cameraCategory?: CameraCategoryTier;
+  cameraCount?: number;
+  cameraRatePerDay?: number;
+  assignedCameraIds?: string[];
+  crewCategory?: CrewCategoryTier;
+  crewCount?: number;
+  crewRatePerDay?: number;
+  assignedCrewIds?: string[];
   photographersCount?: number;
   cinematographersCount?: number;
   droneIncluded?: boolean;
@@ -100,7 +117,10 @@ export interface Event {
   category: EventCategory;
   weddingSubtype?: WeddingSubtype;
   packageId?: string;
+  customPackageName?: string;
+  packageBasePrice?: number;
   eventDate: string;
+  timingMode?: TimingMode;
   startTime: string;
   endTime: string;
   venue: string;
@@ -115,6 +135,13 @@ export interface Event {
   createdDate: string;
   updatedDate: string;
   isMultiDay: boolean;
+  daysCount?: number;
+  cameraCategory?: CameraCategoryTier;
+  cameraCount?: number;
+  cameraRatePerDay?: number;
+  crewCategory?: CrewCategoryTier;
+  crewCount?: number;
+  crewRatePerDay?: number;
 
   // Cached calculated financials
   staffCost: number;

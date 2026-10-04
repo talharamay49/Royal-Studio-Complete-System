@@ -104,7 +104,7 @@ export interface StudioDataContextType {
   deleteEquipmentAssignment: (id: string) => Promise<void>;
   createMaintenanceLog: (data: Partial<EquipmentMaintenanceLog>) => Promise<void>;
 
-  createPackage: (data: Partial<Package>) => Promise<void>;
+  createPackage: (data: Partial<Package>) => Promise<Package>;
   updatePackage: (id: string, data: Partial<Package>) => Promise<void>;
   deletePackage: (id: string) => Promise<void>;
 
@@ -552,14 +552,15 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   };
 
-  const createPackage = async (data: Partial<Package>) => {
+  const createPackage = async (data: Partial<Package>): Promise<Package> => {
     try {
-      await apiRequest('/api/packages', {
+      const created = await apiRequest<Package>('/api/packages', {
         method: 'POST',
         body: JSON.stringify(data),
       });
       await erpDatabase.syncAllFromServer();
       addToast('Package created successfully.');
+      return created;
     } catch (err: any) {
       addToast(err.message, 'error');
       throw err;
@@ -864,7 +865,7 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
         addToast,
         removeToast,
         profile: dbSnapshot.profile,
-        profileAuditLogs: dbSnapshot.profileAuditLogs,
+        profileAuditLogs: dbSnapshot.profileAuditLogs || [],
         users: dbSnapshot.users,
         clients: dbSnapshot.clients,
         events: dbSnapshot.events,

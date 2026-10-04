@@ -1,7 +1,19 @@
 import { NextResponse } from 'next/server';
 import { dbInstance, getDefaultStudioProfile, verifyPassword, hashPassword } from '@/lib/admin/db';
-import { computeInvoiceStatus } from '@/components/admin/utils/calculations';
-import { User, AuditLogEntry } from '@/components/admin/types';
+import {
+  computeInvoiceStatus,
+  CAMERA_CATEGORY_RATES,
+  CREW_CATEGORY_RATES,
+  enforceDayTimeWindow,
+  calculateDynamicBookingPricing,
+} from '@/components/admin/utils/calculations';
+import {
+  User,
+  AuditLogEntry,
+  CameraCategoryTier,
+  CrewCategoryTier,
+  TimingMode,
+} from '@/components/admin/types';
 import { GoogleGenAI } from '@google/genai';
 import {
   portfolioItems as defaultPortfolioItems,
@@ -178,7 +190,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       expiresAt: Date.now() + maxAgeSec * 1000,
       lastActiveAt: Date.now(),
     };
-    dbInstance.setSession(token, sessionRecord);
+    await dbInstance.setSession(token, sessionRecord);
 
     const { password: _, ...userSafe } = matchedUser;
     const response = NextResponse.json({ token, user: userSafe });
@@ -200,7 +212,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
   if (pathStr === 'auth/logout' && method === 'POST') {
     const token = extractSessionToken(req);
     if (token) {
-      dbInstance.deleteSession(token);
+      await dbInstance.deleteSession(token);
     }
     const response = NextResponse.json({ success: true });
     response.headers.set(
@@ -947,23 +959,180 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const body = await parseJsonBody(req);
-    const { clientId, title, category, weddingSubtype, packageId, eventDate, startTime, endTime, venue, city, packagePrice, advancePaid, discount, tax, notes, isMultiDay } = body;
+    const {
+      clientId,
+      title,
+      category,
+      weddingSubtype,
+      packageId,
+      customPackageName,
+      packageBasePrice,
+      customPackageToCreate,
+      eventDate,
+      timingMode,
+      startTime,
+      endTime,
+      venue,
+      city,
+      packagePrice,
+      advancePaid,
+      discount,
+      tax,
+      notes,
+      isMultiDay,
+      daySchedulesInput,
+      cameraCategory,
+      cameraCount,
+      cameraRatePerDay,
+      crewCategory,
+      crewCount,
+      crewRatePerDay,
+      addOnsTotal,
+    } = body;
+
     if (!clientId || !title || !eventDate) {
       return NextResponse.json({ error: 'Client, Title, and Event Date are required.' }, { status: 400 });
     }
-    const priceNum = Number(packagePrice || 0);
+
+    // Optional on-the-fly custom package persistence
+    let resolvedPackageId = packageId;
+    if (
+      customPackageToCreate &&
+      typeof customPackageToCreate === 'object' &&
+      customPackageToCreate.name
+    ) {
+      const createdPkg = {
+        id: `pkg-${Date.now().toString().slice(-6)}`,
+        name: String(customPackageToCreate.name).trim(),
+        category: (customPackageToCreate.category || category || 'Wedding') as any,
+        description:
+          String(customPackageToCreate.description || '').trim() ||
+          `Custom package created during calendar booking for ${title}`,
+        price: Number(customPackageToCreate.price || packageBasePrice || 0),
+        duration: isMultiDay
+          ? `${Array.isArray(daySchedulesInput) ? daySchedulesInput.length : 2} Days`
+          : timingMode === 'DAY_TIME'
+          ? '5 Hours (Day Time DM)'
+          : '1 Day',
+        requiredPhotographers: Number(customPackageToCreate.requiredPhotographers || 1),
+        requiredVideographers: Number(customPackageToCreate.requiredVideographers || 1),
+        requiredDroneOperators: Number(customPackageToCreate.requiredDroneOperators || 0),
+        requiredAssistants: Number(customPackageToCreate.requiredAssistants || 1),
+        includedServices: Array.isArray(customPackageToCreate.includedServices)
+          ? customPackageToCreate.includedServices
+          : ['Full Resolution Editorial Photography', '4K Cinematic Highlight Film'],
+        deliverables: Array.isArray(customPackageToCreate.deliverables)
+          ? customPackageToCreate.deliverables
+          : ['Online Private Gallery', 'Master Cinema USB'],
+        isActive: true,
+      };
+      db.packages.unshift(createdPkg);
+      resolvedPackageId = createdPkg.id;
+    }
+
+    const camCatKey: CameraCategoryTier =
+      cameraCategory === 'CAT_1' || cameraCategory === 'CAT_2' || cameraCategory === 'CAT_3'
+        ? cameraCategory
+        : 'CAT_2';
+    const resolvedCamRate =
+      typeof cameraRatePerDay === 'number' && cameraRatePerDay > 0
+        ? cameraRatePerDay
+        : CAMERA_CATEGORY_RATES[camCatKey].ratePerDay;
+
+    const crewCatKey: CrewCategoryTier =
+      crewCategory === 'CREW_CAT_1' ||
+      crewCategory === 'CREW_CAT_2' ||
+      crewCategory === 'CREW_CAT_3'
+        ? crewCategory
+        : 'CREW_CAT_2';
+    const resolvedCrewRate =
+      typeof crewRatePerDay === 'number' && crewRatePerDay > 0
+        ? crewRatePerDay
+        : CREW_CATEGORY_RATES[crewCatKey].ratePerDay;
+
+    const explicitEqIds: string[] = Array.isArray(body.selectedEquipmentIds)
+      ? body.selectedEquipmentIds
+      : [];
+    const explicitCrewIds: string[] = Array.isArray(body.selectedCrewIds)
+      ? body.selectedCrewIds
+      : [];
+
+    const resolvedCamCount =
+      typeof cameraCount === 'number' && cameraCount >= 0
+        ? cameraCount
+        : explicitEqIds.length;
+    const resolvedCrewCount =
+      typeof crewCount === 'number' && crewCount >= 0
+        ? crewCount
+        : explicitCrewIds.length;
+
+    const rawDays: any[] =
+      Array.isArray(daySchedulesInput) && daySchedulesInput.length > 0
+        ? daySchedulesInput
+        : [
+            {
+              dayNumber: 1,
+              date: eventDate,
+              eventType: weddingSubtype || category || 'Main Event',
+              venue: venue || city || 'Burewala',
+              timingMode: (timingMode || 'NIGHT_TIME') as TimingMode,
+              startTime: startTime || '18:00',
+              endTime: endTime || '23:00',
+              notes: notes || '',
+            },
+          ];
+
+    const daysCount = Math.max(1, rawDays.length);
+
+    // Enforce strict 5-hour Day Time (DM) window constraint on primary event times
+    const primaryMode: TimingMode =
+      rawDays[0]?.timingMode === 'DAY_TIME' || timingMode === 'DAY_TIME'
+        ? 'DAY_TIME'
+        : 'NIGHT_TIME';
+    const enforcedPrimaryWindow = enforceDayTimeWindow(
+      rawDays[0]?.startTime || startTime || (primaryMode === 'DAY_TIME' ? '11:00' : '18:00'),
+      rawDays[0]?.endTime || endTime || (primaryMode === 'DAY_TIME' ? '16:00' : '23:00'),
+      primaryMode
+    );
+
+    const resolvedPkgBasePrice =
+      typeof packageBasePrice === 'number'
+        ? packageBasePrice
+        : resolvedPackageId
+        ? db.packages.find(p => p.id === resolvedPackageId)?.price || 0
+        : 0;
+
+    const dynamicCalc = calculateDynamicBookingPricing({
+      cameraCount: resolvedCamCount,
+      cameraCategoryRate: resolvedCamRate,
+      crewCount: resolvedCrewCount,
+      crewCategoryRate: resolvedCrewRate,
+      daysCount,
+      packageBaseRate: resolvedPkgBasePrice,
+      addOnsTotal: Number(addOnsTotal || 0),
+      discount: Number(discount || 0),
+    });
+
+    const priceNum =
+      typeof packagePrice === 'number' && packagePrice > 0
+        ? packagePrice
+        : dynamicCalc.totalCost;
     const advNum = Number(advancePaid || 0);
+
     const newEvent = {
       id: `evt-${Date.now().toString().slice(-6)}`,
       clientId,
       title,
       category: category || 'Wedding',
       weddingSubtype,
-      packageId,
-      eventDate,
-      startTime: startTime || '18:00',
-      endTime: endTime || '23:00',
-      venue: venue || 'Burewala',
+      packageId: resolvedPackageId,
+      customPackageName: customPackageName || customPackageToCreate?.name || undefined,
+      packageBasePrice: resolvedPkgBasePrice,
+      eventDate: rawDays[0]?.date || eventDate,
+      timingMode: primaryMode,
+      startTime: enforcedPrimaryWindow.startTime,
+      endTime: enforcedPrimaryWindow.endTime,
+      venue: venue || rawDays[0]?.venue || 'Burewala',
       city: city || 'Burewala',
       status: (body.status || 'Confirmed') as any,
       packagePrice: priceNum,
@@ -974,7 +1143,14 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       createdBy: user?.id || 'usr-admin',
       createdDate: new Date().toISOString(),
       updatedDate: new Date().toISOString(),
-      isMultiDay: !!isMultiDay,
+      isMultiDay: Boolean(isMultiDay || rawDays.length > 1),
+      daysCount,
+      cameraCategory: camCatKey,
+      cameraCount: resolvedCamCount,
+      cameraRatePerDay: resolvedCamRate,
+      crewCategory: crewCatKey,
+      crewCount: resolvedCrewCount,
+      crewRatePerDay: resolvedCrewRate,
       staffCost: 0,
       rentalCost: 0,
       eventExpenses: 0,
@@ -985,13 +1161,67 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     };
     db.events.unshift(newEvent);
 
+    // Persist Day Schedules (for both Single-Day and Multi-Day events with per-date DM/Night timing)
+    const bookedDatesSet = new Set<string>();
+    rawDays.forEach((dInput, idx) => {
+      const dayMode: TimingMode =
+        dInput.timingMode === 'DAY_TIME' ? 'DAY_TIME' : 'NIGHT_TIME';
+      const enforcedDay = enforceDayTimeWindow(
+        dInput.startTime || (dayMode === 'DAY_TIME' ? '11:00' : '18:00'),
+        dInput.endTime || (dayMode === 'DAY_TIME' ? '16:00' : '23:00'),
+        dayMode
+      );
+      const dayDateStr = String(dInput.date || eventDate);
+      bookedDatesSet.add(dayDateStr);
+
+      const perDayCustomPrice =
+        typeof dInput.customPrice === 'number' && dInput.customPrice > 0
+          ? dInput.customPrice
+          : Math.round(priceNum / daysCount);
+
+      db.daySchedules.push({
+        id: `ds-${Date.now().toString().slice(-5)}-${idx}`,
+        eventId: newEvent.id,
+        dayNumber: idx + 1,
+        date: dayDateStr,
+        eventType: String(dInput.eventType || weddingSubtype || category || `Day ${idx + 1}`),
+        venue: String(dInput.venue || venue || city || 'Burewala'),
+        timingMode: dayMode,
+        durationHours: enforcedDay.durationHours,
+        startTime: enforcedDay.startTime,
+        endTime: enforcedDay.endTime,
+        callTime: enforcedDay.startTime,
+        dressCode: String(dInput.dressCode || 'Formal Studio Black'),
+        notes: String(
+          dInput.notes ||
+            (dayMode === 'DAY_TIME'
+              ? 'Day Time (DM) — Strict 5-Hour Window Enforced'
+              : 'Night Time Coverage')
+        ),
+        standardPackageId: resolvedPackageId,
+        customPackageName: customPackageName || customPackageToCreate?.name || undefined,
+        customPrice: perDayCustomPrice,
+        cameraCategory: camCatKey,
+        cameraCount: resolvedCamCount,
+        cameraRatePerDay: resolvedCamRate,
+        assignedCameraIds: explicitEqIds,
+        crewCategory: crewCatKey,
+        crewCount: resolvedCrewCount,
+        crewRatePerDay: resolvedCrewRate,
+        assignedCrewIds: explicitCrewIds,
+        photographersCount: Math.max(1, Math.ceil(resolvedCrewCount / 2)),
+        cinematographersCount: Math.max(1, Math.floor(resolvedCrewCount / 2)),
+        droneIncluded: true,
+      });
+    });
+
     if (advNum > 0) {
       const payment = {
         id: `pay-${Date.now().toString().slice(-6)}`,
         paymentId: `PAY-${Date.now().toString().slice(-4)}`,
         eventId: newEvent.id,
         amount: advNum,
-        paymentDate: eventDate,
+        paymentDate: newEvent.eventDate,
         method: 'Bank Transfer' as any,
         reference: 'Booking Advance Deposit',
         notes: 'Initial booking advance payment',
@@ -1008,116 +1238,109 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       eventId: newEvent.id,
       issueDate: new Date().toISOString().split('T')[0],
       validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      subtotal: priceNum,
+      subtotal: priceNum + Number(discount || 0),
       discount: Number(discount || 0),
       tax: Number(tax || 0),
-      total: priceNum - Number(discount || 0) + Number(tax || 0),
+      total: priceNum + Number(tax || 0),
       paymentTerms: db.profile.paymentTerms,
-      notes: 'Official studio proposal and agreement.',
+      notes: `Official studio proposal (${daysCount} day(s), ${CAMERA_CATEGORY_RATES[camCatKey].shortLabel}, ${CREW_CATEGORY_RATES[crewCatKey].shortLabel}).`,
       createdBy: user?.id || 'usr-admin',
     };
     db.quotations.unshift(newQuo);
 
-    // Automatic Resource & Equipment Allocation on Event Scheduling
+    // Camera Inventory Availability & Crew Allocation across all booked dates
     const autoAllocate = body.autoAllocateResources !== false;
-    const explicitEqIds: string[] = Array.isArray(body.selectedEquipmentIds)
-      ? body.selectedEquipmentIds
-      : [];
-    const explicitCrewIds: string[] = Array.isArray(body.selectedCrewIds)
-      ? body.selectedCrewIds
-      : [];
-
     if (autoAllocate) {
-      const sameDayEventIds = new Set(
-        db.events
-          .filter(e => e.id !== newEvent.id && e.eventDate === eventDate && e.status !== 'Cancelled')
-          .map(e => e.id)
+      const overlappingEventIds = new Set<string>();
+      db.events.forEach(e => {
+        if (e.id !== newEvent.id && e.status !== 'Cancelled' && bookedDatesSet.has(e.eventDate)) {
+          overlappingEventIds.add(e.id);
+        }
+      });
+      db.daySchedules.forEach(ds => {
+        if (ds.eventId !== newEvent.id && bookedDatesSet.has(ds.date)) {
+          overlappingEventIds.add(ds.eventId);
+        }
+      });
+
+      const busyEqIds = new Set(
+        db.equipmentAssignments
+          .filter(ea => overlappingEventIds.has(ea.eventId) && !ea.isCheckedIn)
+          .map(ea => ea.equipmentId)
       );
 
-      // 1. Allocate Equipment (either explicit selection or automatic essential kit)
-      const gearToAssign = db.equipment.filter(eq => explicitEqIds.includes(eq.id));
-      if (gearToAssign.length === 0) {
-        const busyEqIds = new Set(
-          db.equipmentAssignments
-            .filter(ea => sameDayEventIds.has(ea.eventId) && !ea.isCheckedIn)
-            .map(ea => ea.equipmentId)
+      // 1. Allocate Cameras & Gear (preventing double-booking on overlapping dates)
+      let gearToAssign = db.equipment.filter(
+        eq => explicitEqIds.includes(eq.id) && eq.status !== 'Maintenance' && !busyEqIds.has(eq.id)
+      );
+      if (gearToAssign.length === 0 && resolvedCamCount > 0) {
+        const availableCameras = db.equipment.filter(
+          eq =>
+            eq.category === 'Camera' &&
+            eq.status !== 'Maintenance' &&
+            !busyEqIds.has(eq.id)
         );
-        const availableGear = db.equipment.filter(
-          eq => eq.status !== 'Maintenance' && !busyEqIds.has(eq.id)
-        );
-        const pickedCategories = new Set<string>();
-        for (const eq of availableGear) {
-          if (!pickedCategories.has(eq.category) && gearToAssign.length < 4) {
-            pickedCategories.add(eq.category);
-            gearToAssign.push(eq);
-          }
-        }
+        gearToAssign = availableCameras.slice(0, resolvedCamCount);
       }
 
       gearToAssign.forEach((eq, idx) => {
+        const isCamera = eq.category === 'Camera';
+        const unitDailyRate = isCamera ? resolvedCamRate : eq.rentalRate || resolvedCamRate;
         db.equipmentAssignments.push({
           id: `eqa-${Date.now().toString().slice(-5)}-${idx}`,
           eventId: newEvent.id,
           equipmentId: eq.id,
           quantity: 1,
-          rentalRate: eq.rentalRate || 0,
-          rentalCost: eq.rentalRate || 0,
+          rentalRate: unitDailyRate,
+          rentalCost: unitDailyRate * daysCount,
           isCheckedOut: false,
           isCheckedIn: false,
-          notes: 'Auto-reserved via Calendar Booking',
+          notes: `Reserved via Calendar (${CAMERA_CATEGORY_RATES[camCatKey].shortLabel} x ${daysCount} day(s))`,
         });
       });
 
-      // 2. Allocate Crew (if explicitCrewIds provided or package has requirements)
-      let crewToAssign = db.teamMembers.filter(tm => explicitCrewIds.includes(tm.id));
-      if (crewToAssign.length === 0 && packageId) {
-        const pkg = db.packages.find(p => p.id === packageId);
-        const busyCrewIds = new Set(
-          db.teamAssignments
-            .filter(ta => sameDayEventIds.has(ta.eventId) && ta.assignmentStatus !== 'Cancelled')
-            .map(ta => ta.teamMemberId)
-        );
+      // 2. Allocate Staff/Crew with Per-Day Category Charges across each booked date
+      const busyCrewIds = new Set(
+        db.teamAssignments
+          .filter(ta => overlappingEventIds.has(ta.eventId) && ta.assignmentStatus !== 'Cancelled')
+          .map(ta => ta.teamMemberId)
+      );
+
+      let crewToAssign = db.teamMembers.filter(
+        tm => explicitCrewIds.includes(tm.id) && !busyCrewIds.has(tm.id)
+      );
+      if (crewToAssign.length === 0 && resolvedCrewCount > 0) {
         const availableCrew = db.teamMembers.filter(
           tm => tm.isActive && tm.availabilityStatus === 'Available' && !busyCrewIds.has(tm.id)
         );
-        if (pkg) {
-          const photogs = availableCrew
-            .filter(tm => tm.role === 'Photographer')
-            .slice(0, pkg.requiredPhotographers || 1);
-          const videog = availableCrew
-            .filter(tm => tm.role === 'Videographer')
-            .slice(0, pkg.requiredVideographers || 1);
-          const drone = availableCrew
-            .filter(tm => tm.role === 'Drone Operator')
-            .slice(0, pkg.requiredDroneOperators || 0);
-          crewToAssign = [...photogs, ...videog, ...drone];
-        }
+        crewToAssign = availableCrew.slice(0, resolvedCrewCount);
       }
 
-      crewToAssign.forEach((tm, idx) => {
-        const rate = tm.eventRate || tm.dailyRate || 15000;
-        db.teamAssignments.push({
-          id: `ta-${Date.now().toString().slice(-5)}-${idx}`,
-          eventId: newEvent.id,
-          teamMemberId: tm.id,
-          role: tm.role,
-          date: eventDate,
-          hours: 8,
-          rate,
-          cost: rate,
-          assignmentStatus: 'Assigned',
-          notes: 'Auto-allocated via Calendar Booking',
+      Array.from(bookedDatesSet).forEach((dateItem, dIdx) => {
+        crewToAssign.forEach((tm, idx) => {
+          db.teamAssignments.push({
+            id: `ta-${Date.now().toString().slice(-5)}-${dIdx}-${idx}`,
+            eventId: newEvent.id,
+            teamMemberId: tm.id,
+            role: tm.role,
+            date: dateItem,
+            hours: primaryMode === 'DAY_TIME' ? 5 : 8,
+            rate: resolvedCrewRate,
+            cost: resolvedCrewRate,
+            assignmentStatus: 'Assigned',
+            notes: `Allocated via Calendar (${CREW_CATEGORY_RATES[crewCatKey].shortLabel})`,
+          });
         });
       });
     }
 
     recordAdminAudit(
       'Events & Bookings',
-      ['title', 'eventDate', 'venue', 'packagePrice', 'equipmentAllocation'],
-      `Created event booking "${newEvent.title}" on ${newEvent.eventDate} at ${newEvent.venue}, ${newEvent.city} (PKR ${priceNum.toLocaleString()}) with automatic resource allocation.`
+      ['title', 'eventDate', 'isMultiDay', 'timingMode', 'cameraCategory', 'crewCategory', 'packagePrice'],
+      `Created ${newEvent.isMultiDay ? `${daysCount}-Day` : 'Single-Day'} event booking "${newEvent.title}" starting ${newEvent.eventDate} at ${newEvent.venue}, ${newEvent.city} (PKR ${priceNum.toLocaleString()}) with ${resolvedCamCount} camera(s) (${camCatKey}) and ${resolvedCrewCount} crew (${crewCatKey}).`
     );
-    dbInstance.save();
-    dbInstance.recalculateEvent(newEvent.id);
+    await dbInstance.recalculateEvent(newEvent.id);
+    await dbInstance.save();
     return NextResponse.json(newEvent);
   }
 
@@ -1134,8 +1357,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       Object.keys(body),
       `Updated event "${db.events[index].title}" (${Object.keys(body).slice(0, 5).join(', ')}).`
     );
-    dbInstance.save();
-    const updated = dbInstance.recalculateEvent(id);
+    const updated = await dbInstance.recalculateEvent(id);
+    await dbInstance.save();
     return NextResponse.json(updated);
   }
 
@@ -1166,7 +1389,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const id = slug[1];
-    const updated = dbInstance.recalculateEvent(id);
+    const updated = await dbInstance.recalculateEvent(id);
     if (!updated) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     return NextResponse.json(updated);
   }
@@ -1252,7 +1475,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
 
     if (newAssignments.length > 0) {
       db.teamAssignments.push(...newAssignments);
-      dbInstance.recalculateEvent(event.id);
+      await dbInstance.recalculateEvent(event.id);
     }
 
     let tempHireRecommendation = null;
@@ -1305,8 +1528,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       customPrice: Number(body.customPrice || 0),
     };
     db.daySchedules.push(newSchedule);
-    dbInstance.save();
-    dbInstance.recalculateEvent(body.eventId);
+    await dbInstance.recalculateEvent(body.eventId);
+    await dbInstance.save();
     return NextResponse.json(newSchedule);
   }
 
@@ -1318,8 +1541,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const index = db.daySchedules.findIndex(d => d.id === id);
     if (index === -1) return NextResponse.json({ error: 'Day schedule not found' }, { status: 404 });
     db.daySchedules[index] = { ...db.daySchedules[index], ...body };
-    dbInstance.save();
-    dbInstance.recalculateEvent(db.daySchedules[index].eventId);
+    await dbInstance.recalculateEvent(db.daySchedules[index].eventId);
+    await dbInstance.save();
     return NextResponse.json(db.daySchedules[index]);
   }
 
@@ -1331,8 +1554,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     if (!schedule) return NextResponse.json({ error: 'Day schedule not found' }, { status: 404 });
     const eventId = schedule.eventId;
     db.daySchedules = db.daySchedules.filter(d => d.id !== id);
-    dbInstance.save();
-    dbInstance.recalculateEvent(eventId);
+    await dbInstance.recalculateEvent(eventId);
+    await dbInstance.save();
     return NextResponse.json({ success: true });
   }
 
@@ -1421,8 +1644,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       assignmentStatus: (assignmentStatus || 'Confirmed') as any,
     };
     db.teamAssignments.push(newAssignment);
-    dbInstance.save();
-    dbInstance.recalculateEvent(eventId);
+    await dbInstance.recalculateEvent(eventId);
+    await dbInstance.save();
     return NextResponse.json(newAssignment);
   }
 
@@ -1434,8 +1657,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const index = db.teamAssignments.findIndex(a => a.id === id);
     if (index === -1) return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
     db.teamAssignments[index] = { ...db.teamAssignments[index], ...body };
-    dbInstance.save();
-    dbInstance.recalculateEvent(db.teamAssignments[index].eventId);
+    await dbInstance.recalculateEvent(db.teamAssignments[index].eventId);
+    await dbInstance.save();
     return NextResponse.json(db.teamAssignments[index]);
   }
 
@@ -1447,8 +1670,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     if (!assignment) return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
     const eventId = assignment.eventId;
     db.teamAssignments = db.teamAssignments.filter(a => a.id !== id);
-    dbInstance.save();
-    dbInstance.recalculateEvent(eventId);
+    await dbInstance.recalculateEvent(eventId);
+    await dbInstance.save();
     return NextResponse.json({ success: true });
   }
 
@@ -1547,8 +1770,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     };
     equip.currentUsageCount = (equip.currentUsageCount || 0) + 1;
     db.equipmentAssignments.push(newAssignment);
-    dbInstance.save();
-    dbInstance.recalculateEvent(eventId);
+    await dbInstance.recalculateEvent(eventId);
+    await dbInstance.save();
     return NextResponse.json(newAssignment);
   }
 
@@ -1560,8 +1783,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const index = db.equipmentAssignments.findIndex(a => a.id === id);
     if (index === -1) return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
     db.equipmentAssignments[index] = { ...db.equipmentAssignments[index], ...body };
-    dbInstance.save();
-    dbInstance.recalculateEvent(db.equipmentAssignments[index].eventId);
+    await dbInstance.recalculateEvent(db.equipmentAssignments[index].eventId);
+    await dbInstance.save();
     return NextResponse.json(db.equipmentAssignments[index]);
   }
 
@@ -1573,8 +1796,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     if (!assignment) return NextResponse.json({ error: 'Assignment not found' }, { status: 404 });
     const eventId = assignment.eventId;
     db.equipmentAssignments = db.equipmentAssignments.filter(a => a.id !== id);
-    dbInstance.save();
-    dbInstance.recalculateEvent(eventId);
+    await dbInstance.recalculateEvent(eventId);
+    await dbInstance.save();
     return NextResponse.json({ success: true });
   }
 
@@ -1686,8 +1909,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       ['category', 'amount', 'description'],
       `Added event expense "${newExp.description || newExp.category}" of PKR ${newExp.amount.toLocaleString()}.`
     );
-    dbInstance.save();
-    dbInstance.recalculateEvent(body.eventId);
+    await dbInstance.recalculateEvent(body.eventId);
+    await dbInstance.save();
     return NextResponse.json(newExp);
   }
 
@@ -1704,8 +1927,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       Object.keys(body),
       `Updated event expense "${db.eventExpenses[index].description || db.eventExpenses[index].category}" (PKR ${Number(db.eventExpenses[index].amount || 0).toLocaleString()}).`
     );
-    dbInstance.save();
-    dbInstance.recalculateEvent(db.eventExpenses[index].eventId);
+    await dbInstance.recalculateEvent(db.eventExpenses[index].eventId);
+    await dbInstance.save();
     return NextResponse.json(db.eventExpenses[index]);
   }
 
@@ -1722,8 +1945,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       ['deleted'],
       `Deleted event expense "${expense.description || expense.category}" (PKR ${expense.amount.toLocaleString()}).`
     );
-    dbInstance.save();
-    dbInstance.recalculateEvent(eventId);
+    await dbInstance.recalculateEvent(eventId);
+    await dbInstance.save();
     return NextResponse.json({ success: true });
   }
 
@@ -1875,8 +2098,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       createdBy: user?.id || 'usr-admin',
     };
     db.payments.unshift(newPayment);
-    dbInstance.save();
-    dbInstance.recalculateEvent(eventId);
+    await dbInstance.recalculateEvent(eventId);
+    await dbInstance.save();
     return NextResponse.json(newPayment);
   }
 
@@ -1888,8 +2111,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     if (!payment) return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
     const eventId = payment.eventId;
     db.payments = db.payments.filter(p => p.id !== id);
-    dbInstance.save();
-    dbInstance.recalculateEvent(eventId);
+    await dbInstance.recalculateEvent(eventId);
+    await dbInstance.save();
     return NextResponse.json({ success: true });
   }
 
