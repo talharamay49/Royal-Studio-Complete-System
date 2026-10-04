@@ -1,18 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Camera, X } from "lucide-react";
-import {
-  portfolioCategories,
-} from "@/lib/data";
+import { portfolioCategories } from "@/lib/data";
 import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import type { PortfolioCategory, PortfolioItem } from "@/types";
+import BreadcrumbNav from "@/components/layout/BreadcrumbNav";
 import SectionHeading from "@/components/shared/SectionHeading";
 import AnimatedSection from "@/components/shared/AnimatedSection";
+import OptimizedThumbnail from "@/components/shared/OptimizedThumbnail";
+import { PortfolioGridSkeleton } from "@/components/shared/SkeletonScreens";
 import { Button } from "@/components/ui/button";
+import { ROYAL_BLUR_DATA_URL } from "@/lib/blur-placeholder";
 
 interface PortfolioGridProps {
   limit?: number;
@@ -25,10 +27,36 @@ export default function PortfolioGrid({
   showHeading = true,
   showViewAll = true,
 }: PortfolioGridProps) {
-  const { portfolioItems } = usePublicWebsiteCMS();
+  const { portfolioItems, isLoading } = usePublicWebsiteCMS();
   const [activeFilter, setActiveFilter] = useState<PortfolioCategory>("all");
   const [lightbox, setLightbox] = useState<PortfolioItem | null>(null);
   const [visibleCount, setVisibleCount] = useState(limit ?? 9);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const catParam = params.get("category") as PortfolioCategory | null;
+      if (catParam && portfolioCategories.some((c) => c.id === catParam)) {
+        setActiveFilter(catParam);
+      }
+    }
+  }, []);
+
+  if (isLoading) {
+    return (
+      <section
+        id={showHeading ? undefined : "portfolio"}
+        className={showHeading ? "section-padding bg-surface" : ""}
+      >
+        <div className="mx-auto max-w-7xl 2xl:max-w-[1600px]">
+          <PortfolioGridSkeleton count={limit ?? 6} />
+        </div>
+      </section>
+    );
+  }
+
+  const activeCategoryLabel =
+    portfolioCategories.find((c) => c.id === activeFilter)?.label || "All Works";
 
   const filtered =
     activeFilter === "all"
@@ -46,7 +74,7 @@ export default function PortfolioGrid({
       id={showHeading ? undefined : "portfolio"}
       className={showHeading ? "section-padding bg-surface" : ""}
     >
-      <div className="mx-auto max-w-7xl">
+      <div className="mx-auto max-w-7xl 2xl:max-w-[1600px]">
         {showHeading ? (
           <AnimatedSection>
             <SectionHeading
@@ -55,6 +83,23 @@ export default function PortfolioGrid({
               description="Nikah, Mehndi, Barat, Walima, and beyond — explore our curated wedding gallery."
             />
           </AnimatedSection>
+        ) : activeFilter !== "all" ? (
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+            <BreadcrumbNav
+              variant="surface"
+              items={[
+                { name: "Home", url: "/" },
+                { name: "Portfolio", url: "/portfolio" },
+                {
+                  name: activeCategoryLabel,
+                  url: `/portfolio?category=${activeFilter}`,
+                },
+              ]}
+            />
+            <span className="text-xs font-medium text-text-muted">
+              Showing {displayed.length} of {filtered.length} works
+            </span>
+          </div>
         ) : (
           <h2 className="sr-only">Portfolio Gallery</h2>
         )}
@@ -68,7 +113,7 @@ export default function PortfolioGrid({
                   setActiveFilter(cat.id);
                   setVisibleCount(limit ?? 9);
                 }}
-                className={`rounded-full px-4 py-2 text-xs font-medium tracking-widest uppercase transition-all duration-300 ${
+                className={`rounded-full px-4 py-2 text-xs font-medium tracking-widest uppercase transition-all duration-300 cursor-pointer ${
                   activeFilter === cat.id
                     ? "bg-primary text-secondary"
                     : "border border-border bg-surface text-text-muted hover:border-accent hover:text-accent"
@@ -103,59 +148,50 @@ export default function PortfolioGrid({
             </div>
           </div>
         ) : (
-        <div key={activeFilter} className="columns-1 gap-4 sm:columns-2 lg:columns-3">
-          {displayed.map((item, i) => (
-            <motion.button
-              key={item.id}
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.35, delay: i * 0.03 }}
-              onClick={() => setLightbox(item)}
-              className="group relative mb-4 block w-full break-inside-avoid overflow-hidden rounded-[12px]"
-            >
-              <div
-                className={`relative overflow-hidden ${
-                  item.aspect === "tall"
-                    ? "aspect-[3/4]"
-                    : item.aspect === "wide"
-                      ? "aspect-[16/10]"
-                      : "aspect-square"
-                }`}
+          <div
+            key={activeFilter}
+            className="columns-1 gap-4 sm:columns-2 lg:columns-3 2xl:columns-4"
+          >
+            {displayed.map((item, i) => (
+              <motion.button
+                key={item.id}
+                initial={{ opacity: 0, scale: 0.97 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.35, delay: i * 0.03 }}
+                onClick={() => setLightbox(item)}
+                className="group relative mb-4 block w-full break-inside-avoid overflow-hidden rounded-[12px] cursor-pointer"
               >
-                {item.image.startsWith("data:") || item.image.startsWith("http") ? (
-                  <img
-                    src={item.image}
-                    alt={item.title}
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                  />
-                ) : (
-                  <Image
-                    src={item.image}
-                    alt={item.title}
-                    fill
-                    loading="lazy"
-                    className="object-cover transition-transform duration-700 group-hover:scale-105"
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                  />
-                )}
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-primary/60 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
-                  <h3 className="font-display text-xl text-secondary">
-                    {item.title}
-                  </h3>
-                  <p className="mt-1 text-xs tracking-widest uppercase text-accent">
-                    {item.category}
-                  </p>
-                  {item.location && (
-                    <p className="mt-1 text-xs text-secondary/70">
-                      {item.location}
+                <OptimizedThumbnail
+                  src={item.image}
+                  alt={item.title}
+                  aspect={
+                    item.aspect === "tall"
+                      ? "tall"
+                      : item.aspect === "wide"
+                      ? "wide"
+                      : "square"
+                  }
+                  priority={i < 3}
+                  blurDataURL={ROYAL_BLUR_DATA_URL}
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 25vw"
+                >
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-primary/60 opacity-0 transition-opacity duration-500 group-hover:opacity-100">
+                    <h3 className="font-display text-xl text-secondary">
+                      {item.title}
+                    </h3>
+                    <p className="mt-1 text-xs tracking-widest uppercase text-accent">
+                      {item.category}
                     </p>
-                  )}
-                </div>
-              </div>
-            </motion.button>
-          ))}
-        </div>
+                    {item.location && (
+                      <p className="mt-1 text-xs text-secondary/70">
+                        {item.location}
+                      </p>
+                    )}
+                  </div>
+                </OptimizedThumbnail>
+              </motion.button>
+            ))}
+          </div>
         )}
 
         {hasMore && (
@@ -189,7 +225,7 @@ export default function PortfolioGrid({
           >
             <button
               onClick={() => setLightbox(null)}
-              className="absolute top-6 right-6 z-10 text-secondary hover:text-accent"
+              className="absolute top-6 right-6 z-10 text-secondary hover:text-accent cursor-pointer"
               aria-label="Close"
             >
               <X size={28} />
@@ -202,10 +238,11 @@ export default function PortfolioGrid({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="relative aspect-[16/10] w-full overflow-hidden rounded-[12px]">
-                {lightbox.image.startsWith("data:") || lightbox.image.startsWith("http") ? (
+                {lightbox.image.startsWith("data:") ? (
                   <img
                     src={lightbox.image}
                     alt={lightbox.title}
+                    referrerPolicy="no-referrer"
                     className="h-full w-full object-contain"
                   />
                 ) : (
@@ -213,6 +250,9 @@ export default function PortfolioGrid({
                     src={lightbox.image}
                     alt={lightbox.title}
                     fill
+                    placeholder="blur"
+                    blurDataURL={ROYAL_BLUR_DATA_URL}
+                    referrerPolicy="no-referrer"
                     className="object-contain"
                     sizes="90vw"
                   />

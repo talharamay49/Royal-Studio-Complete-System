@@ -28,10 +28,10 @@ export default function ContactCTA() {
             </Button>
             <WhatsAppButton />
             <Button asChild variant="outline" size="lg">
-              <Link href={`tel:${primaryPhone.replace(/[^0-9+]/g, "")}`}>
+              <a href={`tel:${primaryPhone.replace(/[^0-9+]/g, "")}`}>
                 <Phone size={16} />
-                Call {primaryPhone}
-              </Link>
+                <span>Call {primaryPhone}</span>
+              </a>
             </Button>
           </div>
         </AnimatedSection>

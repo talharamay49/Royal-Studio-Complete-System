@@ -1,43 +1,56 @@
-const TOKEN_KEY = 'royal_studio_auth_token';
+import {
+  getSecureToken,
+  saveSecureSession,
+  clearSecureSession,
+} from './secureAuthStorage';
 
 export function getStoredToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return getSecureToken();
 }
 
 export function setStoredToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
+  void saveSecureSession(token);
 }
 
 export function removeStoredToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  void clearSecureSession();
 }
 
 export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getStoredToken();
+  const token = getSecureToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...(options.headers as Record<string, string> || {})
+    ...((options.headers as Record<string, string>) || {})
   };
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(endpoint, {
+  const normalizedUrl = endpoint.startsWith('/api/')
+    ? endpoint
+    : `/api${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
+
+  const response = await fetch(normalizedUrl, {
     ...options,
+    credentials: 'include',
     headers
   });
 
-  if (response.status === 401) {
-    removeStoredToken();
-    window.dispatchEvent(new Event('auth:unauthorized'));
-    throw new Error('Session expired. Please log in again.');
-  }
-
   const data = await response.json().catch(() => ({}));
+
+  if (response.status === 401) {
+    if (!normalizedUrl.includes('/auth/login')) {
+      await clearSecureSession();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('auth:unauthorized'));
+      }
+    }
+    throw new Error(data.error || 'Session expired. Please log in again.');
+  }
 
   if (!response.ok) {
     throw new Error(data.error || `Request failed with status ${response.status}`);

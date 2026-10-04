@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Check } from "lucide-react";
 import { aboutHighlights, siteConfig } from "@/lib/data";
+import { ROYAL_BLUR_DATA_URL } from "@/lib/blur-placeholder";
 import SectionHeading from "@/components/shared/SectionHeading";
 import AnimatedSection from "@/components/shared/AnimatedSection";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,9 @@ export default function AboutPreview() {
                   src="/team/co-founders.webp"
                   alt="Royal Studio founders and team"
                   fill
+                  placeholder="blur"
+                  blurDataURL={ROYAL_BLUR_DATA_URL}
+                  referrerPolicy="no-referrer"
                   className="object-cover"
                   sizes="(max-width: 1024px) 100vw, 50vw"
                 />

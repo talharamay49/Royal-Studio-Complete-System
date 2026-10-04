@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
+import PageTransitionWrapper from "@/components/layout/PageTransitionWrapper";
+import TopLoadingBar from "@/components/layout/TopLoadingBar";
+import FloatingWhatsAppButton from "@/components/shared/FloatingWhatsAppButton";
 import { StudioProfileProvider } from "@/components/shared/StudioProfileContext";
 import { pageKeywords, siteConfig } from "@/lib/data";
 import { getLocalBusinessSchema, getWebsiteSchema } from "@/lib/seo";
@@ -55,8 +58,10 @@ export default function RootLayout({
       </head>
       <body className="bg-background text-text antialiased">
         <StudioProfileProvider>
+          <TopLoadingBar />
           <Navbar />
-          {children}
+          <PageTransitionWrapper>{children}</PageTransitionWrapper>
+          <FloatingWhatsAppButton />
           <Footer />
         </StudioProfileProvider>
       </body>

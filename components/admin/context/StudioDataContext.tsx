@@ -1,4 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useSyncExternalStore,
+  ReactNode,
+} from 'react';
 import {
   User,
   Client,
@@ -20,9 +28,10 @@ import {
   AdminProfile,
   TempHireRecommendation,
   AIBriefing,
-  AuditLogEntry
+  AuditLogEntry,
 } from '../types';
 import { apiRequest } from '../services/api';
+import { erpDatabase } from '../services/databaseService';
 import { useAuth } from './AuthContext';
 
 export interface ToastMessage {
@@ -31,14 +40,14 @@ export interface ToastMessage {
   message: string;
 }
 
-interface StudioDataContextType {
+export interface StudioDataContextType {
   isLoading: boolean;
   error: string | null;
   toasts: ToastMessage[];
   addToast: (message: string, type?: 'success' | 'error' | 'warning' | 'info') => void;
   removeToast: (id: string) => void;
 
-  // Data Entities
+  // Persistent Database Entities (backed by UnifiedErpDatabaseService)
   profile: AdminProfile | null;
   profileAuditLogs: AuditLogEntry[];
   users: User[];
@@ -60,7 +69,7 @@ interface StudioDataContextType {
   tasks: EventTask[];
   tempHireRecommendations: TempHireRecommendation[];
 
-  // Refresh
+  // Refresh & Sync
   refreshAll: () => Promise<void>;
 
   // CRUD Operations
@@ -123,7 +132,13 @@ interface StudioDataContextType {
   fetchAIBriefing: () => Promise<AIBriefing>;
 
   // User Accounts & Staff Login Management
-  createStaffUser: (userData: { teamMemberId: string; email: string; password: string; name?: string; phone?: string }) => Promise<User>;
+  createStaffUser: (userData: {
+    teamMemberId: string;
+    email: string;
+    password: string;
+    name?: string;
+    phone?: string;
+  }) => Promise<User>;
   updateUserStatus: (id: string, status: 'ACTIVE' | 'DISABLED') => Promise<void>;
   resetUserPassword: (id: string, password: string) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
@@ -133,105 +148,77 @@ const StudioDataContext = createContext<StudioDataContextType | undefined>(undef
 
 export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Entities state
-  const [profile, setProfile] = useState<AdminProfile | null>(null);
-  const [profileAuditLogs, setProfileAuditLogs] = useState<AuditLogEntry[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [clients, setClients] = useState<Client[]>([]);
-  const [events, setEvents] = useState<Event[]>([]);
-  const [daySchedules, setDaySchedules] = useState<EventDaySchedule[]>([]);
-  const [packages, setPackages] = useState<Package[]>([]);
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
-  const [teamAssignments, setTeamAssignments] = useState<EventTeamAssignment[]>([]);
-  const [teamPayments, setTeamPayments] = useState<TeamPayment[]>([]);
-  const [equipment, setEquipment] = useState<Equipment[]>([]);
-  const [equipmentAssignments, setEquipmentAssignments] = useState<EventEquipmentAssignment[]>([]);
-  const [maintenanceLogs, setMaintenanceLogs] = useState<EquipmentMaintenanceLog[]>([]);
-  const [eventExpenses, setEventExpenses] = useState<EventExpense[]>([]);
-  const [studioExpenses, setStudioExpenses] = useState<StudioExpense[]>([]);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [payments, setPayments] = useState<Payment[]>([]);
-  const [quotations, setQuotations] = useState<Quotation[]>([]);
-  const [tasks, setTasks] = useState<EventTask[]>([]);
-  const [tempHireRecommendations, setTempHireRecommendations] = useState<TempHireRecommendation[]>([]);
+  // Subscribe directly to the Unified Persistent ERP Database Service (no ephemeral in-memory entity states)
+  const dbSnapshot = useSyncExternalStore(
+    erpDatabase.subscribe,
+    erpDatabase.getSnapshot,
+    erpDatabase.getServerSnapshot
+  );
 
-  const addToast = useCallback((message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4500);
-  }, []);
+  const addToast = useCallback(
+    (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'success') => {
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      setToasts((prev) => [...prev, { id, message, type }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 4500);
+    },
+    []
+  );
 
   const removeToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const refreshAll = useCallback(async () => {
     if (!user) return;
-    try {
-      setIsLoading(true);
-      setError(null);
-      const data = await apiRequest<any>('/api/db/all');
-      setProfile(data.profile);
-      setProfileAuditLogs(data.profileAuditLogs || []);
-      setUsers(data.users || []);
-      setClients(data.clients || []);
-      setEvents(data.events || []);
-      setDaySchedules(data.daySchedules || []);
-      setPackages(data.packages || []);
-      setTeamMembers(data.teamMembers || []);
-      setTeamAssignments(data.teamAssignments || []);
-      setTeamPayments(data.teamPayments || []);
-      setEquipment(data.equipment || []);
-      setEquipmentAssignments(data.equipmentAssignments || []);
-      setMaintenanceLogs(data.maintenanceLogs || []);
-      setEventExpenses(data.eventExpenses || []);
-      setStudioExpenses(data.studioExpenses || []);
-      setInvoices(data.invoices || []);
-      setPayments(data.payments || []);
-      setQuotations(data.quotations || []);
-      setTasks(data.tasks || []);
-      setTempHireRecommendations(data.tempHireRecommendations || []);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load studio data.');
-    } finally {
-      setIsLoading(false);
-    }
+    await erpDatabase.syncAllFromServer().catch(() => {});
   }, [user]);
 
   useEffect(() => {
     if (user) {
-      refreshAll();
+      void erpDatabase.syncAllFromServer().catch(() => {});
     } else {
-      // Load public studio profile even when unauthenticated (e.g., LoginPage)
-      fetch('/api/profile')
-        .then(r => (r.ok ? r.json() : null))
-        .then(p => {
-          if (p) setProfile(p);
-        })
-        .catch(() => {})
-        .finally(() => setIsLoading(false));
+      void erpDatabase.syncPublicProfile();
     }
-  }, [user, refreshAll]);
+  }, [user]);
 
-  // Operations
+  // Listen for global client-side errors captured by AdminErrorBoundary / adminErrorLogger
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleAdminErrorAlert = (event: globalThis.Event) => {
+      const customEvent = event as CustomEvent<{ id?: string; message?: string; route?: string }>;
+      const msg = customEvent.detail?.message || 'Unexpected client-side error captured.';
+      const ref = customEvent.detail?.id ? ` [${customEvent.detail.id}]` : '';
+      addToast(`Admin Alert${ref}: ${msg}`, 'error');
+    };
+    window.addEventListener('royalstudio:admin-error-alert', handleAdminErrorAlert);
+    return () => {
+      window.removeEventListener('royalstudio:admin-error-alert', handleAdminErrorAlert);
+    };
+  }, [addToast]);
+
+  // Operations backed by UnifiedErpDatabaseService
   const updateProfile = async (profileData: Partial<AdminProfile>, auditSection?: string) => {
     try {
       const updated = await apiRequest<AdminProfile>('/api/profile', {
         method: 'PUT',
-        body: JSON.stringify(auditSection ? { ...profileData, _auditSection: auditSection } : profileData)
+        body: JSON.stringify(
+          auditSection ? { ...profileData, _auditSection: auditSection } : profileData
+        ),
       });
-      setProfile(updated);
+      let nextLogs: AuditLogEntry[] | undefined;
       try {
         const logs = await apiRequest<AuditLogEntry[]>('/api/profile/audit-logs');
-        if (Array.isArray(logs)) setProfileAuditLogs(logs);
+        if (Array.isArray(logs)) nextLogs = logs;
       } catch {
         // Ignore if not admin
+      }
+      erpDatabase.setProfile(updated, nextLogs);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('royalstudio:profile-updated', { detail: updated }));
       }
       addToast('Studio profile and settings updated successfully.');
     } catch (err: any) {
@@ -242,11 +229,20 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
 
   const resetProfileToDefaults = async () => {
     try {
-      const res = await apiRequest<{ profile: AdminProfile; auditLogs: AuditLogEntry[] }>('/api/profile/reset', {
-        method: 'POST'
-      });
-      if (res.profile) setProfile(res.profile);
-      if (res.auditLogs) setProfileAuditLogs(res.auditLogs);
+      const res = await apiRequest<{ profile: AdminProfile; auditLogs: AuditLogEntry[] }>(
+        '/api/profile/reset',
+        {
+          method: 'POST',
+        }
+      );
+      if (res.profile) {
+        erpDatabase.setProfile(res.profile, res.auditLogs);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(
+            new CustomEvent('royalstudio:profile-updated', { detail: res.profile })
+          );
+        }
+      }
       addToast('Restored official Royal Studio profile defaults.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -258,9 +254,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       const newClient = await apiRequest<Client>('/api/clients', {
         method: 'POST',
-        body: JSON.stringify(clientData)
+        body: JSON.stringify(clientData),
       });
-      setClients(prev => [newClient, ...prev]);
+      erpDatabase.insertRecord('clients', newClient, true);
       addToast('Client created successfully.');
       return newClient;
     } catch (err: any) {
@@ -273,9 +269,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       const updated = await apiRequest<Client>(`/api/clients/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(clientData)
+        body: JSON.stringify(clientData),
       });
-      setClients(prev => prev.map(c => (c.id === id ? updated : c)));
+      erpDatabase.updateRecord('clients', id, updated);
       addToast('Client updated successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -286,7 +282,7 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteClient = async (id: string) => {
     try {
       await apiRequest(`/api/clients/${id}`, { method: 'DELETE' });
-      setClients(prev => prev.filter(c => c.id !== id));
+      erpDatabase.deleteRecord('clients', id);
       addToast('Client deleted successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -298,9 +294,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       const newEvent = await apiRequest<Event>('/api/events', {
         method: 'POST',
-        body: JSON.stringify(eventData)
+        body: JSON.stringify(eventData),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Event created successfully.');
       return newEvent;
     } catch (err: any) {
@@ -313,9 +309,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       const updated = await apiRequest<Event>(`/api/events/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(eventData)
+        body: JSON.stringify(eventData),
       });
-      setEvents(prev => prev.map(e => (e.id === id ? updated : e)));
+      erpDatabase.updateRecord('events', id, updated);
       addToast('Event updated successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -326,7 +322,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteEvent = async (id: string) => {
     try {
       await apiRequest(`/api/events/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('events', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Event deleted successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -337,9 +334,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const recalculateEvent = async (id: string) => {
     try {
       const updated = await apiRequest<Event>(`/api/events/${id}/recalculate`, {
-        method: 'POST'
+        method: 'POST',
       });
-      setEvents(prev => prev.map(e => (e.id === id ? updated : e)));
+      erpDatabase.updateRecord('events', id, updated);
       addToast('Event financials recalculated successfully.');
       return updated;
     } catch (err: any) {
@@ -351,9 +348,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const autoAssignCrew = async (eventId: string) => {
     try {
       const res = await apiRequest<any>(`/api/events/${eventId}/auto-assign`, {
-        method: 'POST'
+        method: 'POST',
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       if (res.hasShortage) {
         addToast(
           `Insufficient team availability: Shortage of ${res.missingRoles.join(', ')}. Temporary hire recommendation generated.`,
@@ -373,9 +370,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/day-schedules', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Event day schedule added.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -387,9 +384,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest(`/api/day-schedules/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Day schedule updated.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -400,7 +397,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteDaySchedule = async (id: string) => {
     try {
       await apiRequest(`/api/day-schedules/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('daySchedules', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Day schedule removed.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -412,9 +410,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/team', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Team member created successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -426,9 +424,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest(`/api/team/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Team member updated successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -439,7 +437,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteTeamMember = async (id: string) => {
     try {
       await apiRequest(`/api/team/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('teamMembers', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Team member removed.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -451,9 +450,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/team-assignments', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Team member assigned to event.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -464,7 +463,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteTeamAssignment = async (id: string) => {
     try {
       await apiRequest(`/api/team-assignments/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('teamAssignments', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Assignment removed.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -476,9 +476,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/equipment', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Equipment added successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -490,9 +490,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest(`/api/equipment/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Equipment updated successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -503,7 +503,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteEquipment = async (id: string) => {
     try {
       await apiRequest(`/api/equipment/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('equipment', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Equipment deleted.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -515,9 +516,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/equipment-assignments', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Equipment assigned to event.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -528,7 +529,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteEquipmentAssignment = async (id: string) => {
     try {
       await apiRequest(`/api/equipment-assignments/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('equipmentAssignments', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Equipment assignment removed.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -540,9 +542,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/maintenance-logs', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Maintenance log recorded.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -554,9 +556,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/packages', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Package created successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -568,9 +570,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest(`/api/packages/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Package updated successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -581,7 +583,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deletePackage = async (id: string) => {
     try {
       await apiRequest(`/api/packages/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('packages', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Package deleted.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -593,9 +596,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/expenses', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Event expense recorded.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -606,7 +609,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteExpense = async (id: string) => {
     try {
       await apiRequest(`/api/expenses/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('eventExpenses', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Expense removed.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -618,9 +622,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/studio-expenses', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Studio overhead expense recorded.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -631,7 +635,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteStudioExpense = async (id: string) => {
     try {
       await apiRequest(`/api/studio-expenses/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('studioExpenses', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Studio expense removed.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -643,9 +648,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/invoices', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Invoice generated successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -656,7 +661,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteInvoice = async (id: string) => {
     try {
       await apiRequest(`/api/invoices/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('invoices', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Invoice deleted.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -668,9 +674,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/payments', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Payment recorded successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -681,7 +687,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deletePayment = async (id: string) => {
     try {
       await apiRequest(`/api/payments/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('payments', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Payment deleted.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -693,9 +700,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/quotations', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Quotation created successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -707,9 +714,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/tasks', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Task created successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -721,9 +728,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest(`/api/tasks/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Task updated successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -734,7 +741,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteTask = async (id: string) => {
     try {
       await apiRequest(`/api/tasks/${id}`, { method: 'DELETE' });
-      await refreshAll();
+      erpDatabase.deleteRecord('tasks', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Task deleted.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -746,9 +754,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest('/api/team-payments', {
         method: 'POST',
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast('Team payment recorded successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -760,9 +768,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       const res = await apiRequest('/api/payout-batch', {
         method: 'POST',
-        body: JSON.stringify({ payouts })
+        body: JSON.stringify({ payouts }),
       });
-      await refreshAll();
+      await erpDatabase.syncAllFromServer();
       addToast(`Batch ${res.batchId} processed with ${res.totalProcessed} payouts.`);
       return res;
     } catch (err: any) {
@@ -774,7 +782,7 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const fetchAIBriefing = async (): Promise<AIBriefing> => {
     try {
       const briefing = await apiRequest<AIBriefing>('/api/ai/briefing', {
-        method: 'POST'
+        method: 'POST',
       });
       return briefing;
     } catch (err: any) {
@@ -783,14 +791,20 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   };
 
-  const createStaffUser = async (userData: { teamMemberId: string; email: string; password: string; name?: string; phone?: string }) => {
+  const createStaffUser = async (userData: {
+    teamMemberId: string;
+    email: string;
+    password: string;
+    name?: string;
+    phone?: string;
+  }) => {
     try {
       const created = await apiRequest<User>('/api/users/staff', {
         method: 'POST',
-        body: JSON.stringify(userData)
+        body: JSON.stringify(userData),
       });
-      setUsers(prev => [...prev, created]);
-      await refreshAll();
+      erpDatabase.insertRecord('users', created, false);
+      await erpDatabase.syncAllFromServer();
       addToast(`Staff login credentials created for ${created.name}`);
       return created;
     } catch (err: any) {
@@ -803,10 +817,10 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       const updated = await apiRequest<User>(`/api/users/${id}/status`, {
         method: 'PUT',
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status }),
       });
-      setUsers(prev => prev.map(u => (u.id === id ? { ...u, status: updated.status } : u)));
-      await refreshAll();
+      erpDatabase.updateRecord('users', id, { status: updated.status });
+      await erpDatabase.syncAllFromServer();
       addToast(`Account status updated to ${status}`);
     } catch (err: any) {
       addToast(err.message || 'Failed to update user status', 'error');
@@ -818,7 +832,7 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     try {
       await apiRequest(`/api/users/${id}/password`, {
         method: 'PUT',
-        body: JSON.stringify({ password })
+        body: JSON.stringify({ password }),
       });
       addToast('Password has been securely reset.');
     } catch (err: any) {
@@ -830,10 +844,10 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   const deleteUser = async (id: string) => {
     try {
       await apiRequest(`/api/users/${id}`, {
-        method: 'DELETE'
+        method: 'DELETE',
       });
-      setUsers(prev => prev.filter(u => u.id !== id));
-      await refreshAll();
+      erpDatabase.deleteRecord('users', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Staff login account removed successfully.');
     } catch (err: any) {
       addToast(err.message || 'Failed to delete user account', 'error');
@@ -844,31 +858,31 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
   return (
     <StudioDataContext.Provider
       value={{
-        isLoading,
-        error,
+        isLoading: dbSnapshot.isLoading,
+        error: dbSnapshot.error,
         toasts,
         addToast,
         removeToast,
-        profile,
-        profileAuditLogs,
-        users,
-        clients,
-        events,
-        daySchedules,
-        packages,
-        teamMembers,
-        teamAssignments,
-        teamPayments,
-        equipment,
-        equipmentAssignments,
-        maintenanceLogs,
-        eventExpenses,
-        studioExpenses,
-        invoices,
-        payments,
-        quotations,
-        tasks,
-        tempHireRecommendations,
+        profile: dbSnapshot.profile,
+        profileAuditLogs: dbSnapshot.profileAuditLogs,
+        users: dbSnapshot.users,
+        clients: dbSnapshot.clients,
+        events: dbSnapshot.events,
+        daySchedules: dbSnapshot.daySchedules,
+        packages: dbSnapshot.packages,
+        teamMembers: dbSnapshot.teamMembers,
+        teamAssignments: dbSnapshot.teamAssignments,
+        teamPayments: dbSnapshot.teamPayments,
+        equipment: dbSnapshot.equipment,
+        equipmentAssignments: dbSnapshot.equipmentAssignments,
+        maintenanceLogs: dbSnapshot.maintenanceLogs,
+        eventExpenses: dbSnapshot.eventExpenses,
+        studioExpenses: dbSnapshot.studioExpenses,
+        invoices: dbSnapshot.invoices,
+        payments: dbSnapshot.payments,
+        quotations: dbSnapshot.quotations,
+        tasks: dbSnapshot.tasks,
+        tempHireRecommendations: dbSnapshot.tempHireRecommendations,
         refreshAll,
         updateProfile,
         resetProfileToDefaults,
@@ -915,7 +929,7 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
         createStaffUser,
         updateUserStatus,
         resetUserPassword,
-        deleteUser
+        deleteUser,
       }}
     >
       {children}

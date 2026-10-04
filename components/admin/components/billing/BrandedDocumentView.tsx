@@ -368,14 +368,15 @@ export const BrandedDocumentView: React.FC<BrandedDocumentViewProps> = ({
         </div>
 
         {/* OFFICIAL A4 DOCUMENT SHEET LAYERED DIRECTLY OVER image.png AS-IS */}
-        <div
-          ref={printContainerRef}
-          className="royal-print-sheet w-full max-w-[210mm] min-h-[297mm] bg-[#f0efe9] text-slate-900 rounded-xl shadow-2xl border border-amber-900/15 p-6 sm:p-10 relative overflow-hidden font-sans flex flex-col justify-between"
-          style={{
-            WebkitPrintColorAdjust: 'exact',
-            printColorAdjust: 'exact',
-          }}
-        >
+        <div className="w-full overflow-x-auto pb-4 flex justify-start md:justify-center">
+          <div
+            ref={printContainerRef}
+            className="royal-print-sheet min-w-[680px] sm:min-w-[740px] md:min-w-0 w-full max-w-[210mm] min-h-[297mm] bg-[#f0efe9] text-slate-900 rounded-xl shadow-2xl border border-amber-900/15 p-5 sm:p-8 md:p-10 relative overflow-hidden font-sans flex flex-col justify-between"
+            style={{
+              WebkitPrintColorAdjust: 'exact',
+              printColorAdjust: 'exact',
+            }}
+          >
           {/* ACTUAL UPLOADED image.png FULL-PAGE DOCUMENT BACKGROUND AS-IS */}
           <img
             src={stationeryBgSrc}
@@ -760,6 +761,7 @@ export const BrandedDocumentView: React.FC<BrandedDocumentViewProps> = ({
               />
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

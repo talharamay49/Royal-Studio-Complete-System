@@ -20,7 +20,9 @@ import {
   Upload,
   CheckCircle2,
   Camera,
-  MapPin
+  MapPin,
+  Database,
+  Download
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { useStudioData } from '../context/StudioDataContext';
@@ -62,7 +64,7 @@ interface WebsiteCMSState {
   websiteLeads: WebsiteLead[];
 }
 
-type CmsTab = 'PORTFOLIO' | 'PACKAGES' | 'SERVICES' | 'TESTIMONIALS' | 'BLOG' | 'LEADS';
+type CmsTab = 'PORTFOLIO' | 'PACKAGES' | 'SERVICES' | 'TESTIMONIALS' | 'BLOG' | 'LEADS' | 'DATABASE';
 
 interface WebsiteCmsPageProps {
   navigate: (path: string) => void;
@@ -87,8 +89,22 @@ const PORTFOLIO_CATEGORIES_LIST: Exclude<PortfolioCategory, 'all'>[] = [
 ];
 
 export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
-  const { addToast } = useStudioData();
+  const { addToast, refreshAll } = useStudioData();
   const [activeTab, setActiveTab] = useState<CmsTab>('PORTFOLIO');
+  const [dbStats, setDbStats] = useState<{
+    driverName: string;
+    storagePath: string;
+    fileSizeBytes: number;
+    lastModified: string | null;
+    counts?: {
+      clients: number;
+      events: number;
+      invoices: number;
+      quotations: number;
+      payments: number;
+      portfolioItems: number;
+    };
+  } | null>(null);
   const [cmsData, setCmsData] = useState<WebsiteCMSState>({
     portfolioItems: [],
     pricingPackages: [],
@@ -201,7 +217,10 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
   const loadCmsData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const data = await apiRequest<WebsiteCMSState>('/cms');
+      const [data, info] = await Promise.all([
+        apiRequest<WebsiteCMSState>('/cms'),
+        apiRequest<any>('/db/info').catch(() => null),
+      ]);
       setCmsData({
         portfolioItems: data.portfolioItems || [],
         pricingPackages: data.pricingPackages || [],
@@ -210,6 +229,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
         blogPosts: data.blogPosts || [],
         websiteLeads: data.websiteLeads || [],
       });
+      if (info) setDbStats(info);
     } catch (err: any) {
       addToast(err.message || 'Failed to load Website CMS data', 'error');
     } finally {
@@ -254,16 +274,43 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
     }
   };
 
-  const handleImageFileUpload = (
+  const handleImageFileUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
-    onLoaded: (dataUrl: string) => void
+    onLoaded: (optimizedUrl: string, detectedAspect?: 'tall' | 'wide' | 'square') => void
   ) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 4 * 1024 * 1024) {
-      addToast('Image file is larger than 4MB. Please choose a smaller image.', 'warning');
+    if (file.size > 15 * 1024 * 1024) {
+      addToast('Image file is larger than 15MB. Please choose a smaller image.', 'warning');
       return;
     }
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', portfolioForm.title || file.name.replace(/\.[^.]+$/, ''));
+      formData.append('category', portfolioForm.category || 'portfolio');
+      formData.append('format', 'webp');
+
+      const response = await fetch('/api/images/optimize', {
+        method: 'POST',
+        body: formData,
+      });
+      const result = await response.json().catch(() => null);
+
+      if (response.ok && result?.success && result?.url) {
+        onLoaded(result.url, result.aspect);
+        const kb = Math.max(1, Math.round((result.optimizedBytes || 0) / 1024));
+        addToast(
+          `Optimized to AVIF/WebP (${kb} KB · Saved ${result.savingsPercent ?? 0}% for PageSpeed)!`,
+          'success'
+        );
+        return;
+      }
+    } catch {
+      // Fallback to FileReader below if offline
+    }
+
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
@@ -596,6 +643,46 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
     await persistCmsUpdate({ websiteLeads: nextLeads }, `Lead marked as ${status}.`);
   };
 
+  // ================= INTEGRATED DATABASE EXPORT / IMPORT =================
+  const handleExportDatabase = async () => {
+    try {
+      const backup = await apiRequest<any>('/db/export');
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `royal-studio-db-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      addToast('Full integrated database backup exported (.json)!', 'success');
+    } catch (err: any) {
+      addToast(err.message || 'Failed to export database backup', 'error');
+    }
+  };
+
+  const handleImportDatabase = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        await apiRequest('/db/import', {
+          method: 'POST',
+          body: JSON.stringify(parsed),
+        });
+        await loadCmsData();
+        await refreshAll();
+        addToast('Database restored and synchronized across ERP and public website!', 'success');
+      } catch (err: any) {
+        addToast(err.message || 'Invalid JSON backup file.', 'error');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header Banner */}
@@ -652,6 +739,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
           { id: 'TESTIMONIALS', label: `Testimonials (${cmsData.testimonials.length})`, icon: MessageSquareQuote },
           { id: 'BLOG', label: `Blog / Journal (${cmsData.blogPosts.length})`, icon: BookOpen },
           { id: 'LEADS', label: `Website Inquiries (${cmsData.websiteLeads.length})`, icon: Inbox },
+          { id: 'DATABASE', label: 'Integrated Database & Backup', icon: Database },
         ].map((tab) => {
           const Icon = tab.icon;
           const active = activeTab === tab.id;
@@ -1201,6 +1289,76 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
         </div>
       )}
 
+      {/* ================= TAB 7: INTEGRATED DATABASE & BACKUP MANAGER ================= */}
+      {activeTab === 'DATABASE' && (
+        <div className="space-y-4">
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-gray-200 space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+              <div>
+                <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 mb-1">
+                  <Database className="w-4 h-4" />
+                  <span>Zero-Config Pluggable Persistence Engine Active</span>
+                </div>
+                <h3 className="text-base font-bold text-gray-900">
+                  {dbStats?.driverName || 'RoyalStudio Embedded Atomic JSON DB'}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  All ERP records, events, invoices, quotations, payments, and public website CMS content are stored locally and atomically in <code className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{dbStats?.storagePath || '/data/studio_db.json'}</code> with automatic rolling backups and zero external cloud dependencies.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleExportDatabase}
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Export Full DB Backup (.json)</span>
+                </button>
+                <label className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold cursor-pointer">
+                  <Upload className="w-4 h-4" />
+                  <span>Restore / Replace DB (.json)</span>
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={handleImportDatabase}
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[
+                { label: 'CRM Clients', val: dbStats?.counts?.clients ?? 0 },
+                { label: 'ERP Events', val: dbStats?.counts?.events ?? 0 },
+                { label: 'Invoices', val: dbStats?.counts?.invoices ?? 0 },
+                { label: 'Quotations', val: dbStats?.counts?.quotations ?? 0 },
+                { label: 'Payments', val: dbStats?.counts?.payments ?? 0 },
+                { label: 'Portfolio Photos', val: dbStats?.counts?.portfolioItems ?? cmsData.portfolioItems.length },
+              ].map((stat) => (
+                <div key={stat.label} className="p-3.5 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="text-[11px] font-semibold text-gray-500">{stat.label}</div>
+                  <div className="text-xl font-black text-slate-900 font-mono mt-1">{stat.val}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <strong>Adapter Architecture:</strong> Defined in <code className="font-mono">lib/db/storageAdapter.ts</code> (<code className="font-mono">DatabaseStorageAdapter&lt;T&gt;</code>). Replaceable at any time via <code className="font-mono">setDatabaseAdapter(...)</code> without changing any UI or API routes.
+              </div>
+              {dbStats?.fileSizeBytes ? (
+                <div className="font-mono text-[11px] text-slate-500 shrink-0">
+                  Size: {(dbStats.fileSizeBytes / 1024).toFixed(1)} KB
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ================= MODAL: ADD / EDIT PORTFOLIO PHOTO ================= */}
       <Modal
         isOpen={isPortfolioModalOpen}
@@ -1260,9 +1418,15 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
             </div>
 
             <div className="sm:col-span-2">
-              <label className="block text-xs font-bold text-gray-700 mb-1">
-                Upload New Image OR Enter Image Path / URL *
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-gray-700">
+                  Upload New Image OR Enter Image Path / URL *
+                </label>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[10px] font-bold text-emerald-700">
+                  <Sparkles className="w-3 h-3" />
+                  Auto AVIF/WebP PageSpeed Compression
+                </span>
+              </div>
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
@@ -1274,14 +1438,18 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
                 />
                 <label className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded-lg text-xs font-bold cursor-pointer shrink-0">
                   <Upload className="w-3.5 h-3.5" />
-                  <span>Upload Photo</span>
+                  <span>Upload &amp; Optimize (AVIF/WebP)</span>
                   <input
                     type="file"
                     accept="image/*"
                     className="hidden"
                     onChange={(e) =>
-                      handleImageFileUpload(e, (dataUrl) =>
-                        setPortfolioForm((p) => ({ ...p, image: dataUrl }))
+                      handleImageFileUpload(e, (optimizedUrl, detectedAspect) =>
+                        setPortfolioForm((p) => ({
+                          ...p,
+                          image: optimizedUrl,
+                          aspect: detectedAspect || p.aspect,
+                        }))
                       )
                     }
                   />
@@ -1292,6 +1460,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
                   <img
                     src={portfolioForm.image}
                     alt="Preview"
+                    referrerPolicy="no-referrer"
                     className="max-h-full max-w-full object-contain"
                   />
                 </div>

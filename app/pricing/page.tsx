@@ -3,6 +3,7 @@ import Link from "next/link";
 import PageHeader from "@/components/layout/PageHeader";
 import AnimatedSection from "@/components/shared/AnimatedSection";
 import PublicPricingGrid from "@/components/shared/PublicPricingGrid";
+import SectionErrorBoundary from "@/components/shared/SectionErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { pageKeywords, pricingPackages } from "@/lib/data";
 import { getCanonical, getOfferCatalogSchema } from "@/lib/seo";
@@ -43,7 +44,9 @@ export default function PricingPage() {
 
       <section className="section-padding bg-surface">
         <div className="mx-auto max-w-7xl">
-          <PublicPricingGrid />
+          <SectionErrorBoundary sectionName="Packages & Pricing Calculator">
+            <PublicPricingGrid />
+          </SectionErrorBoundary>
 
           <AnimatedSection className="mt-16 text-center">
             <p className="text-text-muted">

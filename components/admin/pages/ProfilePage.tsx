@@ -24,15 +24,26 @@ import {
   Upload,
   Star,
   Check,
-  AlertCircle
+  AlertCircle,
+  Palette,
+  Sun,
+  Moon,
+  Monitor
 } from 'lucide-react';
 import { useStudioData } from '../context/StudioDataContext';
 import { useAuth } from '../context/AuthContext';
+import {
+  useStudioTheme,
+  DEFAULT_STUDIO_THEME,
+  STUDIO_THEME_PRESETS
+} from '@/components/shared/StudioProfileContext';
 import { Modal } from '../components/common/Modal';
 import { ConfirmationDialog } from '../components/common/ConfirmationDialog';
+import { StaffProfilePage } from './StaffProfilePage';
 import {
   User,
   AdminProfile,
+  StudioThemeConfig,
   BankAccountItem,
   BankAccountPurpose,
   PaymentMethodItem,
@@ -42,6 +53,7 @@ import {
 
 type ProfileTab =
   | 'IDENTITY'
+  | 'THEME'
   | 'ADDRESS'
   | 'CONTACT'
   | 'SOCIAL'
@@ -77,11 +89,24 @@ export const ProfilePage: React.FC = () => {
     addToast
   } = useStudioData();
   const { isAdmin } = useAuth();
+  const {
+    themeConfig: liveThemeConfig,
+    resolvedMode,
+    toggleThemeMode,
+    setThemeMode,
+    previewThemeConfig
+  } = useStudioTheme();
 
   const [activeTab, setActiveTab] = useState<ProfileTab>('IDENTITY');
   const [formData, setFormData] = useState<Partial<AdminProfile>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [isResetProfileConfirmOpen, setIsResetProfileConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenThemeTab = () => setActiveTab('THEME');
+    window.addEventListener('royalstudio:open-theme-tab', handleOpenThemeTab);
+    return () => window.removeEventListener('royalstudio:open-theme-tab', handleOpenThemeTab);
+  }, []);
 
   // Bank Account Modal state
   const [isBankModalOpen, setIsBankModalOpen] = useState(false);
@@ -136,6 +161,10 @@ export const ProfilePage: React.FC = () => {
         bankAccounts: profile.bankAccounts || [],
         paymentMethods: profile.paymentMethods || [],
         customSocialLinks: profile.customSocialLinks || [],
+        themeConfig: {
+          ...DEFAULT_STUDIO_THEME,
+          ...(profile.themeConfig || {})
+        },
         notificationPreferences: profile.notificationPreferences || {
           overdueInvoices: true,
           urgentTasks: true,
@@ -145,6 +174,10 @@ export const ProfilePage: React.FC = () => {
       });
     }
   }, [profile]);
+
+  if (!isAdmin) {
+    return <StaffProfilePage />;
+  }
 
   const setField = <K extends keyof AdminProfile>(key: K, value: AdminProfile[K]) => {
     setFormData(prev => ({ ...prev, [key]: value }));
@@ -398,6 +431,7 @@ export const ProfilePage: React.FC = () => {
 
   const navTabs: Array<{ id: ProfileTab; label: string; icon: React.ElementType }> = [
     { id: 'IDENTITY', label: 'Business Info', icon: Building },
+    { id: 'THEME', label: 'Theme & Appearance', icon: Palette },
     { id: 'ADDRESS', label: 'Address & Map', icon: MapPin },
     { id: 'CONTACT', label: 'Contact & Emails', icon: Phone },
     { id: 'SOCIAL', label: 'Social Media', icon: Share2 },
@@ -410,6 +444,39 @@ export const ProfilePage: React.FC = () => {
     { id: 'USERS', label: `Users (${users.length})`, icon: Shield },
     { id: 'AUDIT', label: 'Audit & Reset', icon: History }
   ];
+
+  const updateThemeField = <K extends keyof StudioThemeConfig>(
+    key: K,
+    value: StudioThemeConfig[K]
+  ) => {
+    const currentTheme: StudioThemeConfig = {
+      ...DEFAULT_STUDIO_THEME,
+      ...(formData.themeConfig || liveThemeConfig)
+    };
+    const nextTheme: StudioThemeConfig = {
+      ...currentTheme,
+      [key]: value
+    };
+    setField('themeConfig', nextTheme);
+    previewThemeConfig({ [key]: value });
+  };
+
+  const applyThemePreset = (presetId: string) => {
+    const preset = STUDIO_THEME_PRESETS.find(p => p.id === presetId);
+    if (!preset) return;
+    const currentTheme: StudioThemeConfig = {
+      ...DEFAULT_STUDIO_THEME,
+      ...(formData.themeConfig || liveThemeConfig)
+    };
+    const nextTheme: StudioThemeConfig = {
+      ...currentTheme,
+      ...preset.config,
+      presetId: preset.id
+    };
+    setField('themeConfig', nextTheme);
+    previewThemeConfig(nextTheme);
+    addToast(`Applied '${preset.name}' theme preset. Click Save to persist across all sessions.`, 'info');
+  };
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -682,6 +749,339 @@ export const ProfilePage: React.FC = () => {
               >
                 <Save className="w-4 h-4" />
                 <span>{isSaving ? 'Saving...' : 'Save Business Identity'}</span>
+              </button>
+            </div>
+          )}
+        </form>
+      )}
+
+      {/* TAB: THEME & APPEARANCE CUSTOMIZATION */}
+      {activeTab === 'THEME' && (
+        <form onSubmit={e => handleSaveProfile(e, 'Theme & Appearance Settings')} className="space-y-6">
+          <div className="p-6 bg-white rounded-2xl border border-gray-200 shadow-xs space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
+              <div>
+                <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                  <Palette className="w-4 h-4 text-amber-600" />
+                  <span>Unified Studio Theme & Appearance Customizer</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Customize Light & Dark mode, brand colors, editorial typography, sidebar aesthetics, and corner geometry across both the Admin ERP Portal and the Public Portfolio Website.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={toggleThemeMode}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  {resolvedMode === 'dark' ? (
+                    <>
+                      <Sun className="w-3.5 h-3.5 text-amber-500" />
+                      <span>Switch to Light</span>
+                    </>
+                  ) : (
+                    <>
+                      <Moon className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Switch to Dark</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setField('themeConfig', DEFAULT_STUDIO_THEME);
+                    previewThemeConfig(DEFAULT_STUDIO_THEME);
+                    addToast('Restored default Royal Champagne Gold theme.', 'info');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Default Theme</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 1. Color Mode Selection */}
+            <div className="space-y-3">
+              <label className="block text-xs font-bold text-gray-800">
+                1. Default Studio Color Mode (Light / Dark / System)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {(
+                  [
+                    {
+                      id: 'light',
+                      label: 'Editorial Light Mode',
+                      desc: 'Warm alabaster canvas with crisp gallery surfaces & gold accents',
+                      icon: Sun
+                    },
+                    {
+                      id: 'dark',
+                      label: 'Obsidian Dark Mode',
+                      desc: 'Deep cinema obsidian with elevated charcoal cards & luminous gold',
+                      icon: Moon
+                    },
+                    {
+                      id: 'system',
+                      label: 'System Automatic',
+                      desc: 'Automatically adapts to visitor or administrator OS preference',
+                      icon: Monitor
+                    }
+                  ] as const
+                ).map(modeOption => {
+                  const Icon = modeOption.icon;
+                  const currentMode = formData.themeConfig?.mode || liveThemeConfig.mode || 'light';
+                  const active = currentMode === modeOption.id;
+                  return (
+                    <button
+                      key={modeOption.id}
+                      type="button"
+                      onClick={() => {
+                        updateThemeField('mode', modeOption.id);
+                        setThemeMode(modeOption.id);
+                      }}
+                      className={`p-4 rounded-xl border text-left transition-all cursor-pointer ${
+                        active
+                          ? 'border-amber-500 bg-amber-50/40 ring-1 ring-amber-500/40'
+                          : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="inline-flex items-center gap-2 text-xs font-bold text-gray-900">
+                          <Icon className="w-4 h-4 text-amber-500" />
+                          <span>{modeOption.label}</span>
+                        </span>
+                        {active && <Check className="w-4 h-4 text-amber-600" />}
+                      </div>
+                      <p className="text-[11px] text-gray-500 leading-relaxed">{modeOption.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Curated Luxury Theme Presets */}
+            <div className="space-y-3 pt-2 border-t border-gray-100">
+              <label className="block text-xs font-bold text-gray-800">
+                2. Curated Luxury Studio Palettes (1-Click Presets)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                {STUDIO_THEME_PRESETS.map(preset => {
+                  const isSelected =
+                    (formData.themeConfig?.presetId || liveThemeConfig.presetId) === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyThemePreset(preset.id)}
+                      className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                        isSelected
+                          ? 'border-amber-500 bg-amber-50/40 ring-1 ring-amber-500/40'
+                          : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <span
+                            className="w-5 h-5 rounded-full border border-black/15 shadow-2xs"
+                            style={{ backgroundColor: preset.config.accentColor }}
+                          />
+                          <span
+                            className="w-5 h-5 rounded-full border border-black/15 shadow-2xs"
+                            style={{ backgroundColor: preset.config.primaryColor }}
+                          />
+                          <span
+                            className="w-5 h-5 rounded-full border border-black/15 shadow-2xs"
+                            style={{ backgroundColor: preset.config.backgroundLight }}
+                          />
+                          <span
+                            className="w-5 h-5 rounded-full border border-white/20 shadow-2xs"
+                            style={{ backgroundColor: preset.config.backgroundDark }}
+                          />
+                        </div>
+                        <div className="text-xs font-bold text-gray-900">{preset.name}</div>
+                        <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-2">
+                          {preset.subtitle}
+                        </p>
+                      </div>
+                      <div className="mt-2.5 pt-2 border-t border-gray-200/60 flex items-center justify-between text-[10px] font-semibold text-amber-700">
+                        <span>{isSelected ? 'Active Palette' : 'Apply Preset'}</span>
+                        {isSelected && <Check className="w-3.5 h-3.5" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 3. Custom Brand & Surface Color Pickers */}
+            <div className="space-y-3 pt-2 border-t border-gray-100">
+              <label className="block text-xs font-bold text-gray-800">
+                3. Custom Brand Accent & Surface Colors (Live Preview)
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {(
+                  [
+                    {
+                      key: 'accentColor',
+                      label: 'Primary Brand Accent (Gold)',
+                      fallback: '#c9a76a'
+                    },
+                    {
+                      key: 'accentLight',
+                      label: 'Accent Highlight / Hover',
+                      fallback: '#d4b87a'
+                    },
+                    {
+                      key: 'accentDark',
+                      label: 'Deep Accent / Active',
+                      fallback: '#b08f4f'
+                    },
+                    {
+                      key: 'primaryColor',
+                      label: 'Primary Obsidian / Charcoal',
+                      fallback: '#111111'
+                    },
+                    {
+                      key: 'backgroundLight',
+                      label: 'Light Mode Canvas Background',
+                      fallback: '#f8f8f8'
+                    },
+                    {
+                      key: 'surfaceLight',
+                      label: 'Light Mode Card Surface',
+                      fallback: '#ffffff'
+                    },
+                    {
+                      key: 'backgroundDark',
+                      label: 'Dark Mode Obsidian Canvas',
+                      fallback: '#0d0d0d'
+                    },
+                    {
+                      key: 'surfaceDark',
+                      label: 'Dark Mode Elevated Card Surface',
+                      fallback: '#161616'
+                    }
+                  ] as const
+                ).map(item => {
+                  const val =
+                    (formData.themeConfig?.[item.key] as string) ||
+                    (liveThemeConfig[item.key] as string) ||
+                    item.fallback;
+                  return (
+                    <div
+                      key={item.key}
+                      className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2"
+                    >
+                      <label className="block text-[11px] font-semibold text-gray-700">
+                        {item.label}
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={val}
+                          onChange={e => {
+                            updateThemeField('presetId', 'custom');
+                            updateThemeField(item.key, e.target.value);
+                          }}
+                          disabled={!isAdmin}
+                          className="w-9 h-9 rounded-lg border border-gray-300 cursor-pointer shrink-0 bg-transparent p-0.5"
+                        />
+                        <input
+                          type="text"
+                          value={val}
+                          onChange={e => {
+                            updateThemeField('presetId', 'custom');
+                            updateThemeField(item.key, e.target.value);
+                          }}
+                          disabled={!isAdmin}
+                          className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-mono uppercase"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 4. Typography, Sidebar Style & Corner Geometry */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-2 border-t border-gray-100">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Display Heading Font
+                </label>
+                <select
+                  value={formData.themeConfig?.headingFont || liveThemeConfig.headingFont || 'Cormorant Garamond'}
+                  onChange={e => updateThemeField('headingFont', e.target.value as any)}
+                  disabled={!isAdmin}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-semibold"
+                >
+                  <option value="Cormorant Garamond">Cormorant Garamond (Portfolio Serif)</option>
+                  <option value="Playfair Display">Playfair Display (Editorial Serif)</option>
+                  <option value="Cinzel">Cinzel (Classical Luxury)</option>
+                  <option value="Inter">Inter (Modern Sans)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Body & UI Font
+                </label>
+                <select
+                  value={formData.themeConfig?.bodyFont || liveThemeConfig.bodyFont || 'Inter'}
+                  onChange={e => updateThemeField('bodyFont', e.target.value as any)}
+                  disabled={!isAdmin}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-semibold"
+                >
+                  <option value="Inter">Inter (Clean Studio Sans)</option>
+                  <option value="Poppins">Poppins (Geometric Modern)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Admin Sidebar Style
+                </label>
+                <select
+                  value={formData.themeConfig?.sidebarStyle || liveThemeConfig.sidebarStyle || 'obsidian'}
+                  onChange={e => updateThemeField('sidebarStyle', e.target.value as any)}
+                  disabled={!isAdmin}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-semibold"
+                >
+                  <option value="obsidian">Signature Obsidian (Always Dark)</option>
+                  <option value="editorial">Adaptive Editorial Surface</option>
+                  <option value="glass">Translucent Studio Glass</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Card & Button Corner Radius
+                </label>
+                <select
+                  value={formData.themeConfig?.borderRadius || liveThemeConfig.borderRadius || 'editorial'}
+                  onChange={e => updateThemeField('borderRadius', e.target.value as any)}
+                  disabled={!isAdmin}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-semibold"
+                >
+                  <option value="editorial">Editorial Classic (12px)</option>
+                  <option value="sharp">Architectural Sharp (2px)</option>
+                  <option value="rounded">Soft Modern (16px)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {isAdmin && (
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-black shadow-md cursor-pointer"
+              >
+                <Save className="w-4 h-4" />
+                <span>{isSaving ? 'Saving Theme...' : 'Save Studio Theme & Appearance'}</span>
               </button>
             </div>
           )}

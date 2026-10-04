@@ -22,7 +22,9 @@ import { CalendarPage } from './pages/CalendarPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { WebsiteCmsPage } from './pages/WebsiteCmsPage';
+import { ThemeCustomizerPage } from './pages/ThemeCustomizerPage';
 import { LoadingState } from './components/common/LoadingState';
+import { AdminErrorBoundary } from './components/common/AdminErrorBoundary';
 import { ShieldAlert } from 'lucide-react';
 
 function getAdminInternalPath(pathname: string): string {
@@ -117,12 +119,16 @@ const MainContent: React.FC = () => {
     }
 
     if (currentPath.startsWith('/events/')) {
+      if (!isAdmin) {
+        return <EventsPage navigate={navigate} />;
+      }
       const isEdit = currentPath.endsWith('/edit');
       const id = currentPath.replace('/events/', '').replace('/edit', '').split('/')[0];
       return <EventDetailPage eventId={id} navigate={navigate} initialEdit={isEdit} />;
     }
 
     if (currentPath === '/calendar') {
+      if (!isAdmin) return <EventsPage navigate={navigate} />;
       return <CalendarPage navigate={navigate} />;
     }
 
@@ -152,6 +158,7 @@ const MainContent: React.FC = () => {
     }
 
     if (currentPath === '/team-payments') {
+      if (!isAdmin) return renderRestricted('Crew Payroll Ledger');
       return <TeamPaymentsPage navigate={navigate} />;
     }
 
@@ -174,6 +181,11 @@ const MainContent: React.FC = () => {
       return <ReportsPage />;
     }
 
+    if (currentPath === '/theme-customizer' || currentPath === '/theme' || currentPath === '/appearance') {
+      if (!isAdmin) return renderRestricted('Admin Theme Customizer');
+      return <ThemeCustomizerPage navigate={navigate} />;
+    }
+
     if (currentPath === '/profile') {
       return <ProfilePage />;
     }
@@ -189,7 +201,12 @@ const MainContent: React.FC = () => {
 
   return (
     <AppShell currentPath={currentPath} navigate={navigate}>
-      {renderRoute()}
+      <AdminErrorBoundary
+        currentPath={currentPath}
+        onResetNavigate={() => navigate('/dashboard')}
+      >
+        {renderRoute()}
+      </AdminErrorBoundary>
     </AppShell>
   );
 };

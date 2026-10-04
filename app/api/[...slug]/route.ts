@@ -1,22 +1,61 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { handleAdminApi } from '@/lib/admin/apiHandler';
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
-  const { slug } = await params;
-  return handleAdminApi(request, slug);
+function withSecurityHeaders(response: Response): Response {
+  try {
+    response.headers.set('X-Content-Type-Options', 'nosniff');
+    response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+    response.headers.set('Cache-Control', 'no-store, max-age=0');
+  } catch {
+    // Immutable headers fallback
+  }
+  return response;
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
-  const { slug } = await params;
-  return handleAdminApi(request, slug);
+async function dispatchSafe(
+  request: NextRequest,
+  paramsPromise: Promise<{ slug: string[] }>
+): Promise<Response> {
+  try {
+    const resolved = await paramsPromise;
+    const slug = Array.isArray(resolved?.slug) ? resolved.slug : [];
+    const response = await handleAdminApi(request, slug);
+    return withSecurityHeaders(response);
+  } catch (err: any) {
+    const message =
+      err instanceof Error && err.message
+        ? err.message
+        : 'An unexpected server error occurred.';
+    return withSecurityHeaders(
+      NextResponse.json({ error: message }, { status: 500 })
+    );
+  }
 }
 
-export async function PUT(request: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
-  const { slug } = await params;
-  return handleAdminApi(request, slug);
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string[] }> }
+) {
+  return dispatchSafe(request, params);
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: Promise<{ slug: string[] }> }) {
-  const { slug } = await params;
-  return handleAdminApi(request, slug);
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string[] }> }
+) {
+  return dispatchSafe(request, params);
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string[] }> }
+) {
+  return dispatchSafe(request, params);
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string[] }> }
+) {
+  return dispatchSafe(request, params);
 }

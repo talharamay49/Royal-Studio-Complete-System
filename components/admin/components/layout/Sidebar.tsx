@@ -21,10 +21,14 @@ import {
   ChevronRight,
   Shield,
   User as UserIcon,
-  Globe
+  Globe,
+  Sun,
+  Moon,
+  Palette
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudioData } from '../../context/StudioDataContext';
+import { useStudioTheme } from '@/components/shared/StudioProfileContext';
 
 interface SidebarProps {
   currentPath: string;
@@ -41,8 +45,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { user, isAdmin, logout } = useAuth();
   const { profile } = useStudioData();
+  const { resolvedMode, toggleThemeMode, themeConfig } = useStudioTheme();
+
   const studioName = profile?.studioName || 'Royal Studio';
   const logoSrc = profile?.primaryLogo || profile?.logo || '/RoyalLogo.png';
+  const sidebarStyle = themeConfig.sidebarStyle || 'obsidian';
+
+  const isEditorialLight = sidebarStyle === 'editorial' && resolvedMode === 'light';
 
   const adminNavItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -60,13 +69,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { label: 'Studio Expenses', path: '/studio-expenses', icon: Building2 },
     { label: 'Tasks', path: '/tasks', icon: CheckSquare },
     { label: 'Reports', path: '/reports', icon: BarChart3 },
+    { label: 'Theme Customizer', path: '/theme-customizer', icon: Palette },
     { label: 'Studio Settings', path: '/profile', icon: Settings }
   ];
 
   const staffNavItems = [
-    { label: 'My Tasks', path: '/tasks', icon: CheckSquare },
-    { label: 'My Events', path: '/events', icon: CalendarDays },
-    { label: 'My Payments', path: '/team-payments', icon: CreditCard },
+    { label: 'Assigned Work', path: '/tasks', icon: CheckSquare },
+    { label: 'Assigned Events', path: '/events', icon: CalendarDays },
     { label: 'My Profile', path: '/profile', icon: Settings }
   ];
 
@@ -74,12 +83,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
-      className={`relative flex flex-col bg-slate-950 text-slate-200 border-r border-slate-800 transition-all duration-300 z-30 ${
-        isCollapsed ? 'w-20' : 'w-64'
-      }`}
+      className={`relative flex flex-col h-full transition-all duration-300 z-30 border-r ${
+        isEditorialLight
+          ? 'bg-surface text-text border-border'
+          : 'bg-[#111111] text-[#e8e4dc] border-white/10'
+      } ${isCollapsed ? 'w-20' : 'w-full lg:w-64'}`}
     >
-      {/* Brand Header */}
-      <div className="flex items-center justify-between px-4 py-5 border-b border-slate-800">
+      {/* Brand Header matching Portfolio Luxury Typography */}
+      <div
+        className={`flex items-center justify-between px-4 py-5 border-b ${
+          isEditorialLight ? 'border-border' : 'border-white/10'
+        }`}
+      >
         <div
           onClick={() => navigate('/dashboard')}
           className="flex items-center gap-3 cursor-pointer overflow-hidden"
@@ -88,30 +103,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <img
               src={logoSrc}
               alt={studioName}
-              className="w-10 h-10 rounded-xl object-contain bg-slate-900 p-1 border border-slate-800 shrink-0"
+              className={`w-10 h-10 rounded-xl object-contain p-1 border shrink-0 ${
+                isEditorialLight
+                  ? 'bg-background border-border'
+                  : 'bg-[#1a1a1a] border-white/10'
+              }`}
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = '/RoyalLogo.png';
               }}
             />
           ) : (
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 to-amber-400 flex items-center justify-center font-bold text-slate-950 shadow-md shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center font-display font-bold text-[#111111] shadow-md shrink-0">
               RS
             </div>
           )}
           {!isCollapsed && (
             <div className="flex flex-col min-w-0">
-              <span className="font-bold text-sm tracking-wider text-white uppercase truncate">
+              <span
+                className={`font-display font-semibold text-base tracking-wide truncate ${
+                  isEditorialLight ? 'text-primary' : 'text-white'
+                }`}
+              >
                 {studioName}
               </span>
-              <span className="text-[11px] text-amber-400 font-medium tracking-wide uppercase">
-                {profile?.city || 'Burewala'} • Manager
+              <span className="text-[10px] text-accent font-medium tracking-[0.18em] uppercase">
+                {profile?.city || 'Burewala'} · Studio ERP
               </span>
             </div>
           )}
         </div>
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          className={`hidden md:flex p-1.5 rounded-lg transition-colors cursor-pointer ${
+            isEditorialLight
+              ? 'text-text-muted hover:text-primary hover:bg-background'
+              : 'text-white/50 hover:text-white hover:bg-white/10'
+          }`}
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
           {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
@@ -120,64 +147,137 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Navigation Links */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+        <div
+          className={`px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.2em] ${
+            isEditorialLight ? 'text-text-muted' : 'text-white/40'
+          }`}
+        >
           {!isCollapsed && (isAdmin ? 'Studio Management' : 'Staff Workspace')}
         </div>
-        {navItems.map(item => {
-          const isActive = currentPath === item.path || (item.path !== '/dashboard' && currentPath.startsWith(item.path));
+        {navItems.map((item) => {
+          const isActive =
+            currentPath === item.path ||
+            (item.path !== '/dashboard' && currentPath.startsWith(item.path));
           const Icon = item.icon;
 
           return (
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
                 isActive
-                  ? 'bg-amber-500 text-slate-950 font-semibold shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                  ? 'bg-accent text-[#111111] font-semibold shadow-xs'
+                  : isEditorialLight
+                  ? 'text-text hover:text-primary hover:bg-background'
+                  : 'text-white/75 hover:text-white hover:bg-white/5'
               }`}
               title={isCollapsed ? item.label : undefined}
             >
-              <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-slate-950' : 'text-slate-400'}`} />
+              <Icon
+                className={`w-4 h-4 shrink-0 ${
+                  isActive
+                    ? 'text-[#111111]'
+                    : isEditorialLight
+                    ? 'text-text-muted'
+                    : 'text-white/50'
+                }`}
+              />
               {!isCollapsed && <span className="truncate">{item.label}</span>}
             </button>
           );
         })}
       </div>
 
-      {/* Public Site Quick Link */}
-      <div className="px-3 pb-2">
+      {/* Quick Actions: Theme Toggle & Public Site Link */}
+      <div className="px-3 pb-2 space-y-1.5">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={toggleThemeMode}
+            className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium border transition-all cursor-pointer ${
+              isEditorialLight
+                ? 'border-border text-text hover:border-accent hover:text-accent bg-background/60'
+                : 'border-white/10 text-white/80 hover:border-accent hover:text-accent bg-white/5'
+            }`}
+            title={resolvedMode === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {resolvedMode === 'dark' ? (
+              <Sun className="w-3.5 h-3.5 text-accent shrink-0" />
+            ) : (
+              <Moon className="w-3.5 h-3.5 text-accent shrink-0" />
+            )}
+            {!isCollapsed && (
+              <span className="truncate">
+                {resolvedMode === 'dark' ? 'Light Mode' : 'Dark Mode'}
+              </span>
+            )}
+          </button>
+
+          {!isCollapsed && isAdmin && (
+            <button
+              type="button"
+              onClick={() => navigate('/theme-customizer')}
+              className={`p-2 rounded-lg border transition-all cursor-pointer ${
+                isEditorialLight
+                  ? 'border-border text-text hover:border-accent hover:text-accent bg-background/60'
+                  : 'border-white/10 text-white/80 hover:border-accent hover:text-accent bg-white/5'
+              }`}
+              title="Open Admin Theme Customizer"
+            >
+              <Palette className="w-3.5 h-3.5 text-accent" />
+            </button>
+          )}
+        </div>
+
         <Link
           href="/"
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-slate-900 border border-amber-500/20 transition-all"
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-medium text-accent hover:bg-accent/10 border border-accent/25 transition-all"
           title={isCollapsed ? 'View Public Website' : undefined}
         >
-          <Globe className="w-4 h-4 shrink-0 text-amber-400" />
-          {!isCollapsed && <span className="truncate">Public Website</span>}
+          <Globe className="w-4 h-4 shrink-0 text-accent" />
+          {!isCollapsed && <span className="truncate">Public Portfolio</span>}
         </Link>
       </div>
 
       {/* User Footer */}
-      <div className="p-3 border-t border-slate-800 bg-slate-950/70">
+      <div
+        className={`p-3 border-t ${
+          isEditorialLight ? 'border-border bg-background/50' : 'border-white/10 bg-black/40'
+        }`}
+      >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-amber-400 font-bold shrink-0 border border-slate-700">
+            <div
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-accent font-bold shrink-0 border ${
+                isEditorialLight
+                  ? 'bg-surface border-border'
+                  : 'bg-[#1c1c1c] border-white/10'
+              }`}
+            >
               {isAdmin ? <Shield className="w-4 h-4" /> : <UserIcon className="w-4 h-4" />}
             </div>
             {!isCollapsed && (
               <div className="min-w-0">
-                <div className="text-xs font-bold text-white truncate">
-                  {isAdmin ? 'Royal Studio' : user?.name}
+                <div
+                  className={`text-xs font-semibold truncate ${
+                    isEditorialLight ? 'text-primary' : 'text-white'
+                  }`}
+                >
+                  {user?.email || 'admin@royalstudio.online'}
                 </div>
-                <div className="text-[10px] text-amber-400 font-medium truncate">
-                  {isAdmin ? 'Administrator • Active' : user?.email}
+                <div className="text-[10px] text-accent font-medium truncate">
+                  {isAdmin ? 'Administrator · Active' : user?.name}
                 </div>
               </div>
             )}
           </div>
           <button
             onClick={() => logout()}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-900 transition-colors"
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+              isEditorialLight
+                ? 'text-text-muted hover:text-rose-600 hover:bg-rose-50'
+                : 'text-white/50 hover:text-rose-400 hover:bg-white/10'
+            }`}
             title="Log out"
           >
             <LogOut className="w-4 h-4" />

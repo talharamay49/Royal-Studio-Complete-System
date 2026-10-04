@@ -87,6 +87,12 @@ export default function Footer() {
                   <li key={link.href}>
                     <Link
                       href={link.href}
+                      onClick={(e) => {
+                        if (pathname === link.href) {
+                          e.preventDefault();
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }
+                      }}
                       className="text-sm text-text-muted transition-colors hover:text-accent"
                     >
                       {link.label}

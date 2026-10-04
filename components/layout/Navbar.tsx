@@ -1,14 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X } from "lucide-react";
+import { Menu, X, ArrowUp } from "lucide-react";
 import { navLinks } from "@/lib/data";
 import Logo from "./Logo";
+import GlobalSearchModal from "./GlobalSearchModal";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/shared/ThemeToggle";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -27,6 +29,73 @@ export default function Navbar() {
       document.body.style.overflow = "";
     };
   }, [mobileOpen]);
+
+  // Smooth scroll on route change or hash anchor navigation
+  useEffect(() => {
+    if (typeof window === "undefined" || pathname?.startsWith("/admin")) return;
+
+    const hash = window.location.hash?.replace("#", "");
+    if (hash) {
+      const timer = setTimeout(() => {
+        const target = document.getElementById(hash);
+        if (target) {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 80);
+      return () => clearTimeout(timer);
+    } else {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [pathname]);
+
+  // Global smooth-scroll delegation for any in-page anchor links on the public website
+  useEffect(() => {
+    if (typeof document === "undefined" || pathname?.startsWith("/admin")) return;
+
+    const handleAnchorClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement | null)?.closest("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href || !href.includes("#")) return;
+
+      const [rawPath, hash] = href.split("#");
+      if (!hash) return;
+
+      const normalizedTargetPath = rawPath ? rawPath.split("?")[0] : pathname;
+      if (!rawPath || normalizedTargetPath === pathname) {
+        const el = document.getElementById(hash);
+        if (el) {
+          e.preventDefault();
+          el.scrollIntoView({ behavior: "smooth", block: "start" });
+          window.history.replaceState(null, "", href);
+          setMobileOpen(false);
+        }
+      }
+    };
+
+    document.addEventListener("click", handleAnchorClick);
+    return () => document.removeEventListener("click", handleAnchorClick);
+  }, [pathname]);
+
+  const handleNavLinkClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+      setMobileOpen(false);
+      const [targetPath, hash] = href.split("#");
+      if (targetPath === pathname) {
+        if (hash) {
+          const el = document.getElementById(hash);
+          if (el) {
+            e.preventDefault();
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
+        } else {
+          e.preventDefault();
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      }
+    },
+    [pathname]
+  );
 
   if (pathname?.startsWith("/admin")) {
     return null;
@@ -49,35 +118,60 @@ export default function Navbar() {
           <Logo />
 
           <ul className="hidden items-center gap-7 lg:flex">
-            {navLinks.map((link) => (
-              <li key={link.href}>
-                <Link
-                  href={link.href}
-                  className={cn(
-                    "text-xs font-medium tracking-widest uppercase transition-colors duration-300",
-                    scrolled ? "text-text hover:text-accent" : "text-secondary/90 hover:text-accent"
-                  )}
-                >
-                  {link.label}
-                </Link>
-              </li>
-            ))}
+            {navLinks.map((link) => {
+              const isActive = pathname === link.href;
+              return (
+                <li key={link.href}>
+                  <Link
+                    href={link.href}
+                    onClick={(e) => handleNavLinkClick(e, link.href)}
+                    className={cn(
+                      "text-xs font-medium tracking-widest uppercase transition-colors duration-300",
+                      isActive
+                        ? "text-accent font-semibold"
+                        : scrolled
+                        ? "text-text hover:text-accent"
+                        : "text-secondary/90 hover:text-accent"
+                    )}
+                  >
+                    {link.label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <GlobalSearchModal scrolled={scrolled} />
+
+            <ThemeToggle
+              variant="icon"
+              className={cn(
+                "rounded-full",
+                scrolled
+                  ? "border-border bg-surface/80 text-primary hover:border-accent hover:text-accent"
+                  : "border-white/25 bg-black/30 text-white hover:border-accent hover:text-accent"
+              )}
+            />
+
             <Button
               asChild
               variant="accent"
               size="sm"
               className="hidden sm:inline-flex"
             >
-              <Link href="/contact">Check Availability</Link>
+              <Link
+                href="/contact#inquiry-form"
+                onClick={(e) => handleNavLinkClick(e, "/contact#inquiry-form")}
+              >
+                Check Availability
+              </Link>
             </Button>
             <button
               onClick={() => setMobileOpen(!mobileOpen)}
               className={cn(
-                "relative z-10 lg:hidden",
-                scrolled ? "text-primary" : "text-secondary"
+                "relative z-50 p-2 lg:hidden transition-colors cursor-pointer",
+                scrolled || mobileOpen ? "text-primary" : "text-secondary"
               )}
               aria-label={mobileOpen ? "Close menu" : "Open menu"}
             >
@@ -93,20 +187,23 @@ export default function Navbar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-surface lg:hidden"
+            className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-y-auto bg-surface px-6 py-20 lg:hidden"
           >
-            <ul className="flex flex-col items-center gap-7">
+            <ul className="flex flex-col items-center gap-5 sm:gap-7">
               {navLinks.map((link, i) => (
                 <motion.li
                   key={link.href}
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.06 }}
+                  transition={{ delay: i * 0.05 }}
                 >
                   <Link
                     href={link.href}
-                    onClick={() => setMobileOpen(false)}
-                    className="font-display text-3xl text-primary transition-colors hover:text-accent"
+                    onClick={(e) => handleNavLinkClick(e, link.href)}
+                    className={cn(
+                      "font-display text-2xl sm:text-3xl transition-colors hover:text-accent",
+                      pathname === link.href ? "text-accent" : "text-primary"
+                    )}
                   >
                     {link.label}
                   </Link>
@@ -115,14 +212,46 @@ export default function Navbar() {
               <motion.li
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: navLinks.length * 0.06 }}
+                transition={{ delay: navLinks.length * 0.05 }}
+                className="flex flex-col items-center gap-3 pt-2"
               >
-                <Button asChild variant="accent" onClick={() => setMobileOpen(false)}>
-                  <Link href="/contact">Check Availability</Link>
+                <Button asChild variant="accent">
+                  <Link
+                    href="/contact#inquiry-form"
+                    onClick={(e) => handleNavLinkClick(e, "/contact#inquiry-form")}
+                  >
+                    Check Availability
+                  </Link>
                 </Button>
+                <ThemeToggle className="rounded-full px-4 py-2" />
+                <Link
+                  href="/admin"
+                  onClick={() => setMobileOpen(false)}
+                  className="text-xs font-medium tracking-widest uppercase text-text-muted hover:text-accent pt-2"
+                >
+                  Studio Admin Portal
+                </Link>
               </motion.li>
             </ul>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Smooth Back-to-Top Floating Button */}
+      <AnimatePresence>
+        {scrolled && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.85, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.85, y: 12 }}
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+            aria-label="Smooth scroll to top"
+            title="Scroll to top"
+            className="fixed bottom-6 left-6 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface/90 text-primary shadow-premium backdrop-blur-md transition-all hover:border-accent hover:text-accent cursor-pointer"
+          >
+            <ArrowUp size={18} />
+          </motion.button>
         )}
       </AnimatePresence>
     </>

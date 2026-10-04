@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   --color-primary: #111111;
   --color-secondary: #ffffff;
@@ -19,12 +21,34 @@
   --font-button: var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
 }
 
+:root {
+  --studio-radius: 10px;
+}
+
+html.dark {
+  --color-primary: #f5f2eb;
+  --color-secondary: #161616;
+  --color-background: #0d0d0d;
+  --color-surface: #161616;
+  --color-text: #e8e4dc;
+  --color-text-muted: #9e988e;
+  --color-border: #282623;
+  color-scheme: dark;
+}
+
 .font-button {
   font-family: var(--font-button);
 }
 
+.font-display {
+  font-family: var(--font-display);
+}
+
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: 5.5rem;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 body {
@@ -33,6 +57,9 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 0.25s ease, color 0.25s ease;
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 ::selection {
@@ -54,7 +81,12 @@ body {
 }
 
 .text-accent-gradient {
-  background: linear-gradient(135deg, var(--color-accent-dark) 0%, var(--color-accent) 50%, var(--color-accent-light) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--color-accent-dark) 0%,
+    var(--color-accent) 50%,
+    var(--color-accent-light) 100%
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -65,15 +97,15 @@ body {
 }
 
 .glass {
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .glass-dark {
-  background: rgba(17, 17, 17, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(17, 17, 17, 0.78);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
 .shadow-premium {
@@ -82,4 +114,118 @@ body {
 
 .shadow-premium-lg {
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.04);
+}
+
+/* ============================================================================
+   UNIFIED ROYAL STUDIO PORTFOLIO <-> ADMIN ERP THEME ENGINE
+   Harmonizes Admin ERP typography, gold accents, surfaces, and dark/light modes
+   with the public portfolio website and live Admin Theme Customizer settings.
+   ============================================================================ */
+
+.admin-portal-root {
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+/* Harmonize Admin ERP accent colors with live customizable --color-accent */
+.admin-portal-root .bg-amber-500 {
+  background-color: var(--color-accent) !important;
+}
+.admin-portal-root .hover\:bg-amber-400:hover,
+.admin-portal-root .hover\:bg-amber-600:hover {
+  background-color: var(--color-accent-light) !important;
+}
+.admin-portal-root .text-amber-400,
+.admin-portal-root .text-amber-500,
+.admin-portal-root .text-amber-600 {
+  color: var(--color-accent) !important;
+}
+.admin-portal-root .text-amber-700 {
+  color: var(--color-accent-dark) !important;
+}
+.admin-portal-root .border-amber-500,
+.admin-portal-root .border-amber-400,
+.admin-portal-root .border-amber-300 {
+  border-color: color-mix(in srgb, var(--color-accent) 55%, transparent) !important;
+}
+.admin-portal-root .bg-amber-50,
+.admin-portal-root .bg-amber-50\/40 {
+  background-color: color-mix(in srgb, var(--color-accent) 12%, var(--color-surface)) !important;
+}
+.admin-portal-root .bg-amber-100 {
+  background-color: color-mix(in srgb, var(--color-accent) 20%, var(--color-surface)) !important;
+}
+
+/* Harmonize Corner Radius across Admin Portal & Public Website using --studio-radius */
+.admin-portal-root .rounded-2xl {
+  border-radius: var(--studio-radius, 12px) !important;
+}
+.admin-portal-root .rounded-xl {
+  border-radius: calc(var(--studio-radius, 12px) * 0.75) !important;
+}
+.admin-portal-root .rounded-lg {
+  border-radius: calc(var(--studio-radius, 12px) * 0.55) !important;
+}
+
+/* Dark Mode Surface, Text, Border & Input Adaptation for Admin Portal */
+html.dark .admin-portal-root .bg-white {
+  background-color: var(--color-surface) !important;
+  color: var(--color-text) !important;
+}
+
+html.dark .admin-portal-root .bg-gray-50,
+html.dark .admin-portal-root .bg-slate-50 {
+  background-color: color-mix(in srgb, var(--color-background) 70%, var(--color-surface)) !important;
+  color: var(--color-text) !important;
+}
+
+html.dark .admin-portal-root .bg-gray-100,
+html.dark .admin-portal-root .bg-slate-100 {
+  background-color: color-mix(in srgb, var(--color-surface) 85%, #ffffff) !important;
+  color: var(--color-text) !important;
+}
+
+html.dark .admin-portal-root .hover\:bg-gray-50:hover,
+html.dark .admin-portal-root .hover\:bg-gray-100:hover,
+html.dark .admin-portal-root .hover\:bg-slate-50:hover {
+  background-color: color-mix(in srgb, var(--color-surface) 88%, #ffffff) !important;
+}
+
+html.dark .admin-portal-root .text-gray-900,
+html.dark .admin-portal-root .text-slate-900,
+html.dark .admin-portal-root .text-gray-800,
+html.dark .admin-portal-root .text-slate-800 {
+  color: var(--color-primary) !important;
+}
+
+html.dark .admin-portal-root .text-gray-700,
+html.dark .admin-portal-root .text-slate-700,
+html.dark .admin-portal-root .text-gray-600,
+html.dark .admin-portal-root .text-slate-600 {
+  color: var(--color-text) !important;
+}
+
+html.dark .admin-portal-root .text-gray-500,
+html.dark .admin-portal-root .text-slate-500,
+html.dark .admin-portal-root .text-gray-400 {
+  color: var(--color-text-muted) !important;
+}
+
+html.dark .admin-portal-root .border-gray-200,
+html.dark .admin-portal-root .border-gray-100,
+html.dark .admin-portal-root .border-gray-300,
+html.dark .admin-portal-root .border-slate-200,
+html.dark .admin-portal-root .border-slate-100,
+html.dark .admin-portal-root .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+html.dark .admin-portal-root .divide-gray-100 > :not([hidden]) ~ :not([hidden]) {
+  border-color: var(--color-border) !important;
+}
+
+html.dark .admin-portal-root input:not([type="color"]),
+html.dark .admin-portal-root select,
+html.dark .admin-portal-root textarea {
+  background-color: color-mix(in srgb, var(--color-background) 80%, var(--color-surface)) !important;
+  color: var(--color-primary) !important;
+  border-color: var(--color-border) !important;
 }

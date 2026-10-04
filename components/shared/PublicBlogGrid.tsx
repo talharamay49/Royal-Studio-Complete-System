@@ -1,37 +1,32 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import AnimatedSection from "@/components/shared/AnimatedSection";
+import OptimizedThumbnail from "@/components/shared/OptimizedThumbnail";
+import { PublicBlogGridSkeleton } from "@/components/shared/SkeletonScreens";
 import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 
 export default function PublicBlogGrid() {
-  const { blogPosts } = usePublicWebsiteCMS();
+  const { blogPosts, isLoading } = usePublicWebsiteCMS();
+
+  if (isLoading) {
+    return <PublicBlogGridSkeleton count={3} />;
+  }
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="mx-auto max-w-7xl 2xl:max-w-[1600px]">
       <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
         {blogPosts.map((post, i) => (
           <AnimatedSection key={post.slug} delay={i * 0.06}>
             <article className="group overflow-hidden rounded-[12px] border border-border bg-background shadow-premium transition-shadow hover:shadow-premium-lg">
               <Link href={`/blog/${post.slug}`}>
-                <div className="relative aspect-[16/10] overflow-hidden">
-                  {post.image.startsWith("data:") || post.image.startsWith("http") ? (
-                    <img
-                      src={post.image}
-                      alt={post.title}
-                      className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
-                    />
-                  ) : (
-                    <Image
-                      src={post.image}
-                      alt={post.title}
-                      fill
-                      className="object-cover transition-transform duration-700 group-hover:scale-105"
-                      sizes="33vw"
-                    />
-                  )}
-                </div>
+                <OptimizedThumbnail
+                  src={post.image}
+                  alt={post.title}
+                  aspect="wide"
+                  priority={i < 2}
+                  sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                />
                 <div className="p-6">
                   <div className="flex items-center gap-3 text-xs text-text-muted">
                     <span className="text-accent">{post.category}</span>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { dbInstance, getDefaultStudioProfile } from '@/lib/admin/db';
+import { dbInstance, getDefaultStudioProfile, verifyPassword, hashPassword } from '@/lib/admin/db';
 import { computeInvoiceStatus } from '@/components/admin/utils/calculations';
 import { User, AuditLogEntry } from '@/components/admin/types';
 import { GoogleGenAI } from '@google/genai';
@@ -10,30 +10,51 @@ import {
   testimonials as defaultTestimonials,
   blogPosts as defaultBlogPosts,
 } from '@/lib/data';
+import { optimizePortfolioImageServer } from '@/lib/imageOptimizer';
 
-// In-memory session store (persists across requests in node process)
-// Also supports global memory across HMR/reloads
-declare global {
-  var __studioSessions: Map<string, { userId: string; expiresAt: number }> | undefined;
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_LOGIN_ATTEMPTS = 10;
+const LOGIN_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{3,8}$/;
+
+function sanitizeHexColor(val: unknown, fallback: string): string {
+  if (typeof val === 'string' && HEX_COLOR_REGEX.test(val.trim())) {
+    return val.trim();
+  }
+  return fallback;
 }
 
-if (!global.__studioSessions) {
-  global.__studioSessions = new Map();
+export function extractSessionToken(req: Request): string | null {
+  const authHeader = req.headers.get('authorization');
+  if (authHeader) {
+    const bearer = authHeader.replace(/^Bearer\s+/i, '').trim();
+    if (bearer) return bearer;
+  }
+
+  const cookieHeader = req.headers.get('cookie');
+  if (cookieHeader) {
+    const cookies = cookieHeader.split(';');
+    for (const part of cookies) {
+      const [rawKey, ...rest] = part.trim().split('=');
+      if (rawKey === 'royal_studio_session') {
+        const val = decodeURIComponent(rest.join('=')).trim();
+        if (val) return val;
+      }
+    }
+  }
+  return null;
 }
-const sessions = global.__studioSessions;
 
 export function getAuthUser(req: Request): User | null {
-  const authHeader = req.headers.get('authorization');
-  if (!authHeader) return null;
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  const session = sessions.get(token);
+  const token = extractSessionToken(req);
+  if (!token) return null;
+  const session = dbInstance.getSession(token);
   if (!session) return null;
-  if (Date.now() > session.expiresAt) {
-    sessions.delete(token);
-    return null;
-  }
+
   const db = dbInstance.getData();
-  const user = db.users.find(u => u.id === session.userId);
+  const user = db.users.find(
+    u => u.id === session.userId && u.status !== 'DISABLED'
+  );
   return user || null;
 }
 
@@ -44,6 +65,7 @@ function parseJsonBody(req: Request): Promise<any> {
 export async function handleAdminApi(req: Request, slug: string[]): Promise<Response> {
   const method = req.method.toUpperCase();
   const pathStr = slug.join('/');
+
   const user = getAuthUser(req);
   const isAdmin = user?.role === 'ADMIN';
 
@@ -65,23 +87,83 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
 
   const db = dbInstance.getData();
 
+  const recordAdminAudit = (
+    section: string,
+    changedFields: string[],
+    summary: string
+  ) => {
+    if (!db.profileAuditLogs) db.profileAuditLogs = [];
+    const entry: AuditLogEntry = {
+      id: `audit-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      userId: user?.id || 'usr-admin',
+      userName: user?.name || 'Royal Studio',
+      userRole: user?.role || 'ADMIN',
+      section,
+      changedFields,
+      summary,
+    };
+    db.profileAuditLogs.unshift(entry);
+    if (db.profileAuditLogs.length > 200) {
+      db.profileAuditLogs = db.profileAuditLogs.slice(0, 200);
+    }
+  };
+
   // ================= AUTH ROUTES =================
   if (pathStr === 'auth/login' && method === 'POST') {
+    const clientIp =
+      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'local-client';
+    const now = Date.now();
+    const attemptState = loginAttempts.get(clientIp);
+    if (attemptState && attemptState.resetAt > now && attemptState.count >= MAX_LOGIN_ATTEMPTS) {
+      return NextResponse.json(
+        { error: 'Too many failed sign-in attempts. Please wait a few minutes and try again.' },
+        { status: 429 }
+      );
+    }
+
     const { email, username, password } = await parseJsonBody(req);
     const identifier = ((email || username || '') as string).toLowerCase().trim();
     const inputPassword = (password || '').trim();
 
     if (!identifier || !inputPassword) {
-      return NextResponse.json({ error: 'Email / Username and Password are required.' }, { status: 400 });
+      return NextResponse.json({ error: 'Email and password are required.' }, { status: 400 });
     }
 
-    const matchedUser = db.users.find(
-      u => u.email.toLowerCase() === identifier || u.name.toLowerCase() === identifier || (u.id && u.id.toLowerCase() === identifier)
-    );
+    // Match user by exact email or by domain alias (@royalstudio.online <-> @royalstudio.pk)
+    const normalizedPrefix = identifier.split('@')[0];
+    const isRoyalDomain =
+      identifier.endsWith('@royalstudio.online') || identifier.endsWith('@royalstudio.pk');
 
-    if (!matchedUser || matchedUser.password !== inputPassword) {
-      return NextResponse.json({ error: 'Invalid email / username or password.' }, { status: 401 });
+    const matchedUser = db.users.find(u => {
+      const userEmail = u.email.toLowerCase().trim();
+      if (userEmail === identifier) return true;
+      if (
+        isRoyalDomain &&
+        (userEmail === `${normalizedPrefix}@royalstudio.online` ||
+          userEmail === `${normalizedPrefix}@royalstudio.pk`)
+      ) {
+        return true;
+      }
+      return false;
+    });
+
+    const isPasswordValid =
+      Boolean(matchedUser) && verifyPassword(inputPassword, matchedUser?.password);
+
+    if (!matchedUser || !isPasswordValid) {
+      const prev = loginAttempts.get(clientIp);
+      loginAttempts.set(clientIp, {
+        count: prev && prev.resetAt > now ? prev.count + 1 : 1,
+        resetAt: now + LOGIN_WINDOW_MS,
+      });
+      return NextResponse.json(
+        { error: 'Invalid email or password. Please verify your credentials and try again.' },
+        { status: 401 }
+      );
     }
+
+    loginAttempts.delete(clientIp);
 
     if (matchedUser.status === 'DISABLED') {
       return NextResponse.json(
@@ -91,13 +173,21 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     }
 
     const token = `token-${matchedUser.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    sessions.set(token, {
+    const maxAgeSec = 30 * 24 * 60 * 60;
+    const sessionRecord = {
       userId: matchedUser.id,
-      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-    });
+      expiresAt: Date.now() + maxAgeSec * 1000,
+      lastActiveAt: Date.now(),
+    };
+    dbInstance.setSession(token, sessionRecord);
 
     const { password: _, ...userSafe } = matchedUser;
-    return NextResponse.json({ token, user: userSafe });
+    const response = NextResponse.json({ token, user: userSafe });
+    response.headers.set(
+      'Set-Cookie',
+      `royal_studio_session=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax`
+    );
+    return response;
   }
 
   if (pathStr === 'auth/me' && method === 'GET') {
@@ -109,12 +199,16 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
   }
 
   if (pathStr === 'auth/logout' && method === 'POST') {
-    const authHeader = req.headers.get('authorization');
-    if (authHeader) {
-      const token = authHeader.replace(/^Bearer\s+/i, '');
-      sessions.delete(token);
+    const token = extractSessionToken(req);
+    if (token) {
+      dbInstance.deleteSession(token);
     }
-    return NextResponse.json({ success: true });
+    const response = NextResponse.json({ success: true });
+    response.headers.set(
+      'Set-Cookie',
+      'royal_studio_session=; Path=/; Max-Age=0; SameSite=Lax'
+    );
+    return response;
   }
 
   // ================= USER & STAFF ACCOUNT MANAGEMENT =================
@@ -148,7 +242,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       status: 'ACTIVE',
       linkedTeamMemberId: teamMember.id,
       phone: phone || teamMember.phone,
-      password: String(password),
+      password: hashPassword(String(password).trim()),
       createdDate: new Date().toISOString(),
     };
     db.users.push(newUser);
@@ -171,9 +265,9 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       return NextResponse.json({ error: 'The primary Royal Studio Administrator account cannot be disabled.' }, { status: 400 });
     }
     targetUser.status = status === 'DISABLED' ? 'DISABLED' : 'ACTIVE';
-    if (targetUser.status === 'DISABLED') {
-      for (const [token, session] of sessions.entries()) {
-        if (session.userId === targetUser.id) sessions.delete(token);
+    if (targetUser.status === 'DISABLED' && db.sessions) {
+      for (const [token, session] of Object.entries(db.sessions)) {
+        if (session.userId === targetUser.id) delete db.sessions[token];
       }
     }
     if (targetUser.linkedTeamMemberId) {
@@ -195,7 +289,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     }
     const targetUser = db.users.find(u => u.id === id);
     if (!targetUser) return NextResponse.json({ error: 'User not found.' }, { status: 404 });
-    targetUser.password = String(password).trim();
+    targetUser.password = hashPassword(String(password).trim());
     dbInstance.save();
     return NextResponse.json({ success: true, message: `Password updated successfully for ${targetUser.name}` });
   }
@@ -210,8 +304,10 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       return NextResponse.json({ error: 'Cannot delete the primary Royal Studio Administrator account.' }, { status: 400 });
     }
     const deletedUser = db.users.splice(userIdx, 1)[0];
-    for (const [token, session] of sessions.entries()) {
-      if (session.userId === deletedUser.id) sessions.delete(token);
+    if (db.sessions) {
+      for (const [token, session] of Object.entries(db.sessions)) {
+        if (session.userId === deletedUser.id) delete db.sessions[token];
+      }
     }
     if (deletedUser.linkedTeamMemberId) {
       const tm = db.teamMembers.find(t => t.id === deletedUser.linkedTeamMemberId);
@@ -225,6 +321,94 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     return NextResponse.json({ success: true, message: 'User account removed.' });
   }
 
+  // ================= STAFF OWN PROFILE UPDATE =================
+  if (pathStr === 'me/profile' && method === 'PUT') {
+    const err = requireAuthCheck();
+    if (err) return err;
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const body = await parseJsonBody(req);
+    const {
+      name,
+      phone,
+      whatsapp,
+      specialization,
+      availabilityStatus,
+      notes,
+      newPassword,
+    } = body;
+
+    const targetUser = db.users.find(u => u.id === user.id);
+    if (!targetUser) {
+      return NextResponse.json({ error: 'User profile not found.' }, { status: 404 });
+    }
+
+    const updatedFields: string[] = [];
+    if (typeof name === 'string' && name.trim()) {
+      targetUser.name = name.trim();
+      updatedFields.push('name');
+    }
+    if (typeof phone === 'string') {
+      targetUser.phone = phone.trim();
+      updatedFields.push('phone');
+    }
+    if (typeof newPassword === 'string' && newPassword.trim()) {
+      if (newPassword.trim().length < 4) {
+        return NextResponse.json(
+          { error: 'New password must be at least 4 characters long.' },
+          { status: 400 }
+        );
+      }
+      targetUser.password = hashPassword(newPassword.trim());
+      updatedFields.push('password');
+    }
+
+    const linkedTm = db.teamMembers.find(
+      tm =>
+        tm.id === targetUser.linkedTeamMemberId ||
+        tm.userId === targetUser.id ||
+        tm.name.toLowerCase() === user.name.toLowerCase()
+    );
+
+    if (linkedTm) {
+      if (typeof name === 'string' && name.trim()) linkedTm.name = name.trim();
+      if (typeof phone === 'string') linkedTm.phone = phone.trim();
+      if (typeof whatsapp === 'string') {
+        linkedTm.whatsapp = whatsapp.trim();
+        updatedFields.push('whatsapp');
+      }
+      if (typeof specialization === 'string') {
+        linkedTm.specialization = specialization.trim();
+        updatedFields.push('specialization');
+      }
+      if (
+        availabilityStatus === 'Available' ||
+        availabilityStatus === 'Busy' ||
+        availabilityStatus === 'On Leave'
+      ) {
+        linkedTm.availabilityStatus = availabilityStatus;
+        updatedFields.push('availabilityStatus');
+      }
+      if (typeof notes === 'string') {
+        linkedTm.notes = notes.trim();
+        updatedFields.push('notes');
+      }
+    }
+
+    recordAdminAudit(
+      'Staff Profile',
+      updatedFields.length ? updatedFields : ['profile'],
+      `${targetUser.name} (${targetUser.role}) updated their personal profile (${updatedFields.join(', ') || 'details'}).`
+    );
+
+    dbInstance.save();
+    const { password: _, ...safeUser } = targetUser;
+    return NextResponse.json({
+      user: safeUser,
+      teamMember: linkedTm ? { ...linkedTm, dailyRate: 0, eventRate: 0 } : null,
+    });
+  }
+
   // ================= ALL DATA FETCH =================
   if (pathStr === 'db/all' && method === 'GET') {
     const err = requireAuthCheck();
@@ -233,20 +417,58 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const isStaff = user?.role === 'STAFF';
     if (isStaff && user) {
       const linkedTm = db.teamMembers.find(
-        tm => tm.id === user.linkedTeamMemberId || tm.name.toLowerCase() === user.name.toLowerCase()
+        tm =>
+          tm.id === user.linkedTeamMemberId ||
+          tm.userId === user.id ||
+          tm.name.toLowerCase() === user.name.toLowerCase()
       );
       const staffTmId = linkedTm?.id;
-      const myAssignments = staffTmId ? db.teamAssignments.filter(a => a.teamMemberId === staffTmId) : [];
-      const myEventIds = new Set(myAssignments.map(a => a.eventId));
+      const myAssignments = staffTmId
+        ? db.teamAssignments
+            .filter(a => a.teamMemberId === staffTmId && a.assignmentStatus !== 'Cancelled')
+            .map(a => ({
+              ...a,
+              rate: 0,
+              cost: 0,
+              notes: '',
+            }))
+        : [];
 
+      const myTasks = db.tasks.filter(
+        t =>
+          (staffTmId && t.assigneeId === staffTmId) ||
+          (user.linkedTeamMemberId && t.assigneeId === user.linkedTeamMemberId)
+      );
+
+      // Include events from both direct crew assignments and assigned tasks
+      const myEventIds = new Set<string>([
+        ...myAssignments.map(a => a.eventId),
+        ...myTasks.map(t => t.eventId),
+      ]);
+
+      // Strictly expose ONLY event name, date, location (venue & city), and time to Staff
       const myEvents = db.events
-        .filter(e => myEventIds.has(e.id))
+        .filter(e => myEventIds.has(e.id) && e.status !== 'Cancelled')
         .map(e => ({
-          ...e,
+          id: e.id,
+          title: e.title,
+          eventDate: e.eventDate,
+          startTime: e.startTime || '18:00',
+          endTime: e.endTime || '23:00',
+          venue: e.venue || '',
+          city: e.city || '',
+          category: e.category,
+          status: e.status,
+          clientId: '',
           packagePrice: 0,
           advancePaid: 0,
           discount: 0,
           tax: 0,
+          notes: '',
+          createdBy: '',
+          createdDate: '',
+          updatedDate: '',
+          isMultiDay: false,
           staffCost: 0,
           rentalCost: 0,
           eventExpenses: 0,
@@ -256,25 +478,39 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
           remainingBalance: 0,
         }));
 
-      const myDaySchedules = db.daySchedules.filter(ds => myEventIds.has(ds.eventId));
-      const myTasks = db.tasks.filter(
-        t => (staffTmId && t.assigneeId === staffTmId) || (user.linkedTeamMemberId && t.assigneeId === user.linkedTeamMemberId)
-      );
-      const myPayments = staffTmId ? db.teamPayments.filter(p => p.teamMemberId === staffTmId) : [];
-      const myEquipmentAssignments = db.equipmentAssignments.filter(ea => myEventIds.has(ea.eventId));
+      const myEquipmentAssignments = db.equipmentAssignments
+        .filter(ea => myEventIds.has(ea.eventId))
+        .map(ea => ({
+          ...ea,
+          rentalRate: 0,
+          rentalCost: 0,
+          notes: '',
+        }));
       const myEquipmentIds = new Set(myEquipmentAssignments.map(ea => ea.equipmentId));
-      const myEquipment = db.equipment.filter(eq => myEquipmentIds.has(eq.id)).map(eq => ({ ...eq, rentalRate: 0 }));
+      const myEquipment = db.equipment
+        .filter(eq => myEquipmentIds.has(eq.id))
+        .map(eq => ({
+          ...eq,
+          rentalRate: 0,
+        }));
 
       return NextResponse.json({
-        profile: db.profile,
+        profile: {
+          studioName: db.profile.studioName,
+          tagline: db.profile.tagline,
+          city: db.profile.city,
+          logo: db.profile.logo,
+          primaryLogo: db.profile.primaryLogo,
+          themeConfig: db.profile.themeConfig,
+        },
         users: [],
         clients: [],
         events: myEvents,
-        daySchedules: myDaySchedules,
+        daySchedules: [],
         packages: [],
         teamMembers: linkedTm ? [{ ...linkedTm, dailyRate: 0, eventRate: 0 }] : [],
         teamAssignments: myAssignments,
-        teamPayments: myPayments,
+        teamPayments: [],
         equipment: myEquipment,
         equipmentAssignments: myEquipmentAssignments,
         maintenanceLogs: [],
@@ -326,6 +562,39 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     });
   }
 
+  // ================= DATABASE ENGINE & BACKUP MANAGEMENT =================
+  if (pathStr === 'db/info' && method === 'GET') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    return NextResponse.json(dbInstance.getEngineStats());
+  }
+
+  if (pathStr === 'db/export' && method === 'GET') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    const { users: _u, sessions: _s, ...exportable } = db;
+    return NextResponse.json({
+      exportedAt: new Date().toISOString(),
+      engine: dbInstance.getEngineStats().driverName,
+      data: exportable,
+    });
+  }
+
+  if (pathStr === 'db/import' && method === 'POST') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    const body = await parseJsonBody(req);
+    const payload = body?.data && typeof body.data === 'object' ? body.data : body;
+    if (!payload || typeof payload !== 'object') {
+      return NextResponse.json({ error: 'Invalid database backup file.' }, { status: 400 });
+    }
+    dbInstance.importDatabase(payload);
+    return NextResponse.json({
+      success: true,
+      stats: dbInstance.getEngineStats(),
+    });
+  }
+
   // ================= PUBLIC WEBSITE & PORTFOLIO CMS =================
   if (pathStr === 'cms' && method === 'GET') {
     if (!db.cms) {
@@ -339,7 +608,14 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       };
       dbInstance.save();
     }
-    return NextResponse.json(db.cms);
+    if (isAdmin) {
+      return NextResponse.json(db.cms);
+    }
+    // Redact private client inquiry leads from unauthenticated public CMS fetches
+    return NextResponse.json({
+      ...db.cms,
+      websiteLeads: [],
+    });
   }
 
   if (pathStr === 'cms' && method === 'PUT') {
@@ -356,11 +632,56 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         websiteLeads: [],
       };
     }
-    if (Array.isArray(body.portfolioItems)) db.cms.portfolioItems = body.portfolioItems;
+    if (Array.isArray(body.portfolioItems)) {
+      const optimizedItems = await Promise.all(
+        body.portfolioItems.map(async (item: any) => {
+          if (typeof item?.image === 'string' && item.image.startsWith('data:image/')) {
+            try {
+              const opt = await optimizePortfolioImageServer(item.image, {
+                title: item.title,
+                category: item.category,
+                preferredFormat: 'webp',
+              });
+              return {
+                ...item,
+                image: opt.url,
+                aspect: item.aspect || opt.aspect,
+              };
+            } catch {
+              return item;
+            }
+          }
+          return item;
+        })
+      );
+      db.cms.portfolioItems = optimizedItems;
+    }
     if (Array.isArray(body.pricingPackages)) db.cms.pricingPackages = body.pricingPackages;
     if (Array.isArray(body.detailedServices)) db.cms.detailedServices = body.detailedServices;
     if (Array.isArray(body.testimonials)) db.cms.testimonials = body.testimonials;
-    if (Array.isArray(body.blogPosts)) db.cms.blogPosts = body.blogPosts;
+    if (Array.isArray(body.blogPosts)) {
+      const optimizedPosts = await Promise.all(
+        body.blogPosts.map(async (post: any) => {
+          if (typeof post?.image === 'string' && post.image.startsWith('data:image/')) {
+            try {
+              const opt = await optimizePortfolioImageServer(post.image, {
+                title: post.title,
+                category: 'blog',
+                preferredFormat: 'webp',
+              });
+              return {
+                ...post,
+                image: opt.url,
+              };
+            } catch {
+              return post;
+            }
+          }
+          return post;
+        })
+      );
+      db.cms.blogPosts = optimizedPosts;
+    }
     if (Array.isArray(body.websiteLeads)) db.cms.websiteLeads = body.websiteLeads;
     dbInstance.save();
     return NextResponse.json(db.cms);
@@ -381,9 +702,113 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     return NextResponse.json(db.cms);
   }
 
+  // ================= THEME & APPEARANCE PERSISTENCE =================
+  if (pathStr === 'theme' && method === 'GET') {
+    const defaultProf = getDefaultStudioProfile();
+    return NextResponse.json(db.profile.themeConfig || defaultProf.themeConfig);
+  }
+
+  if (pathStr === 'theme' && method === 'PUT') {
+    const body = await parseJsonBody(req);
+    const defaultProf = getDefaultStudioProfile();
+    const currentTheme = db.profile.themeConfig || defaultProf.themeConfig!;
+
+    const bodyKeys = Object.keys(body || {});
+    const isOnlyModeToggle = bodyKeys.length === 1 && bodyKeys[0] === 'mode';
+
+    // Modifying brand colors, border-radius, or typography globally requires Admin privileges
+    if (!isOnlyModeToggle) {
+      const err = requireAdminCheck();
+      if (err) return err;
+    }
+
+    const allowedModes = ['light', 'dark', 'system'] as const;
+    const allowedRadius = ['sharp', 'editorial', 'rounded'] as const;
+    const allowedHeadingFonts = [
+      'Cormorant Garamond',
+      'Playfair Display',
+      'Cinzel',
+      'Inter',
+    ] as const;
+    const allowedBodyFonts = ['Inter', 'Poppins'] as const;
+    const allowedSidebars = ['obsidian', 'editorial', 'glass'] as const;
+
+    const updatedTheme = {
+      ...currentTheme,
+      mode: allowedModes.includes(body.mode) ? body.mode : currentTheme.mode,
+      ...(isAdmin
+        ? {
+            presetId:
+              typeof body.presetId === 'string'
+                ? body.presetId.slice(0, 40)
+                : currentTheme.presetId,
+            accentColor: sanitizeHexColor(body.accentColor, currentTheme.accentColor),
+            accentLight: sanitizeHexColor(body.accentLight, currentTheme.accentLight),
+            accentDark: sanitizeHexColor(body.accentDark, currentTheme.accentDark),
+            primaryColor: sanitizeHexColor(body.primaryColor, currentTheme.primaryColor),
+            backgroundLight: sanitizeHexColor(
+              body.backgroundLight,
+              currentTheme.backgroundLight
+            ),
+            surfaceLight: sanitizeHexColor(body.surfaceLight, currentTheme.surfaceLight),
+            backgroundDark: sanitizeHexColor(body.backgroundDark, currentTheme.backgroundDark),
+            surfaceDark: sanitizeHexColor(body.surfaceDark, currentTheme.surfaceDark),
+            sidebarStyle: allowedSidebars.includes(body.sidebarStyle)
+              ? body.sidebarStyle
+              : currentTheme.sidebarStyle,
+            headingFont: allowedHeadingFonts.includes(body.headingFont)
+              ? body.headingFont
+              : currentTheme.headingFont,
+            bodyFont: allowedBodyFonts.includes(body.bodyFont)
+              ? body.bodyFont
+              : currentTheme.bodyFont,
+            borderRadius: allowedRadius.includes(body.borderRadius)
+              ? body.borderRadius
+              : currentTheme.borderRadius,
+            borderRadiusPx:
+              typeof body.borderRadiusPx === 'number' && !Number.isNaN(body.borderRadiusPx)
+                ? Math.max(0, Math.min(32, Math.round(body.borderRadiusPx)))
+                : currentTheme.borderRadiusPx,
+            applyToPublicWebsite:
+              typeof body.applyToPublicWebsite === 'boolean'
+                ? body.applyToPublicWebsite
+                : currentTheme.applyToPublicWebsite,
+          }
+        : {}),
+    };
+    db.profile.themeConfig = updatedTheme;
+
+    if (user && isAdmin && !isOnlyModeToggle) {
+      if (!db.profileAuditLogs) db.profileAuditLogs = [];
+      db.profileAuditLogs.unshift({
+        id: `audit-${Date.now().toString(36)}`,
+        timestamp: new Date().toISOString(),
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+        section: 'Admin Theme Customizer',
+        changedFields: bodyKeys,
+        summary: `Updated global studio theme (${updatedTheme.presetId || 'custom'} · ${updatedTheme.mode} mode · accent ${updatedTheme.accentColor}).`,
+      });
+    }
+
+    dbInstance.save();
+    return NextResponse.json({
+      themeConfig: db.profile.themeConfig,
+      profile: db.profile,
+    });
+  }
+
   // ================= PROFILE =================
   if (pathStr === 'profile' && method === 'GET') {
-    return NextResponse.json(db.profile);
+    if (isAdmin) {
+      return NextResponse.json(db.profile);
+    }
+    return NextResponse.json({
+      ...db.profile,
+      bankAccounts: (db.profile.bankAccounts || []).filter(b => b.showPublicly && b.isActive),
+      paymentMethods: (db.profile.paymentMethods || []).filter(m => m.showPublicly && m.isActive),
+    });
   }
 
   if (pathStr === 'profile/audit-logs' && method === 'GET') {
@@ -593,6 +1018,105 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       createdBy: user?.id || 'usr-admin',
     };
     db.quotations.unshift(newQuo);
+
+    // Automatic Resource & Equipment Allocation on Event Scheduling
+    const autoAllocate = body.autoAllocateResources !== false;
+    const explicitEqIds: string[] = Array.isArray(body.selectedEquipmentIds)
+      ? body.selectedEquipmentIds
+      : [];
+    const explicitCrewIds: string[] = Array.isArray(body.selectedCrewIds)
+      ? body.selectedCrewIds
+      : [];
+
+    if (autoAllocate) {
+      const sameDayEventIds = new Set(
+        db.events
+          .filter(e => e.id !== newEvent.id && e.eventDate === eventDate && e.status !== 'Cancelled')
+          .map(e => e.id)
+      );
+
+      // 1. Allocate Equipment (either explicit selection or automatic essential kit)
+      const gearToAssign = db.equipment.filter(eq => explicitEqIds.includes(eq.id));
+      if (gearToAssign.length === 0) {
+        const busyEqIds = new Set(
+          db.equipmentAssignments
+            .filter(ea => sameDayEventIds.has(ea.eventId) && !ea.isCheckedIn)
+            .map(ea => ea.equipmentId)
+        );
+        const availableGear = db.equipment.filter(
+          eq => eq.status !== 'Maintenance' && !busyEqIds.has(eq.id)
+        );
+        const pickedCategories = new Set<string>();
+        for (const eq of availableGear) {
+          if (!pickedCategories.has(eq.category) && gearToAssign.length < 4) {
+            pickedCategories.add(eq.category);
+            gearToAssign.push(eq);
+          }
+        }
+      }
+
+      gearToAssign.forEach((eq, idx) => {
+        db.equipmentAssignments.push({
+          id: `eqa-${Date.now().toString().slice(-5)}-${idx}`,
+          eventId: newEvent.id,
+          equipmentId: eq.id,
+          quantity: 1,
+          rentalRate: eq.rentalRate || 0,
+          rentalCost: eq.rentalRate || 0,
+          isCheckedOut: false,
+          isCheckedIn: false,
+          notes: 'Auto-reserved via Calendar Booking',
+        });
+      });
+
+      // 2. Allocate Crew (if explicitCrewIds provided or package has requirements)
+      let crewToAssign = db.teamMembers.filter(tm => explicitCrewIds.includes(tm.id));
+      if (crewToAssign.length === 0 && packageId) {
+        const pkg = db.packages.find(p => p.id === packageId);
+        const busyCrewIds = new Set(
+          db.teamAssignments
+            .filter(ta => sameDayEventIds.has(ta.eventId) && ta.assignmentStatus !== 'Cancelled')
+            .map(ta => ta.teamMemberId)
+        );
+        const availableCrew = db.teamMembers.filter(
+          tm => tm.isActive && tm.availabilityStatus === 'Available' && !busyCrewIds.has(tm.id)
+        );
+        if (pkg) {
+          const photogs = availableCrew
+            .filter(tm => tm.role === 'Photographer')
+            .slice(0, pkg.requiredPhotographers || 1);
+          const videog = availableCrew
+            .filter(tm => tm.role === 'Videographer')
+            .slice(0, pkg.requiredVideographers || 1);
+          const drone = availableCrew
+            .filter(tm => tm.role === 'Drone Operator')
+            .slice(0, pkg.requiredDroneOperators || 0);
+          crewToAssign = [...photogs, ...videog, ...drone];
+        }
+      }
+
+      crewToAssign.forEach((tm, idx) => {
+        const rate = tm.eventRate || tm.dailyRate || 15000;
+        db.teamAssignments.push({
+          id: `ta-${Date.now().toString().slice(-5)}-${idx}`,
+          eventId: newEvent.id,
+          teamMemberId: tm.id,
+          role: tm.role,
+          date: eventDate,
+          hours: 8,
+          rate,
+          cost: rate,
+          assignmentStatus: 'Assigned',
+          notes: 'Auto-allocated via Calendar Booking',
+        });
+      });
+    }
+
+    recordAdminAudit(
+      'Events & Bookings',
+      ['title', 'eventDate', 'venue', 'packagePrice', 'equipmentAllocation'],
+      `Created event booking "${newEvent.title}" on ${newEvent.eventDate} at ${newEvent.venue}, ${newEvent.city} (PKR ${priceNum.toLocaleString()}) with automatic resource allocation.`
+    );
     dbInstance.save();
     dbInstance.recalculateEvent(newEvent.id);
     return NextResponse.json(newEvent);
@@ -606,6 +1130,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const index = db.events.findIndex(e => e.id === id);
     if (index === -1) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     db.events[index] = { ...db.events[index], ...body, updatedDate: new Date().toISOString() };
+    recordAdminAudit(
+      'Events & Bookings',
+      Object.keys(body),
+      `Updated event "${db.events[index].title}" (${Object.keys(body).slice(0, 5).join(', ')}).`
+    );
     dbInstance.save();
     const updated = dbInstance.recalculateEvent(id);
     return NextResponse.json(updated);
@@ -615,6 +1144,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const id = slug[1];
+    const deletedEvt = db.events.find(e => e.id === id);
     db.events = db.events.filter(e => e.id !== id);
     db.daySchedules = db.daySchedules.filter(d => d.eventId !== id);
     db.teamAssignments = db.teamAssignments.filter(t => t.eventId !== id);
@@ -624,6 +1154,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     db.payments = db.payments.filter(p => p.eventId !== id);
     db.quotations = db.quotations.filter(q => q.eventId !== id);
     db.tasks = db.tasks.filter(t => t.eventId !== id);
+    recordAdminAudit(
+      'Events & Bookings',
+      ['deleted'],
+      `Deleted event booking "${deletedEvt?.title || id}".`
+    );
     dbInstance.save();
     return NextResponse.json({ success: true });
   }
@@ -1090,6 +1625,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       isActive: true,
     };
     db.packages.push(newPkg);
+    recordAdminAudit(
+      'Packages',
+      ['name', 'price', 'category', 'duration'],
+      `Created package "${newPkg.name}" (${newPkg.category}) priced at PKR ${newPkg.price.toLocaleString()}.`
+    );
     dbInstance.save();
     return NextResponse.json(newPkg);
   }
@@ -1102,6 +1642,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const index = db.packages.findIndex(p => p.id === id);
     if (index === -1) return NextResponse.json({ error: 'Package not found' }, { status: 404 });
     db.packages[index] = { ...db.packages[index], ...body };
+    recordAdminAudit(
+      'Packages',
+      Object.keys(body),
+      `Edited package "${db.packages[index].name}" — updated ${Object.keys(body).join(', ')} (PKR ${Number(db.packages[index].price || 0).toLocaleString()}).`
+    );
     dbInstance.save();
     return NextResponse.json(db.packages[index]);
   }
@@ -1110,7 +1655,13 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const id = slug[1];
+    const deletedPkg = db.packages.find(p => p.id === id);
     db.packages = db.packages.filter(p => p.id !== id);
+    recordAdminAudit(
+      'Packages',
+      ['deleted'],
+      `Deleted package "${deletedPkg?.name || id}".`
+    );
     dbInstance.save();
     return NextResponse.json({ success: true });
   }
@@ -1131,6 +1682,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       notes: body.notes || '',
     };
     db.eventExpenses.push(newExp);
+    recordAdminAudit(
+      'Event Expenses',
+      ['category', 'amount', 'description'],
+      `Added event expense "${newExp.description || newExp.category}" of PKR ${newExp.amount.toLocaleString()}.`
+    );
     dbInstance.save();
     dbInstance.recalculateEvent(body.eventId);
     return NextResponse.json(newExp);
@@ -1144,6 +1700,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const index = db.eventExpenses.findIndex(e => e.id === id);
     if (index === -1) return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
     db.eventExpenses[index] = { ...db.eventExpenses[index], ...body };
+    recordAdminAudit(
+      'Event Expenses',
+      Object.keys(body),
+      `Updated event expense "${db.eventExpenses[index].description || db.eventExpenses[index].category}" (PKR ${Number(db.eventExpenses[index].amount || 0).toLocaleString()}).`
+    );
     dbInstance.save();
     dbInstance.recalculateEvent(db.eventExpenses[index].eventId);
     return NextResponse.json(db.eventExpenses[index]);
@@ -1157,6 +1718,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     if (!expense) return NextResponse.json({ error: 'Expense not found' }, { status: 404 });
     const eventId = expense.eventId;
     db.eventExpenses = db.eventExpenses.filter(e => e.id !== id);
+    recordAdminAudit(
+      'Event Expenses',
+      ['deleted'],
+      `Deleted event expense "${expense.description || expense.category}" (PKR ${expense.amount.toLocaleString()}).`
+    );
     dbInstance.save();
     dbInstance.recalculateEvent(eventId);
     return NextResponse.json({ success: true });
@@ -1179,6 +1745,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       createdBy: user?.id || 'usr-admin',
     };
     db.studioExpenses.unshift(newStudioExp);
+    recordAdminAudit(
+      'Studio Expenses',
+      ['category', 'description', 'amount', 'paymentMethod'],
+      `Recorded studio overhead expense "${newStudioExp.description || newStudioExp.category}" of PKR ${newStudioExp.amount.toLocaleString()} (${newStudioExp.category}).`
+    );
     dbInstance.save();
     return NextResponse.json(newStudioExp);
   }
@@ -1191,6 +1762,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const index = db.studioExpenses.findIndex(e => e.id === id);
     if (index === -1) return NextResponse.json({ error: 'Studio expense not found' }, { status: 404 });
     db.studioExpenses[index] = { ...db.studioExpenses[index], ...body };
+    recordAdminAudit(
+      'Studio Expenses',
+      Object.keys(body),
+      `Updated studio overhead expense "${db.studioExpenses[index].description || db.studioExpenses[index].category}" (PKR ${Number(db.studioExpenses[index].amount || 0).toLocaleString()}).`
+    );
     dbInstance.save();
     return NextResponse.json(db.studioExpenses[index]);
   }
@@ -1199,7 +1775,13 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const id = slug[1];
+    const deletedStudioExp = db.studioExpenses.find(e => e.id === id);
     db.studioExpenses = db.studioExpenses.filter(e => e.id !== id);
+    recordAdminAudit(
+      'Studio Expenses',
+      ['deleted'],
+      `Deleted studio overhead expense "${deletedStudioExp?.description || id}" (PKR ${Number(deletedStudioExp?.amount || 0).toLocaleString()}).`
+    );
     dbInstance.save();
     return NextResponse.json({ success: true });
   }
@@ -1506,12 +2088,18 @@ Rules:
 - Mention PKR currency values where relevant.
 - Return ONLY valid JSON with keys: highlight, urgentAction, riskAlert, opportunity, todaysTip.`;
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
+    const rawApiKey = (process.env.GEMINI_API_KEY || '').trim();
+    const isValidGeminiKey =
+      rawApiKey.length > 20 &&
+      rawApiKey.startsWith('AIza') &&
+      !rawApiKey.includes('YOUR_') &&
+      !rawApiKey.includes('MY_');
+
+    if (isValidGeminiKey) {
       try {
-        const ai = new GoogleGenAI({ apiKey });
+        const ai = new GoogleGenAI({ apiKey: rawApiKey });
         const response = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-3.8-flash',
           contents: `Here is the current live data from Royal Studio database:\n${JSON.stringify(dataSummary, null, 2)}`,
           config: {
             systemInstruction: systemPrompt,
@@ -1520,9 +2108,11 @@ Rules:
         });
         const text = response.text || '';
         const parsed = JSON.parse(text);
-        return NextResponse.json({ ...parsed, generatedAt: new Date().toISOString() });
-      } catch (geminiErr) {
-        console.error('Gemini API call failed, generating deterministic fallback:', geminiErr);
+        if (parsed && parsed.highlight && parsed.urgentAction) {
+          return NextResponse.json({ ...parsed, generatedAt: new Date().toISOString() });
+        }
+      } catch {
+        // Gracefully fall back to deterministic real-time studio analytics below
       }
     }
 

@@ -4,16 +4,16 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap font-button text-sm font-medium tracking-wide transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 rounded-xl",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap font-button text-sm font-medium tracking-wide transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 rounded-xl cursor-pointer",
   {
     variants: {
       variant: {
         default: "bg-primary text-secondary hover:bg-primary/90 shadow-premium",
-        accent: "bg-accent text-secondary hover:bg-accent-light shadow-premium hover:shadow-premium-lg",
+        accent: "bg-accent text-[#111111] font-semibold hover:bg-accent-light shadow-premium hover:shadow-premium-lg",
         outline: "border border-border bg-surface text-text hover:border-accent hover:text-accent",
         ghost: "text-text hover:bg-background",
         link: "text-accent underline-offset-4 hover:underline",
-        whatsapp: "bg-[#25D366] text-white hover:bg-[#20bd5a] shadow-premium",
+        whatsapp: "bg-[#25D366] text-white font-semibold hover:bg-[#20bd5a] shadow-premium",
       },
       size: {
         default: "h-11 px-6 py-2",

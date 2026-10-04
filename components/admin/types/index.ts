@@ -568,12 +568,34 @@ export interface AdminProfile {
   openGraphImage?: string;
   showBusinessHoursPublicly?: boolean;
 
+  // 12. Unified Theme & Appearance Customization (Admin ERP & Public Website)
+  themeConfig?: StudioThemeConfig;
+
   notificationPreferences: {
     overdueInvoices: boolean;
     urgentTasks: boolean;
     equipmentMaintenance: boolean;
     lowAvailability: boolean;
   };
+}
+
+export interface StudioThemeConfig {
+  mode: 'light' | 'dark' | 'system';
+  presetId: string;
+  accentColor: string;
+  accentLight: string;
+  accentDark: string;
+  primaryColor: string;
+  backgroundLight: string;
+  surfaceLight: string;
+  backgroundDark: string;
+  surfaceDark: string;
+  sidebarStyle: 'obsidian' | 'editorial' | 'glass';
+  headingFont: 'Cormorant Garamond' | 'Playfair Display' | 'Cinzel' | 'Inter';
+  bodyFont: 'Inter' | 'Poppins';
+  borderRadius: 'sharp' | 'editorial' | 'rounded';
+  borderRadiusPx?: number;
+  applyToPublicWebsite: boolean;
 }
 
 export interface TempHireRecommendation {

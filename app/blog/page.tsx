@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PageHeader from "@/components/layout/PageHeader";
 import PublicBlogGrid from "@/components/shared/PublicBlogGrid";
+import SectionErrorBoundary from "@/components/shared/SectionErrorBoundary";
 import { pageKeywords } from "@/lib/data";
 import { getCanonical } from "@/lib/seo";
 
@@ -33,7 +34,9 @@ export default function BlogPage() {
       />
 
       <section className="section-padding bg-surface">
-        <PublicBlogGrid />
+        <SectionErrorBoundary sectionName="Journal & Blog Articles">
+          <PublicBlogGrid />
+        </SectionErrorBoundary>
       </section>
     </main>
   );

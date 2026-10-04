@@ -6,6 +6,7 @@ import SectionHeading from "@/components/shared/SectionHeading";
 import AnimatedSection from "@/components/shared/AnimatedSection";
 import { aboutHighlights, pageKeywords, siteConfig } from "@/lib/data";
 import { getCanonical } from "@/lib/seo";
+import { ROYAL_BLUR_DATA_URL } from "@/lib/blur-placeholder";
 
 export const metadata: Metadata = {
   title: "About Us",
@@ -84,6 +85,9 @@ export default function AboutPage() {
                     src="/team/co-founders.webp"
                     alt="Royal Studio co-founders together"
                     fill
+                    placeholder="blur"
+                    blurDataURL={ROYAL_BLUR_DATA_URL}
+                    referrerPolicy="no-referrer"
                     className="object-cover"
                     sizes="50vw"
                   />
@@ -93,6 +97,9 @@ export default function AboutPage() {
                     src="/team/team.webp"
                     alt="Muhammad Ramzan and Talha Ramay at a Royal Studio branded event"
                     fill
+                    placeholder="blur"
+                    blurDataURL={ROYAL_BLUR_DATA_URL}
+                    referrerPolicy="no-referrer"
                     className="object-cover"
                     sizes="192px"
                   />
@@ -118,6 +125,9 @@ export default function AboutPage() {
                       src={founderPhotos[founder]}
                       alt={founder}
                       fill
+                      placeholder="blur"
+                      blurDataURL={ROYAL_BLUR_DATA_URL}
+                      referrerPolicy="no-referrer"
                       className="object-cover"
                       sizes="80px"
                     />

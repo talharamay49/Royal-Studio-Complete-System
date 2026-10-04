@@ -32,6 +32,7 @@ import {
   blogPosts as defaultBlogPosts,
 } from '@/lib/data';
 import type { PortfolioItem, PricingPackage, Service, Testimonial, BlogPost } from '@/types';
+import { getDatabaseAdapter, DatabaseEngineStats } from '@/lib/db/storageAdapter';
 
 export interface WebsiteLead {
   id: string;
@@ -183,24 +184,24 @@ export function getDefaultStudioProfile(): AdminProfile {
     // 5. Branding & Logos
     logo: '/RoyalLogo.png',
     primaryLogo: '/RoyalLogo.png',
-    secondaryLogo: '/logo.png',
-    lightLogo: '/logo.png',
+    secondaryLogo: '/RoyalLogo.png',
+    lightLogo: '/RoyalLogo.png',
     darkLogo: '/RoyalLogo.png',
     documentLogo: '/RoyalLogo.png',
-    websiteLogo: '/logo.png',
+    websiteLogo: '/RoyalLogo.png',
     favicon: '/icon.png',
     appIcon: '/apple-icon.png',
     stampImage: '',
     signatureImage: '',
     emailHeaderLogo: '/RoyalLogo.png',
-    socialProfileImage: '/logo.png',
+    socialProfileImage: '/RoyalLogo.png',
     socialCoverImage: '/image.png',
 
     // 6. Document Branding & Stationery
-    documentBackground: '/invoice_lens_bg.jpg',
-    quotationBackground: '/invoice_lens_bg.jpg',
-    invoiceBackground: '/invoice_lens_bg.jpg',
-    receiptBackground: '/invoice_lens_bg.jpg',
+    documentBackground: '/image.png',
+    quotationBackground: '/image.png',
+    invoiceBackground: '/image.png',
+    receiptBackground: '/image.png',
     letterheadText: 'ROYAL STUDIO — PHOTOGRAPHY & FILMS',
     documentFooterText: 'Thank you for choosing Royal Studio. We Capture Your Memories!',
     defaultTermsAndConditions:
@@ -320,6 +321,25 @@ export function getDefaultStudioProfile(): AdminProfile {
     openGraphImage: '/logo.png',
     showBusinessHoursPublicly: true,
 
+    // 12. Unified Theme & Appearance Customization (Admin ERP & Public Website)
+    themeConfig: {
+      mode: 'light',
+      presetId: 'royal-champagne',
+      accentColor: '#c9a76a',
+      accentLight: '#d4b87a',
+      accentDark: '#b08f4f',
+      primaryColor: '#111111',
+      backgroundLight: '#f8f8f8',
+      surfaceLight: '#ffffff',
+      backgroundDark: '#0d0d0d',
+      surfaceDark: '#161616',
+      sidebarStyle: 'obsidian',
+      headingFont: 'Cormorant Garamond',
+      bodyFont: 'Inter',
+      borderRadius: 'editorial',
+      applyToPublicWebsite: true
+    },
+
     notificationPreferences: {
       overdueInvoices: true,
       urgentTasks: true,
@@ -333,26 +353,13 @@ function getInitialData(): DatabaseSchema {
   const adminUser: User = {
     id: 'usr-admin',
     name: 'Royal Studio',
-    email: 'admin@royalstudio.pk',
+    email: 'admin@royalstudio.online',
     role: 'ADMIN',
     status: 'ACTIVE',
     phone: '+92 308 4877073',
-    password: 'admin123',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
+    password: hashPassword('admin123'),
+    avatar: '/RoyalLogo.png',
     createdDate: '2026-01-01T00:00:00.000Z'
-  };
-
-  const staffUser: User = {
-    id: 'usr-staff',
-    name: 'Hamza Tariq',
-    email: 'staff@royalstudio.pk',
-    role: 'STAFF',
-    status: 'ACTIVE',
-    linkedTeamMemberId: 'tm-001',
-    phone: '+92 321 4455667',
-    password: 'staff123',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    createdDate: '2026-01-15T00:00:00.000Z'
   };
 
   const profile: AdminProfile = getDefaultStudioProfile();
@@ -1276,7 +1283,7 @@ function getInitialData(): DatabaseSchema {
   ];
 
   return {
-    users: [adminUser, staffUser],
+    users: [adminUser],
     profile,
     clients,
     events: [event1, eventLossLeader, eventCorporate],
@@ -1302,21 +1309,15 @@ export class StudioDatabase {
   private db: DatabaseSchema;
 
   constructor() {
-    ensureDirectoryExists();
-    if (fs.existsSync(DB_FILE)) {
-      try {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        this.db = JSON.parse(raw);
-      } catch (err) {
-        console.error('Error reading db file, seeding fresh:', err);
-        this.db = getInitialData();
-        this.save();
-      }
+    const adapter = getDatabaseAdapter<DatabaseSchema>();
+    const existing = adapter.read();
+    if (existing) {
+      this.db = existing;
     } else {
-      const seedFile = path.resolve(process.cwd(), 'data', 'studio_db.json');
-      if (fs.existsSync(seedFile)) {
+      ensureDirectoryExists();
+      if (fs.existsSync(DB_FILE)) {
         try {
-          const raw = fs.readFileSync(seedFile, 'utf-8');
+          const raw = fs.readFileSync(DB_FILE, 'utf-8');
           this.db = JSON.parse(raw);
         } catch {
           this.db = getInitialData();
@@ -1327,31 +1328,48 @@ export class StudioDatabase {
       this.save();
     }
 
-    // Ensure Admin identity is always Royal Studio and not M. Bilal Khan
+    // Enforce single official Admin login (admin@royalstudio.online / admin123) and remove dummy logins
     let needsSave = false;
-    const admin = this.db.users?.find(u => u.role === 'ADMIN');
-    if (admin) {
-      if (admin.name === 'M. Bilal Khan' || !admin.name) {
-        admin.name = 'Royal Studio';
-        needsSave = true;
-      }
-      if (!admin.status) {
-        admin.status = 'ACTIVE';
-        needsSave = true;
-      }
-    }
+    const existingAdmin = this.db.users?.find(u => u.role === 'ADMIN');
+    const hasDummyUsers = this.db.users?.some(
+      u => u.id === 'usr-staff' || u.email === 'staff@royalstudio.pk' || u.email === 'admin@royalstudio.pk'
+    );
 
-    // Ensure all users have status and staff linking
-    this.db.users?.forEach(u => {
-      if (!u.status) {
-        u.status = 'ACTIVE';
-        needsSave = true;
-      }
-      if (u.role === 'STAFF' && !u.linkedTeamMemberId && u.name === 'Hamza Tariq') {
-        u.linkedTeamMemberId = 'tm-001';
-        needsSave = true;
-      }
-    });
+    if (
+      !existingAdmin ||
+      existingAdmin.email !== 'admin@royalstudio.online' ||
+      !verifyPassword('admin123', existingAdmin.password) ||
+      hasDummyUsers
+    ) {
+      const validPassHash =
+        existingAdmin && verifyPassword('admin123', existingAdmin.password)
+          ? existingAdmin.password
+          : hashPassword('admin123');
+
+      const preservedStaffUsers = (this.db.users || []).filter(
+        u =>
+          u.role === 'STAFF' &&
+          u.id !== 'usr-staff' &&
+          u.email !== 'staff@royalstudio.pk' &&
+          u.email !== 'admin@royalstudio.pk'
+      );
+
+      this.db.users = [
+        {
+          id: 'usr-admin',
+          name: 'Royal Studio',
+          email: 'admin@royalstudio.online',
+          role: 'ADMIN',
+          status: 'ACTIVE',
+          phone: '+92 308 4877073',
+          password: validPassHash,
+          avatar: '/RoyalLogo.png',
+          createdDate: '2026-01-01T00:00:00.000Z',
+        },
+        ...preservedStaffUsers,
+      ];
+      needsSave = true;
+    }
 
     // Sync team member login status with user accounts
     this.db.teamMembers?.forEach(tm => {
@@ -1529,11 +1547,80 @@ export class StudioDatabase {
   }
 
   public save() {
-    try {
-      ensureDirectoryExists();
-      fs.writeFileSync(DB_FILE, JSON.stringify(this.db, null, 2), 'utf-8');
-    } catch (err) {
-      console.warn('Could not persist to local DB_FILE:', err);
+    const adapter = getDatabaseAdapter<DatabaseSchema>();
+    adapter.write(this.db);
+  }
+
+  public createBackupSnapshot(): void {
+    const adapter = getDatabaseAdapter<DatabaseSchema>();
+    adapter.createBackup(this.db);
+  }
+
+  public importDatabase(imported: Partial<DatabaseSchema>): DatabaseSchema {
+    this.createBackupSnapshot();
+    this.db = {
+      ...this.db,
+      ...imported,
+      users: this.db.users,
+      sessions: this.db.sessions,
+    };
+    this.save();
+    return this.db;
+  }
+
+  public getEngineStats(): DatabaseEngineStats & {
+    counts: {
+      clients: number;
+      events: number;
+      invoices: number;
+      quotations: number;
+      payments: number;
+      portfolioItems: number;
+    };
+  } {
+    const adapter = getDatabaseAdapter<DatabaseSchema>();
+    const stats = adapter.getStats();
+    return {
+      ...stats,
+      counts: {
+        clients: this.db.clients?.length || 0,
+        events: this.db.events?.length || 0,
+        invoices: this.db.invoices?.length || 0,
+        quotations: this.db.quotations?.length || 0,
+        payments: this.db.payments?.length || 0,
+        portfolioItems: this.db.cms?.portfolioItems?.length || 0,
+      },
+    };
+  }
+
+  public getSession(token: string): { userId: string; expiresAt: number; lastActiveAt: number } | null {
+    if (!this.db.sessions) this.db.sessions = {};
+    const session = this.db.sessions[token];
+    if (!session) return null;
+    const now = Date.now();
+    const maxIdleMs = 60 * 60 * 1000; // 60 minutes maximum server-side idle window
+    if (
+      now > session.expiresAt ||
+      (session.lastActiveAt && now - session.lastActiveAt > maxIdleMs)
+    ) {
+      delete this.db.sessions[token];
+      this.save();
+      return null;
+    }
+    session.lastActiveAt = now;
+    return session;
+  }
+
+  public setSession(token: string, session: { userId: string; expiresAt: number; lastActiveAt: number }): void {
+    if (!this.db.sessions) this.db.sessions = {};
+    this.db.sessions[token] = session;
+    this.save();
+  }
+
+  public deleteSession(token: string): void {
+    if (this.db.sessions && this.db.sessions[token]) {
+      delete this.db.sessions[token];
+      this.save();
     }
   }
 

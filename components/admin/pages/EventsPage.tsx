@@ -11,7 +11,9 @@ import {
   ArrowRight,
   Sparkles,
   Edit,
-  Trash2
+  Trash2,
+  QrCode,
+  Camera
 } from 'lucide-react';
 import { useStudioData } from '../context/StudioDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -19,6 +21,7 @@ import { formatPKR, formatDate } from '../utils/calculations';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { Modal } from '../components/common/Modal';
 import { ConfirmationDialog } from '../components/common/ConfirmationDialog';
+import { EventQrModal } from '../components/common/EventQrModal';
 import { Event, EventCategory, WeddingSubtype, EventStatus } from '../types';
 
 interface EventsPageProps {
@@ -26,13 +29,35 @@ interface EventsPageProps {
 }
 
 export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
-  const { events, clients, packages, createEvent, updateEvent, deleteEvent, addToast } = useStudioData();
+  const {
+    events,
+    clients,
+    packages,
+    tasks,
+    teamMembers,
+    equipment,
+    equipmentAssignments,
+    createClient,
+    createEvent,
+    updateEvent,
+    deleteEvent,
+    addToast
+  } = useStudioData();
   const { isAdmin } = useAuth();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [qrModalEvent, setQrModalEvent] = useState<Event | null>(null);
+
+  // Quick-Create Inline Client mode inside New Event Booking modal
+  const [isQuickClientMode, setIsQuickClientMode] = useState(false);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientEmail, setNewClientEmail] = useState('');
+  const [bookingDiscount, setBookingDiscount] = useState<number>(0);
+  const [bookingTax, setBookingTax] = useState<number>(0);
 
   // Edit Event State & Modal
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -164,33 +189,70 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientId || !title || !eventDate) {
-      addToast('Please fill out client, title and date.', 'error');
+    if (!eventDate) {
+      addToast('Please select the main event date.', 'error');
       return;
     }
 
     setIsSubmitting(true);
     try {
+      let resolvedClientId = clientId;
+      let resolvedClientName = clients.find(c => c.id === clientId)?.name || 'Client';
+
+      if (isQuickClientMode) {
+        if (!newClientName.trim() || !newClientPhone.trim()) {
+          addToast('Please enter the new client name and phone number.', 'error');
+          setIsSubmitting(false);
+          return;
+        }
+        const createdClient = await createClient({
+          name: newClientName.trim(),
+          phone: newClientPhone.trim(),
+          whatsapp: newClientPhone.trim(),
+          email: newClientEmail.trim(),
+          city: city || 'Burewala',
+          address: venue || city || 'Burewala',
+        });
+        resolvedClientId = createdClient.id;
+        resolvedClientName = createdClient.name;
+      }
+
+      if (!resolvedClientId) {
+        addToast('Please select an existing client or create a new client.', 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
+      const finalTitle =
+        title.trim() ||
+        `${resolvedClientName} — ${category === 'Wedding' ? `${weddingSubtype} Wedding` : category}`;
+
       const created = await createEvent({
-        clientId,
-        title,
+        clientId: resolvedClientId,
+        title: finalTitle,
         category,
         weddingSubtype: category === 'Wedding' ? weddingSubtype : undefined,
         packageId: packageId || undefined,
         eventDate,
         startTime,
         endTime,
-        venue,
-        city,
+        venue: venue || city || 'Burewala',
+        city: city || 'Burewala',
         packagePrice: Number(packagePrice || 0),
         advancePaid: Number(advancePaid || 0),
-        discount: 0,
-        tax: 0,
+        discount: Number(bookingDiscount || 0),
+        tax: Number(bookingTax || 0),
         notes,
         isMultiDay
       });
 
       setIsCreateModalOpen(false);
+      setIsQuickClientMode(false);
+      setNewClientName('');
+      setNewClientPhone('');
+      setNewClientEmail('');
+      setBookingDiscount(0);
+      setBookingTax(0);
       navigate(`/events/${created.id}`);
     } catch (err: any) {
       addToast(err.message || 'Failed to create event', 'error');
@@ -211,6 +273,127 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
 
     return matchesSearch && matchesCategory && matchesStatus;
   });
+
+  // Strict Staff View: ONLY Event Name, Date, Location, and Time — no deep details
+  if (!isAdmin) {
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold text-primary">My Assigned Events</h2>
+            <p className="text-xs text-text-muted">
+              Your scheduled event assignments showing event name, date, location, and time.
+            </p>
+          </div>
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder="Search assigned events..."
+              className="w-full pl-9 pr-4 py-2 bg-surface border border-border rounded-xl text-xs text-primary focus:outline-none focus:border-accent"
+            />
+          </div>
+        </div>
+
+        {filteredEvents.length === 0 ? (
+          <div className="p-10 bg-surface rounded-2xl border border-border text-center space-y-2">
+            <Calendar className="w-8 h-8 text-accent mx-auto" />
+            <h3 className="text-sm font-bold text-primary">No Assigned Events Found</h3>
+            <p className="text-xs text-text-muted">
+              You currently have no assigned events matching your search.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredEvents.map(evt => {
+              const reservedGear = equipmentAssignments
+                .filter(ea => ea.eventId === evt.id)
+                .map(ea => equipment.find(eq => eq.id === ea.equipmentId))
+                .filter(Boolean);
+
+              return (
+                <div
+                  key={evt.id}
+                  className="p-5 bg-surface rounded-2xl border border-border shadow-xs space-y-3"
+                >
+                  <h3 className="font-display text-lg font-bold text-primary leading-snug">
+                    {evt.title}
+                  </h3>
+
+                  <div className="space-y-2 pt-2 border-t border-border text-xs text-text-muted">
+                    <div className="flex items-center gap-2.5">
+                      <Calendar className="w-4 h-4 text-accent shrink-0" />
+                      <span>
+                        <strong className="text-primary">Date:</strong> {formatDate(evt.eventDate)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                      <Clock className="w-4 h-4 text-accent shrink-0" />
+                      <span>
+                        <strong className="text-primary">Time:</strong> {evt.startTime || '18:00'} – {evt.endTime || '23:00'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2.5">
+                      <MapPin className="w-4 h-4 text-accent shrink-0" />
+                      <span>
+                        <strong className="text-primary">Location:</strong>{' '}
+                        {[evt.venue, evt.city].filter(Boolean).join(', ') || 'Burewala'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {reservedGear.length > 0 && (
+                    <div className="pt-2 border-t border-border space-y-1.5">
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-accent">
+                        <Camera className="w-3.5 h-3.5" />
+                        <span>Reserved Gear ({reservedGear.length})</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {reservedGear.map(eq =>
+                          eq ? (
+                            <span
+                              key={eq.id}
+                              className="px-2 py-0.5 rounded-md bg-background border border-border text-[10px] font-medium text-primary"
+                            >
+                              {eq.name}
+                            </span>
+                          ) : null
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-border flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setQrModalEvent(evt)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent/15 hover:bg-accent/25 text-accent text-xs font-bold cursor-pointer"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>Mobile QR Pass</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <EventQrModal
+          isOpen={Boolean(qrModalEvent)}
+          onClose={() => setQrModalEvent(null)}
+          event={qrModalEvent}
+          tasks={tasks}
+          teamMembers={teamMembers}
+          staffOnlyView={true}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -288,8 +471,79 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
         </div>
       </div>
 
-      {/* Events Table */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-hidden">
+      {/* Mobile & Tablet Responsive Event Cards (<1024px) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:hidden">
+        {filteredEvents.map((evt) => {
+          const client = clients.find((c) => c.id === evt.clientId);
+          return (
+            <div
+              key={`card-${evt.id}`}
+              onClick={() => navigate(`/events/${evt.id}`)}
+              className="p-4 bg-white rounded-xl border border-gray-100 shadow-xs space-y-3 cursor-pointer hover:border-amber-400 transition-all"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900">{evt.title}</h3>
+                  <div className="text-xs text-amber-700 font-medium">
+                    {client?.name || 'Client'} · {client?.phone}
+                  </div>
+                </div>
+                <StatusBadge status={evt.status} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 pt-1 border-t border-gray-100">
+                <div className="flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                  <span>{formatDate(evt.eventDate)}</span>
+                </div>
+                <div className="flex items-center gap-1.5 truncate">
+                  <MapPin className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                  <span className="truncate">{evt.venue || evt.city}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-gray-100 font-mono text-xs">
+                <div>
+                  <div className="text-[10px] text-gray-400 font-sans">Package</div>
+                  <div className="font-bold text-gray-900">{formatPKR(evt.packagePrice)}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-400 font-sans">Net Profit</div>
+                  <div className={evt.netProfit >= 0 ? 'font-bold text-emerald-700' : 'font-bold text-rose-600'}>
+                    {formatPKR(evt.netProfit)}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-gray-400 font-sans">Balance</div>
+                  <div className="font-bold text-amber-700">{formatPKR(evt.remainingBalance)}</div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+                <button
+                  type="button"
+                  onClick={() => openEditModal(evt)}
+                  className="px-3 py-1.5 text-amber-900 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Edit className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Edit</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/events/${evt.id}`)}
+                  className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Control Room</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Desktop & Ultra-Wide Events Table (1024px+) */}
+      <div className="hidden lg:block bg-white rounded-xl border border-gray-100 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider border-b border-gray-100">
@@ -446,36 +700,71 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
       >
         <form onSubmit={handleCreateSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Step 1: Client */}
-            <div>
-              <label className="block text-xs font-semibold text-gray-700 mb-1">
-                1. Select Client *
-              </label>
-              <select
-                value={clientId}
-                onChange={e => setClientId(e.target.value)}
-                required
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
-              >
-                <option value="">-- Choose Client --</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.phone} - {c.city})
-                  </option>
-                ))}
-              </select>
+            {/* Step 1: Client (Existing or Inline Quick-Create) */}
+            <div className="md:col-span-2 p-3.5 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-gray-800">
+                  1. Client Selection *
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickClientMode((prev) => !prev)}
+                  className="text-xs font-semibold text-amber-700 hover:underline cursor-pointer"
+                >
+                  {isQuickClientMode ? '← Choose Existing Client' : '+ Quick-Create New Client'}
+                </button>
+              </div>
+
+              {!isQuickClientMode ? (
+                <select
+                  value={clientId}
+                  onChange={e => setClientId(e.target.value)}
+                  required={!isQuickClientMode}
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
+                >
+                  <option value="">-- Choose Client --</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.phone} - {c.city})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <input
+                    type="text"
+                    value={newClientName}
+                    onChange={(e) => setNewClientName(e.target.value)}
+                    placeholder="Client / Couple Name *"
+                    className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs text-gray-900"
+                  />
+                  <input
+                    type="tel"
+                    value={newClientPhone}
+                    onChange={(e) => setNewClientPhone(e.target.value)}
+                    placeholder="Phone / WhatsApp *"
+                    className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs text-gray-900"
+                  />
+                  <input
+                    type="email"
+                    value={newClientEmail}
+                    onChange={(e) => setNewClientEmail(e.target.value)}
+                    placeholder="Email (Optional)"
+                    className="px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs text-gray-900"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Event Title */}
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">
-                Event Title *
+                Event Title (Auto-generated if left blank)
               </label>
               <input
                 type="text"
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                required
                 placeholder="e.g. Tariq & Ayesha Wedding Celebration"
                 className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none focus:border-amber-500"
               />
@@ -630,8 +919,36 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
               />
             </div>
 
+            {/* Discount & Tax */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Discount (PKR)
+                </label>
+                <input
+                  type="number"
+                  value={bookingDiscount}
+                  onChange={e => setBookingDiscount(Number(e.target.value))}
+                  min="0"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none font-mono"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Tax (PKR)
+                </label>
+                <input
+                  type="number"
+                  value={bookingTax}
+                  onChange={e => setBookingTax(Number(e.target.value))}
+                  min="0"
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs text-gray-900 focus:outline-none font-mono"
+                />
+              </div>
+            </div>
+
             {/* Multi-Day Toggle */}
-            <div className="flex items-center gap-3 pt-5">
+            <div className="md:col-span-2 flex items-center gap-3 pt-1">
               <input
                 type="checkbox"
                 id="isMultiDay"
@@ -642,6 +959,30 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
               <label htmlFor="isMultiDay" className="text-xs font-semibold text-gray-900 cursor-pointer">
                 Multi-Day Wedding System (Enable Mehndi, Barat, Walima schedule tabs)
               </label>
+            </div>
+          </div>
+
+          {/* Live Contract Financial Summary Bar */}
+          <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-lg flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div>
+              <span className="text-gray-500 font-medium">Net Contract Value: </span>
+              <span className="font-mono font-bold text-gray-900 text-sm">
+                {formatPKR(Math.max(0, Number(packagePrice || 0) - Number(bookingDiscount || 0) + Number(bookingTax || 0)))}
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+              <div>
+                <span className="text-gray-500 font-medium">Advance Paid: </span>
+                <span className="font-mono font-bold text-emerald-700">
+                  {formatPKR(Number(advancePaid || 0))}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500 font-medium">Est. Balance: </span>
+                <span className="font-mono font-bold text-amber-800">
+                  {formatPKR(Math.max(0, Number(packagePrice || 0) - Number(bookingDiscount || 0) + Number(bookingTax || 0) - Number(advancePaid || 0)))}
+                </span>
+              </div>
             </div>
           </div>
 
