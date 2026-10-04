@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { handleAdminApi } from '@/lib/admin/apiHandler';
+import { dbInstance } from '@/lib/admin/db';
 
 function withSecurityHeaders(response: Response): Response {
   try {
@@ -17,9 +18,13 @@ async function dispatchSafe(
   paramsPromise: Promise<{ slug: string[] }>
 ): Promise<Response> {
   try {
+    await dbInstance.ensureHydrated();
     const resolved = await paramsPromise;
     const slug = Array.isArray(resolved?.slug) ? resolved.slug : [];
     const response = await handleAdminApi(request, slug);
+    if (request.method !== 'GET' && request.method !== 'HEAD') {
+      await dbInstance.save();
+    }
     return withSecurityHeaders(response);
   } catch (err: any) {
     const message =

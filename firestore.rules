@@ -1,0 +1,133 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isAllowedShardId(shardId) {
+      return shardId in [
+        'profile',
+        'users',
+        'clients',
+        'events',
+        'financials',
+        'operations',
+        'cms',
+        'sessions',
+        'backup'
+      ];
+    }
+
+    function isValidStudioStoreShard(data, shardId) {
+      return data.keys().hasAll(['shardKey', 'payloadJson', 'updatedAtIso', 'version']) &&
+        data.keys().hasOnly(['shardKey', 'payloadJson', 'updatedAtIso', 'version']) &&
+        data.shardKey is string &&
+        data.shardKey.size() >= 1 &&
+        data.shardKey.size() <= 128 &&
+        data.shardKey == shardId &&
+        data.payloadJson is string &&
+        data.payloadJson.size() >= 2 &&
+        data.payloadJson.size() <= 950000 &&
+        data.updatedAtIso is string &&
+        data.updatedAtIso.size() >= 10 &&
+        data.updatedAtIso.size() <= 64 &&
+        data.version is number &&
+        data.version >= 1;
+    }
+
+    function isValidWebsiteInquiryRecord(data, inquiryId) {
+      return data.keys().hasAll(['referenceId', 'brideName', 'phone', 'weddingDate', 'city', 'submittedAt']) &&
+        data.keys().hasOnly([
+          'referenceId',
+          'brideName',
+          'groomName',
+          'phone',
+          'email',
+          'weddingDate',
+          'city',
+          'venue',
+          'eventType',
+          'message',
+          'submittedAt'
+        ]) &&
+        data.referenceId is string &&
+        data.referenceId.size() >= 3 &&
+        data.referenceId.size() <= 64 &&
+        data.referenceId == inquiryId &&
+        data.brideName is string &&
+        data.brideName.size() >= 1 &&
+        data.brideName.size() <= 120 &&
+        (!('groomName' in data) || (data.groomName is string && data.groomName.size() <= 120)) &&
+        data.phone is string &&
+        data.phone.size() >= 3 &&
+        data.phone.size() <= 40 &&
+        (!('email' in data) || (data.email is string && data.email.size() <= 160)) &&
+        data.weddingDate is string &&
+        data.weddingDate.size() >= 4 &&
+        data.weddingDate.size() <= 40 &&
+        data.city is string &&
+        data.city.size() >= 1 &&
+        data.city.size() <= 100 &&
+        (!('venue' in data) || (data.venue is string && data.venue.size() <= 200)) &&
+        (!('eventType' in data) || (data.eventType is string && data.eventType.size() <= 80)) &&
+        (!('message' in data) || (data.message is string && data.message.size() <= 2000)) &&
+        data.submittedAt is string &&
+        data.submittedAt.size() >= 10 &&
+        data.submittedAt.size() <= 64;
+    }
+
+    // Connection health check endpoint for getDocFromServer(doc(db, 'test', 'connection'))
+    match /test/{docId} {
+      allow get: if isValidId(docId) && docId == 'connection';
+      allow list, create, update, delete: if false;
+    }
+
+    // Persistent Studio ERP, Profile, CRM & Financial Shards
+    match /studio_store/{shardId} {
+      allow get: if isValidId(shardId) && isAllowedShardId(shardId);
+      allow list: if existing().shardKey in [
+        'profile',
+        'users',
+        'clients',
+        'events',
+        'financials',
+        'operations',
+        'cms',
+        'sessions',
+        'backup'
+      ];
+      allow create: if isValidId(shardId) &&
+        isAllowedShardId(shardId) &&
+        isValidStudioStoreShard(incoming(), shardId);
+      allow update: if isValidId(shardId) &&
+        isAllowedShardId(shardId) &&
+        isValidStudioStoreShard(incoming(), shardId) &&
+        incoming().shardKey == existing().shardKey &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['payloadJson', 'updatedAtIso', 'version']);
+      allow delete: if false;
+    }
+
+    // Persistent Website Contact & Booking Inquiries Collection
+    match /website_inquiries/{inquiryId} {
+      allow get: if isValidId(inquiryId);
+      allow list: if existing().referenceId is string && existing().referenceId.size() <= 64;
+      allow create: if isValidId(inquiryId) && isValidWebsiteInquiryRecord(incoming(), inquiryId);
+      allow update, delete: if false;
+    }
+  }
+}

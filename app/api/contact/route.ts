@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
 import { dbInstance } from "@/lib/admin/db";
+import { persistWebsiteInquiryToFirestore } from "@/lib/db/storageAdapter";
 
 function sanitizeField(value: unknown, maxLength = 500): string {
   if (typeof value !== "string") return "";
@@ -12,7 +11,7 @@ function sanitizeField(value: unknown, maxLength = 500): string {
 }
 
 export async function GET() {
-  const db = dbInstance.getData();
+  const db = await dbInstance.ensureHydrated();
   const p = db.profile;
   return NextResponse.json({
     studioName: p.publicStudioName || p.studioName,
@@ -35,6 +34,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    await dbInstance.ensureHydrated();
     const data = await request.json().catch(() => ({}));
 
     const brideName = sanitizeField(data.brideName || data.clientName, 120);
@@ -106,17 +106,20 @@ export async function POST(request: Request) {
       submittedAt,
     };
 
-    try {
-      const leadsDir = path.join(process.cwd(), "data", "leads");
-      await mkdir(leadsDir, { recursive: true });
-      const filename = `lead-${Date.now()}.json`;
-      await writeFile(
-        path.join(leadsDir, filename),
-        JSON.stringify(submission, null, 2)
-      );
-    } catch {
-      // Non-fatal if filesystem snapshot directory is unavailable
-    }
+    // 1. Persist dedicated Website Inquiry document to Cloud Firestore (/website_inquiries/{referenceId})
+    await persistWebsiteInquiryToFirestore({
+      referenceId,
+      brideName,
+      groomName,
+      phone,
+      email,
+      weddingDate,
+      city,
+      venue,
+      eventType,
+      message,
+      submittedAt,
+    });
 
     const clientDisplayName = groomName
       ? `${brideName} & ${groomName}`.trim()
@@ -136,105 +139,101 @@ export async function POST(request: Request) {
       .filter(Boolean)
       .join(" | ");
 
-    // Seamless sync into Royal Studio Admin Dashboard CRM, Events & Website Leads
-    try {
-      const db = dbInstance.getData();
-      let client = db.clients.find(
-        (c) =>
-          c.phone === phone ||
-          c.name.toLowerCase() === clientDisplayName.toLowerCase()
-      );
-      if (!client) {
-        client = {
-          id: `cli-${Date.now().toString().slice(-6)}`,
-          name: clientDisplayName,
-          phone,
-          whatsapp,
-          email: email || "",
-          address: venue || city,
-          city,
-          notes: `Inquiry Ref: ${referenceId}. ${detailsSummary}. ${message}`,
-          createdDate: submittedAt,
-          createdBy: "website-inquiry",
-        };
-        db.clients.unshift(client);
-      }
-
-      const newInquiryEvent = {
-        id: linkedEventId,
-        clientId: client.id,
-        title: groomName
-          ? `${clientDisplayName} Wedding`
-          : `${clientDisplayName} — ${eventType}`,
-        category: (
-          ["Wedding", "Engagement", "Birthday", "Corporate", "Fashion", "Product"].includes(
-            eventType
-          )
-            ? eventType
-            : "Wedding"
-        ) as any,
-        weddingSubtype: "Barat" as const,
-        eventDate: weddingDate,
-        startTime: "18:00",
-        endTime: "23:00",
-        venue: venue || city,
-        city,
-        status: "Inquiry" as const,
-        packagePrice: 0,
-        advancePaid: 0,
-        discount: 0,
-        tax: 0,
-        notes: `Website Inquiry (${referenceId}). ${detailsSummary}. Notes: ${
-          message || "No additional notes."
-        }`,
-        createdBy: "website-inquiry",
-        createdDate: submittedAt,
-        updatedDate: submittedAt,
-        isMultiDay: eventDaysCount !== "1 Day" || functionsList.length > 1,
-        staffCost: 0,
-        rentalCost: 0,
-        eventExpenses: 0,
-        netProfit: 0,
-        netMargin: 0,
-        totalClientPayments: 0,
-        remainingBalance: 0,
-      };
-      db.events.unshift(newInquiryEvent);
-
-      if (!db.cms) {
-        db.cms = {
-          portfolioItems: [],
-          pricingPackages: [],
-          detailedServices: [],
-          testimonials: [],
-          blogPosts: [],
-          websiteLeads: [],
-        };
-      }
-      if (!Array.isArray(db.cms.websiteLeads)) {
-        db.cms.websiteLeads = [];
-      }
-      db.cms.websiteLeads.unshift({
-        id: referenceId,
-        brideName,
-        groomName: groomName || "—",
+    // 2. Persist CRM Client, Inquiry Event, and Website Lead into Cloud Firestore Shards
+    const db = dbInstance.getData();
+    let client = db.clients.find(
+      (c) =>
+        c.phone === phone ||
+        c.name.toLowerCase() === clientDisplayName.toLowerCase()
+    );
+    if (!client) {
+      client = {
+        id: `cli-${Date.now().toString().slice(-6)}`,
+        name: clientDisplayName,
         phone,
+        whatsapp,
         email: email || "",
-        weddingDate,
-        venue: venue || city,
+        address: venue || city,
         city,
-        services: detailsSummary,
-        budget,
-        message,
-        status: "New",
-        submittedAt,
-        linkedEventId: newInquiryEvent.id,
-      });
-
-      dbInstance.save();
-    } catch {
-      // Non-fatal
+        notes: `Inquiry Ref: ${referenceId}. ${detailsSummary}. ${message}`,
+        createdDate: submittedAt,
+        createdBy: "website-inquiry",
+      };
+      db.clients.unshift(client);
     }
+
+    const newInquiryEvent = {
+      id: linkedEventId,
+      clientId: client.id,
+      title: groomName
+        ? `${clientDisplayName} Wedding`
+        : `${clientDisplayName} — ${eventType}`,
+      category: (
+        ["Wedding", "Engagement", "Birthday", "Corporate", "Fashion", "Product"].includes(
+          eventType
+        )
+          ? eventType
+          : "Wedding"
+      ) as any,
+      weddingSubtype: "Barat" as const,
+      eventDate: weddingDate,
+      startTime: "18:00",
+      endTime: "23:00",
+      venue: venue || city,
+      city,
+      status: "Inquiry" as const,
+      packagePrice: 0,
+      advancePaid: 0,
+      discount: 0,
+      tax: 0,
+      notes: `Website Inquiry (${referenceId}). ${detailsSummary}. Notes: ${
+        message || "No additional notes."
+      }`,
+      createdBy: "website-inquiry",
+      createdDate: submittedAt,
+      updatedDate: submittedAt,
+      isMultiDay: eventDaysCount !== "1 Day" || functionsList.length > 1,
+      staffCost: 0,
+      rentalCost: 0,
+      eventExpenses: 0,
+      netProfit: 0,
+      netMargin: 0,
+      totalClientPayments: 0,
+      remainingBalance: 0,
+    };
+    db.events.unshift(newInquiryEvent);
+
+    if (!db.cms) {
+      db.cms = {
+        portfolioItems: [],
+        pricingPackages: [],
+        detailedServices: [],
+        testimonials: [],
+        blogPosts: [],
+        websiteLeads: [],
+      };
+    }
+    if (!Array.isArray(db.cms.websiteLeads)) {
+      db.cms.websiteLeads = [];
+    }
+    db.cms.websiteLeads.unshift({
+      id: referenceId,
+      brideName,
+      groomName: groomName || "—",
+      phone,
+      email: email || "",
+      weddingDate,
+      venue: venue || city,
+      city,
+      services: detailsSummary,
+      budget,
+      message,
+      status: "New",
+      submittedAt,
+      linkedEventId: newInquiryEvent.id,
+    });
+
+    await dbInstance.save();
 
     const formspreeEndpoint = process.env.FORMSPREE_ENDPOINT;
     if (formspreeEndpoint && formspreeEndpoint.startsWith("https://")) {
@@ -245,7 +244,6 @@ export async function POST(request: Request) {
       }).catch(() => {});
     }
 
-    const db = dbInstance.getData();
     const rawWa = (
       db.profile?.publicWhatsappNumber ||
       db.profile?.whatsapp ||
@@ -262,7 +260,10 @@ export async function POST(request: Request) {
       clientName: clientDisplayName,
       whatsappUrl,
     });
-  } catch {
-    return NextResponse.json({ error: "Failed to submit inquiry" }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message || "Failed to submit inquiry" },
+      { status: 500 }
+    );
   }
 }

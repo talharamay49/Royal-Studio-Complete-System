@@ -66,6 +66,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
   const method = req.method.toUpperCase();
   const pathStr = slug.join('/');
 
+  const db = await dbInstance.ensureHydrated();
   const user = getAuthUser(req);
   const isAdmin = user?.role === 'ADMIN';
 
@@ -84,8 +85,6 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     }
     return null;
   };
-
-  const db = dbInstance.getData();
 
   const recordAdminAudit = (
     section: string,
@@ -588,7 +587,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     if (!payload || typeof payload !== 'object') {
       return NextResponse.json({ error: 'Invalid database backup file.' }, { status: 400 });
     }
-    dbInstance.importDatabase(payload);
+    await dbInstance.importDatabase(payload);
     return NextResponse.json({
       success: true,
       stats: dbInstance.getEngineStats(),

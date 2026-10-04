@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 import {
   User,
@@ -104,19 +102,6 @@ export interface DatabaseSchema {
   quotations: Quotation[];
   tasks: EventTask[];
   tempHireRecommendations: TempHireRecommendation[];
-}
-
-const DATA_DIR = process.env.VERCEL ? path.join('/tmp', 'data') : path.resolve(process.cwd(), 'data');
-const DB_FILE = path.join(DATA_DIR, 'studio_db.json');
-
-function ensureDirectoryExists() {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-  } catch (err) {
-    console.warn('Could not create DATA_DIR:', err);
-  }
 }
 
 export function getDefaultStudioProfile(): AdminProfile {
@@ -1307,28 +1292,54 @@ function getInitialData(): DatabaseSchema {
 
 export class StudioDatabase {
   private db: DatabaseSchema;
+  private hydratedFromCloud = false;
+  private hydrationPromise: Promise<DatabaseSchema> | null = null;
 
   constructor() {
-    const adapter = getDatabaseAdapter<DatabaseSchema>();
-    const existing = adapter.read();
-    if (existing) {
-      this.db = existing;
-    } else {
-      ensureDirectoryExists();
-      if (fs.existsSync(DB_FILE)) {
-        try {
-          const raw = fs.readFileSync(DB_FILE, 'utf-8');
-          this.db = JSON.parse(raw);
-        } catch {
-          this.db = getInitialData();
-        }
-      } else {
-        this.db = getInitialData();
-      }
-      this.save();
+    this.db = getInitialData();
+    this.normalizeSchemaDefaults();
+  }
+
+  public async ensureHydrated(): Promise<DatabaseSchema> {
+    if (this.hydratedFromCloud) {
+      return this.db;
+    }
+    if (this.hydrationPromise) {
+      return this.hydrationPromise;
     }
 
-    // Enforce single official Admin login (admin@royalstudio.online / admin123) and remove dummy logins
+    this.hydrationPromise = (async () => {
+      try {
+        const adapter = getDatabaseAdapter<DatabaseSchema>();
+        const remoteData = await adapter.readAsync();
+        if (remoteData) {
+          this.db = {
+            ...this.db,
+            ...remoteData,
+          };
+          const changed = this.normalizeSchemaDefaults();
+          this.hydratedFromCloud = true;
+          if (changed) {
+            await adapter.writeAsync(this.db);
+          }
+        } else {
+          this.normalizeSchemaDefaults();
+          this.hydratedFromCloud = true;
+          await adapter.writeAsync(this.db);
+        }
+      } catch (err) {
+        console.error('[StudioDatabase] Firestore hydration warning:', err);
+        this.hydratedFromCloud = true;
+      } finally {
+        this.hydrationPromise = null;
+      }
+      return this.db;
+    })();
+
+    return this.hydrationPromise;
+  }
+
+  private normalizeSchemaDefaults(): boolean {
     let needsSave = false;
     const existingAdmin = this.db.users?.find(u => u.role === 'ADMIN');
     const hasDummyUsers = this.db.users?.some(
@@ -1405,7 +1416,6 @@ export class StudioDatabase {
       this.db.profile = defaultProfile;
       needsSave = true;
     } else {
-      // Populate any missing extended profile fields from defaults
       for (const [k, v] of Object.entries(defaultProfile)) {
         const key = k as keyof AdminProfile;
         if (this.db.profile[key] === undefined || this.db.profile[key] === null) {
@@ -1541,30 +1551,28 @@ export class StudioDatabase {
       this.db.sessions = {};
     }
 
-    if (needsSave) {
-      this.save();
-    }
+    return needsSave;
   }
 
-  public save() {
+  public async save(): Promise<void> {
     const adapter = getDatabaseAdapter<DatabaseSchema>();
-    adapter.write(this.db);
+    await adapter.writeAsync(this.db);
   }
 
-  public createBackupSnapshot(): void {
+  public async createBackupSnapshot(): Promise<void> {
     const adapter = getDatabaseAdapter<DatabaseSchema>();
-    adapter.createBackup(this.db);
+    await adapter.createBackupAsync(this.db);
   }
 
-  public importDatabase(imported: Partial<DatabaseSchema>): DatabaseSchema {
-    this.createBackupSnapshot();
+  public async importDatabase(imported: Partial<DatabaseSchema>): Promise<DatabaseSchema> {
+    await this.createBackupSnapshot();
     this.db = {
       ...this.db,
       ...imported,
       users: this.db.users,
       sessions: this.db.sessions,
     };
-    this.save();
+    await this.save();
     return this.db;
   }
 
@@ -1604,23 +1612,23 @@ export class StudioDatabase {
       (session.lastActiveAt && now - session.lastActiveAt > maxIdleMs)
     ) {
       delete this.db.sessions[token];
-      this.save();
+      void this.save();
       return null;
     }
     session.lastActiveAt = now;
     return session;
   }
 
-  public setSession(token: string, session: { userId: string; expiresAt: number; lastActiveAt: number }): void {
+  public async setSession(token: string, session: { userId: string; expiresAt: number; lastActiveAt: number }): Promise<void> {
     if (!this.db.sessions) this.db.sessions = {};
     this.db.sessions[token] = session;
-    this.save();
+    await this.save();
   }
 
-  public deleteSession(token: string): void {
+  public async deleteSession(token: string): Promise<void> {
     if (this.db.sessions && this.db.sessions[token]) {
       delete this.db.sessions[token];
-      this.save();
+      await this.save();
     }
   }
 
@@ -1628,8 +1636,8 @@ export class StudioDatabase {
     return this.db;
   }
 
-  // Recalculate event financials and persist
-  public recalculateEvent(eventId: string): Event | null {
+  // Recalculate event financials and persist to Cloud Firestore
+  public async recalculateEvent(eventId: string): Promise<Event | null> {
     const event = this.db.events.find(e => e.id === eventId);
     if (!event) return null;
 
@@ -1668,7 +1676,7 @@ export class StudioDatabase {
       invoice.status = computeInvoiceStatus(invoice, invoice.paidAmount);
     }
 
-    this.save();
+    await this.save();
     return event;
   }
 }
