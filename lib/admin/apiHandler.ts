@@ -1161,8 +1161,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     };
     db.events.unshift(newEvent);
 
-    // Persist Day Schedules (for both Single-Day and Multi-Day events with per-date DM/Night timing)
+    // Persist Day Schedules (for both Single-Day and Multi-Day events with per-date DM/Night timing & per-day packages)
     const bookedDatesSet = new Set<string>();
+    const allAssignedEqIds = new Set<string>(explicitEqIds);
+    const allAssignedCrewIds = new Set<string>(explicitCrewIds);
+
     rawDays.forEach((dInput, idx) => {
       const dayMode: TimingMode =
         dInput.timingMode === 'DAY_TIME' ? 'DAY_TIME' : 'NIGHT_TIME';
@@ -1174,9 +1177,97 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       const dayDateStr = String(dInput.date || eventDate);
       bookedDatesSet.add(dayDateStr);
 
+      const dayCamCat: CameraCategoryTier =
+        dInput.cameraCategory === 'CAT_1' ||
+        dInput.cameraCategory === 'CAT_2' ||
+        dInput.cameraCategory === 'CAT_3'
+          ? dInput.cameraCategory
+          : camCatKey;
+      const dayCrewCat: CrewCategoryTier =
+        dInput.crewCategory === 'CREW_CAT_1' ||
+        dInput.crewCategory === 'CREW_CAT_2' ||
+        dInput.crewCategory === 'CREW_CAT_3'
+          ? dInput.crewCategory
+          : CAMERA_CATEGORY_RATES[dayCamCat].crewTier;
+
+      const dayCombinedRate = CAMERA_CATEGORY_RATES[dayCamCat].ratePerDay;
+      const dayCamCount =
+        typeof dInput.cameraCount === 'number' && dInput.cameraCount >= 0
+          ? dInput.cameraCount
+          : resolvedCamCount;
+      const dayCrewCount =
+        typeof dInput.crewCount === 'number' && dInput.crewCount >= 0
+          ? dInput.crewCount
+          : dayCamCount;
+
+      const dayEqIds: string[] = Array.isArray(dInput.assignedCameraIds)
+        ? dInput.assignedCameraIds
+        : explicitEqIds;
+      const dayCrewIds: string[] = Array.isArray(dInput.assignedCrewIds)
+        ? dInput.assignedCrewIds
+        : explicitCrewIds;
+
+      dayEqIds.forEach(id => allAssignedEqIds.add(id));
+      dayCrewIds.forEach(id => allAssignedCrewIds.add(id));
+
+      let dayStandardPackageId: string | undefined =
+        dInput.standardPackageId || (idx === 0 ? resolvedPackageId : undefined);
+      let dayCustomPackageName: string | undefined =
+        dInput.customPackageName || (idx === 0 ? customPackageName || customPackageToCreate?.name : undefined);
+
+      // If this specific day created a custom package on the fly and asked to save to library
+      if (
+        dInput.customPackageToCreate &&
+        typeof dInput.customPackageToCreate === 'object' &&
+        dInput.customPackageToCreate.name
+      ) {
+        const dayCreatedPkg = {
+          id: `pkg-${Date.now().toString().slice(-6)}-d${idx + 1}`,
+          name: String(dInput.customPackageToCreate.name).trim(),
+          category: (dInput.customPackageToCreate.category || category || 'Wedding') as any,
+          description:
+            String(dInput.customPackageToCreate.description || '').trim() ||
+            `Custom package created for ${dInput.eventType || `Day ${idx + 1}`} (${title})`,
+          price: Number(
+            dInput.customPackageToCreate.price ||
+              dInput.customPrice ||
+              dayCamCount * dayCombinedRate
+          ),
+          duration: dayMode === 'DAY_TIME' ? '5 Hours (Day Time DM)' : '1 Day',
+          requiredPhotographers: Number(
+            dInput.customPackageToCreate.requiredPhotographers ||
+              Math.max(1, Math.ceil(dayCamCount / 2))
+          ),
+          requiredVideographers: Number(
+            dInput.customPackageToCreate.requiredVideographers ||
+              Math.max(1, Math.floor(dayCamCount / 2))
+          ),
+          requiredDroneOperators: 0,
+          requiredAssistants: 1,
+          includedServices: Array.isArray(dInput.customPackageToCreate.includedServices)
+            ? dInput.customPackageToCreate.includedServices
+            : ['Full Resolution Editorial Photography', '4K Cinematic Highlight Film'],
+          deliverables: Array.isArray(dInput.customPackageToCreate.deliverables)
+            ? dInput.customPackageToCreate.deliverables
+            : ['Online Private Gallery', 'Master Cinema USB'],
+          isActive: true,
+        };
+        db.packages.unshift(dayCreatedPkg);
+        dayStandardPackageId = dayCreatedPkg.id;
+        dayCustomPackageName = dayCreatedPkg.name;
+        if (idx === 0 && !newEvent.packageId) {
+          newEvent.packageId = dayCreatedPkg.id;
+          newEvent.customPackageName = dayCreatedPkg.name;
+        }
+      }
+
       const perDayCustomPrice =
-        typeof dInput.customPrice === 'number' && dInput.customPrice > 0
+        typeof dInput.customPrice === 'number' && dInput.customPrice >= 0
           ? dInput.customPrice
+          : dInput.packageMode === 'CUSTOM'
+          ? dayCamCount * dayCombinedRate + Number(dInput.extraCustomAmount || 0)
+          : typeof dInput.packageBaseRate === 'number'
+          ? dInput.packageBaseRate
           : Math.round(priceNum / daysCount);
 
       db.daySchedules.push({
@@ -1198,19 +1289,19 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
               ? 'Day Time (DM) — Strict 5-Hour Window Enforced'
               : 'Night Time Coverage')
         ),
-        standardPackageId: resolvedPackageId,
-        customPackageName: customPackageName || customPackageToCreate?.name || undefined,
+        standardPackageId: dayStandardPackageId,
+        customPackageName: dayCustomPackageName,
         customPrice: perDayCustomPrice,
-        cameraCategory: camCatKey,
-        cameraCount: resolvedCamCount,
-        cameraRatePerDay: resolvedCamRate,
-        assignedCameraIds: explicitEqIds,
-        crewCategory: crewCatKey,
-        crewCount: resolvedCrewCount,
-        crewRatePerDay: resolvedCrewRate,
-        assignedCrewIds: explicitCrewIds,
-        photographersCount: Math.max(1, Math.ceil(resolvedCrewCount / 2)),
-        cinematographersCount: Math.max(1, Math.floor(resolvedCrewCount / 2)),
+        cameraCategory: dayCamCat,
+        cameraCount: dayCamCount,
+        cameraRatePerDay: dayCombinedRate,
+        assignedCameraIds: dayEqIds,
+        crewCategory: dayCrewCat,
+        crewCount: dayCrewCount,
+        crewRatePerDay: dayCombinedRate,
+        assignedCrewIds: dayCrewIds,
+        photographersCount: Math.max(1, Math.ceil(dayCamCount / 2)),
+        cinematographersCount: Math.max(1, Math.floor(dayCamCount / 2)),
         droneIncluded: true,
       });
     });
@@ -1243,7 +1334,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       tax: Number(tax || 0),
       total: priceNum + Number(tax || 0),
       paymentTerms: db.profile.paymentTerms,
-      notes: `Official studio proposal (${daysCount} day(s), ${CAMERA_CATEGORY_RATES[camCatKey].shortLabel}, ${CREW_CATEGORY_RATES[crewCatKey].shortLabel}).`,
+      notes: `Official studio proposal (${daysCount} day(s), ${CAMERA_CATEGORY_RATES[camCatKey].shortLabel}).`,
       createdBy: user?.id || 'usr-admin',
     };
     db.quotations.unshift(newQuo);
@@ -1270,8 +1361,9 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       );
 
       // 1. Allocate Cameras & Gear (preventing double-booking on overlapping dates)
+      const uniqueEqIds = Array.from(allAssignedEqIds);
       let gearToAssign = db.equipment.filter(
-        eq => explicitEqIds.includes(eq.id) && eq.status !== 'Maintenance' && !busyEqIds.has(eq.id)
+        eq => uniqueEqIds.includes(eq.id) && eq.status !== 'Maintenance' && !busyEqIds.has(eq.id)
       );
       if (gearToAssign.length === 0 && resolvedCamCount > 0) {
         const availableCameras = db.equipment.filter(
@@ -1284,51 +1376,66 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       }
 
       gearToAssign.forEach((eq, idx) => {
-        const isCamera = eq.category === 'Camera';
-        const unitDailyRate = isCamera ? resolvedCamRate : eq.rentalRate || resolvedCamRate;
+        const unitDailyCost = 0;
         db.equipmentAssignments.push({
           id: `eqa-${Date.now().toString().slice(-5)}-${idx}`,
           eventId: newEvent.id,
           equipmentId: eq.id,
           quantity: 1,
-          rentalRate: unitDailyRate,
-          rentalCost: unitDailyRate * daysCount,
+          rentalRate: unitDailyCost,
+          rentalCost: unitDailyCost * daysCount,
           isCheckedOut: false,
           isCheckedIn: false,
           notes: `Reserved via Calendar (${CAMERA_CATEGORY_RATES[camCatKey].shortLabel} x ${daysCount} day(s))`,
         });
       });
 
-      // 2. Allocate Staff/Crew with Per-Day Category Charges across each booked date
+      // 2. Allocate Staff/Crew per booked day
       const busyCrewIds = new Set(
         db.teamAssignments
           .filter(ta => overlappingEventIds.has(ta.eventId) && ta.assignmentStatus !== 'Cancelled')
           .map(ta => ta.teamMemberId)
       );
 
-      let crewToAssign = db.teamMembers.filter(
-        tm => explicitCrewIds.includes(tm.id) && !busyCrewIds.has(tm.id)
-      );
-      if (crewToAssign.length === 0 && resolvedCrewCount > 0) {
-        const availableCrew = db.teamMembers.filter(
-          tm => tm.isActive && tm.availabilityStatus === 'Available' && !busyCrewIds.has(tm.id)
-        );
-        crewToAssign = availableCrew.slice(0, resolvedCrewCount);
-      }
+      rawDays.forEach((dInput, dIdx) => {
+        const dayDateStr = String(dInput.date || eventDate);
+        const dayCamCat: CameraCategoryTier =
+          dInput.cameraCategory === 'CAT_1' ||
+          dInput.cameraCategory === 'CAT_2' ||
+          dInput.cameraCategory === 'CAT_3'
+            ? dInput.cameraCategory
+            : camCatKey;
+        const dayCamCount =
+          typeof dInput.cameraCount === 'number' && dInput.cameraCount >= 0
+            ? dInput.cameraCount
+            : resolvedCamCount;
+        const dayCrewIds: string[] = Array.isArray(dInput.assignedCrewIds)
+          ? dInput.assignedCrewIds
+          : explicitCrewIds;
 
-      Array.from(bookedDatesSet).forEach((dateItem, dIdx) => {
-        crewToAssign.forEach((tm, idx) => {
+        let dayCrewToAssign = db.teamMembers.filter(
+          tm => dayCrewIds.includes(tm.id) && !busyCrewIds.has(tm.id)
+        );
+        if (dayCrewToAssign.length === 0 && dayCamCount > 0) {
+          const availableCrew = db.teamMembers.filter(
+            tm => tm.isActive && tm.availabilityStatus === 'Available' && !busyCrewIds.has(tm.id)
+          );
+          dayCrewToAssign = availableCrew.slice(0, dayCamCount);
+        }
+
+        dayCrewToAssign.forEach((tm, idx) => {
+          const crewPayout = Number(tm.dailyRate || 5000);
           db.teamAssignments.push({
             id: `ta-${Date.now().toString().slice(-5)}-${dIdx}-${idx}`,
             eventId: newEvent.id,
             teamMemberId: tm.id,
             role: tm.role,
-            date: dateItem,
-            hours: primaryMode === 'DAY_TIME' ? 5 : 8,
-            rate: resolvedCrewRate,
-            cost: resolvedCrewRate,
+            date: dayDateStr,
+            hours: dInput.timingMode === 'DAY_TIME' ? 5 : 8,
+            rate: crewPayout,
+            cost: crewPayout,
             assignmentStatus: 'Assigned',
-            notes: `Allocated via Calendar (${CREW_CATEGORY_RATES[crewCatKey].shortLabel})`,
+            notes: `Day ${dIdx + 1} (${dInput.eventType || 'Event'}) — ${CAMERA_CATEGORY_RATES[dayCamCat].shortLabel}`,
           });
         });
       });

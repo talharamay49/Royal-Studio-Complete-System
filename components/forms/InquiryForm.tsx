@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type FormEvent } from "react";
+import { useState, useEffect, useMemo, type FormEvent } from "react";
 import {
   Send,
   CheckCircle2,
@@ -14,6 +14,13 @@ import {
   ArrowRight,
   ArrowLeft,
   Sliders,
+  Plus,
+  Trash2,
+  Camera,
+  Video,
+  Plane,
+  Copy,
+  Layers,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,24 +30,54 @@ import {
   usePublicStudioProfile,
   usePublicWebsiteCMS,
 } from "@/components/shared/StudioProfileContext";
+import {
+  UNIFIED_TIER_LIST,
+  LUXURY_ADDON_CATALOG,
+  calculateUnifiedMultiDayPricing,
+  createEventDayWithServices,
+  createDefaultThreeDayWeddingConfig,
+  createMixedTierMehndiExampleConfig,
+  mapCameraTierToCrewTier,
+  resolveCategoryTierRate,
+  syncServicesToTierSlots,
+  getEquipmentCrewSpecForService,
+  type CameraCategoryTier,
+  type EventServiceType,
+  type DayServiceSelectionItem,
+  type CustomDayConfiguration,
+} from "@/lib/pricing/unifiedPricing";
+import {
+  PriceBreakdownTable,
+  PriceBreakdownModal,
+} from "@/components/forms/PriceBreakdownModal";
 import { cn } from "@/lib/utils";
 
 const EVENT_FUNCTIONS_OPTIONS = [
-  "Nikah",
   "Mehndi / Mayoun",
   "Barat",
   "Walima",
+  "Nikkah",
+  "Mayun",
+  "Dholki / Qawali Night",
+  "Engagement",
   "Bridal & Couple Portraits",
   "Commercial / Brand Shoot",
 ];
 
-const ADDON_OPTIONS = [
-  "4K Drone Aerial Coverage",
-  "Same-Day Edit (SDE) Highlight Reel",
-  "Extra Italian Flushmount Album",
-  "Additional Senior Photographer",
-  "Live SMD / LED Wall Feed",
+const QUICK_ADD_EVENT_PRESETS = [
+  { label: "+ Add Nikkah", eventName: "Nikkah", defaultTier: "CAT_2" as CameraCategoryTier },
+  { label: "+ Add Mayun", eventName: "Mayun", defaultTier: "CAT_1" as CameraCategoryTier },
+  { label: "+ Add Mehndi", eventName: "Mehndi / Mayoun", defaultTier: "CAT_2" as CameraCategoryTier },
+  { label: "+ Add Barat", eventName: "Barat", defaultTier: "CAT_3" as CameraCategoryTier },
+  { label: "+ Add Walima", eventName: "Walima", defaultTier: "CAT_3" as CameraCategoryTier },
 ];
+
+const ADDON_OPTIONS = LUXURY_ADDON_CATALOG.map((a) => a.label);
+
+function parseNumericPackagePrice(priceStr: string): number {
+  const digits = Number(String(priceStr || "").replace(/[^\d]/g, ""));
+  return digits > 0 ? digits : 100000;
+}
 
 interface InquirySuccessPayload {
   referenceId: string;
@@ -50,6 +87,8 @@ interface InquirySuccessPayload {
   packageInterest: string;
   functions: string[];
   addons: string[];
+  estimatedTotal: number;
+  dayBreakdownSummary: string[];
   whatsappUrl: string;
 }
 
@@ -59,6 +98,7 @@ export default function InquiryForm() {
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [showAllStepsAtOnce, setShowAllStepsAtOnce] = useState<boolean>(false);
+  const [isBreakdownModalOpen, setIsBreakdownModalOpen] = useState<boolean>(false);
 
   const [brideName, setBrideName] = useState("");
   const [groomName, setGroomName] = useState("");
@@ -66,14 +106,30 @@ export default function InquiryForm() {
   const [whatsappNumber, setWhatsappNumber] = useState("");
   const [email, setEmail] = useState("");
   const [eventType, setEventType] = useState("Wedding");
-  const [selectedFunctions, setSelectedFunctions] = useState<string[]>(["Barat", "Walima"]);
+  const [selectedFunctions, setSelectedFunctions] = useState<string[]>([
+    "Mehndi / Mayoun",
+    "Barat",
+    "Walima",
+  ]);
   const [weddingDate, setWeddingDate] = useState("");
-  const [eventDaysCount, setEventDaysCount] = useState("2 Days");
+  const [eventDaysCount, setEventDaysCount] = useState("3 Days");
   const [guestCount, setGuestCount] = useState("200 – 500 Guests");
   const [city, setCity] = useState("Burewala");
   const [venue, setVenue] = useState("");
   const [services, setServices] = useState("Full Royal Signature");
+
+  // Package Configuration Mode:
+  // 'CUSTOM_DAYS' = Custom Event Configuration with per-day equipment & crew services array
+  // 'GLOBAL_PACKAGE' = One single pre-built studio package applied to the whole booking
+  const [configMode, setConfigMode] = useState<"CUSTOM_DAYS" | "GLOBAL_PACKAGE">(
+    "CUSTOM_DAYS"
+  );
   const [packageInterest, setPackageInterest] = useState("");
+  const [customDays, setCustomDays] = useState<CustomDayConfiguration[]>(() =>
+    createDefaultThreeDayWeddingConfig()
+  );
+  const [newCustomEventName, setNewCustomEventName] = useState<string>("Nikkah");
+
   const [selectedAddons, setSelectedAddons] = useState<string[]>([]);
   const [budget, setBudget] = useState("");
   const [message, setMessage] = useState("");
@@ -82,6 +138,33 @@ export default function InquiryForm() {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmation, setConfirmation] = useState<InquirySuccessPayload | null>(null);
+
+  // Real-time unified pricing calculation
+  const livePricingQuote = useMemo(() => {
+    if (configMode === "GLOBAL_PACKAGE" && packageInterest) {
+      const matchedPkg = pricingPackages.find((p) => p.name === packageInterest);
+      const pkgPrice = matchedPkg ? parseNumericPackagePrice(matchedPkg.price) : 120000;
+      const singleGlobalDay: CustomDayConfiguration = {
+        id: "global-pkg",
+        dayNumber: 1,
+        eventFunction: selectedFunctions.join(" + ") || "All Event Days",
+        mode: "PREBUILT_PACKAGE",
+        selectedPackageName: packageInterest,
+        selectedPackagePrice: pkgPrice,
+        services: [],
+        tierSlots: [],
+      };
+      return calculateUnifiedMultiDayPricing({
+        days: [singleGlobalDay],
+        selectedAddons,
+      });
+    }
+
+    return calculateUnifiedMultiDayPricing({
+      days: customDays,
+      selectedAddons,
+    });
+  }, [configMode, packageInterest, pricingPackages, selectedFunctions, customDays, selectedAddons]);
 
   function clearFieldError(field: string) {
     setFieldErrors((prev) => {
@@ -98,7 +181,7 @@ export default function InquiryForm() {
   }
 
   function validateEmailValue(value: string): boolean {
-    if (!value.trim()) return true; // Optional unless provided
+    if (!value.trim()) return true;
     return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value.trim());
   }
 
@@ -133,10 +216,12 @@ export default function InquiryForm() {
     if (!phone.trim()) {
       errors.phone = "Primary phone number is required (e.g. 0308-4877073).";
     } else if (!validatePhoneValue(phone)) {
-      errors.phone = "Please enter a valid 10–15 digit phone number (e.g. 0308-4877073 or +923084877073).";
+      errors.phone =
+        "Please enter a valid 10–15 digit phone number (e.g. 0308-4877073 or +923084877073).";
     }
     if (whatsappNumber.trim() && !validatePhoneValue(whatsappNumber)) {
-      errors.whatsappNumber = "Please enter a valid WhatsApp number (10–15 digits) or leave blank.";
+      errors.whatsappNumber =
+        "Please enter a valid WhatsApp number (10–15 digits) or leave blank.";
     }
     if (email.trim() && !validateEmailValue(email)) {
       errors.email = "Please enter a valid email address (e.g. name@example.com).";
@@ -153,7 +238,9 @@ export default function InquiryForm() {
       const addonsParam = params.get("addons");
       const estimateParam = params.get("estimate");
 
-      if (pkgParam) setPackageInterest(pkgParam);
+      if (pkgParam) {
+        setPackageInterest(pkgParam);
+      }
       if (serviceParam) setServices(serviceParam);
       if (functionsParam) {
         const parsedFns = functionsParam
@@ -175,6 +262,63 @@ export default function InquiryForm() {
     }
   }, []);
 
+  // Synchronize Coverage Days dropdown with Custom Days array length when changed
+  function handleDaysCountChange(newDaysLabel: string) {
+    setEventDaysCount(newDaysLabel);
+    const targetCount =
+      newDaysLabel === "1 Day"
+        ? 1
+        : newDaysLabel === "2 Days"
+        ? 2
+        : newDaysLabel === "3 Days"
+        ? 3
+        : 4;
+
+    setCustomDays((prev) => {
+      if (prev.length === targetCount) return prev;
+      if (prev.length > targetCount) {
+        return prev.slice(0, targetCount);
+      }
+      const defaultFunctions = ["Mehndi / Mayoun", "Barat", "Walima", "Nikkah"];
+      const next = [...prev];
+      while (next.length < targetCount) {
+        const dayNum = next.length + 1;
+        const defaultTier: CameraCategoryTier = dayNum === 1 ? "CAT_2" : "CAT_3";
+        const defaultRate = resolveCategoryTierRate(defaultTier);
+        const dayId = `day-${dayNum}-${Date.now()}`;
+        next.push(
+          createEventDayWithServices({
+            id: dayId,
+            dayNumber: dayNum,
+            eventFunction:
+              selectedFunctions[dayNum - 1] ||
+              defaultFunctions[dayNum - 1] ||
+              `Day ${dayNum} Event`,
+            services: [
+              {
+                id: `${dayId}-photo`,
+                serviceType: "Photographer",
+                cameraCategory: defaultTier,
+                crewCategory: mapCameraTierToCrewTier(defaultTier),
+                quantity: dayNum === 1 ? 1 : 2,
+                tierPricePerUnit: defaultRate,
+              },
+              {
+                id: `${dayId}-video`,
+                serviceType: "Videographer",
+                cameraCategory: defaultTier,
+                crewCategory: mapCameraTierToCrewTier(defaultTier),
+                quantity: dayNum === 1 ? 1 : 2,
+                tierPricePerUnit: defaultRate,
+              },
+            ],
+          })
+        );
+      }
+      return next;
+    });
+  }
+
   function toggleFunction(fn: string) {
     setSelectedFunctions((prev) =>
       prev.includes(fn)
@@ -189,6 +333,331 @@ export default function InquiryForm() {
     setSelectedAddons((prev) =>
       prev.includes(addon) ? prev.filter((item) => item !== addon) : [...prev, addon]
     );
+  }
+
+  // Custom Event & Service-Level Configuration Handlers
+  function updateDayConfig(dayId: string, patch: Partial<CustomDayConfiguration>) {
+    setCustomDays((prev) =>
+      prev.map((d) => {
+        if (d.id !== dayId) return d;
+        const updated = { ...d, ...patch };
+        if (patch.services) {
+          updated.tierSlots = syncServicesToTierSlots(dayId, patch.services);
+        }
+        return updated;
+      })
+    );
+  }
+
+  function updateDayServiceItem(
+    dayId: string,
+    serviceId: string,
+    patch: Partial<DayServiceSelectionItem>
+  ) {
+    setCustomDays((prev) =>
+      prev.map((d) => {
+        if (d.id !== dayId) return d;
+        const currentServices = d.services || [];
+        const nextServices = currentServices.map((srv) => {
+          if (srv.id !== serviceId) return srv;
+          const updated = { ...srv, ...patch };
+          if (patch.cameraCategory) {
+            updated.crewCategory = mapCameraTierToCrewTier(patch.cameraCategory);
+            updated.tierPricePerUnit = resolveCategoryTierRate(
+              patch.cameraCategory,
+              updated.crewCategory
+            );
+          }
+          return updated;
+        });
+        return {
+          ...d,
+          services: nextServices,
+          tierSlots: syncServicesToTierSlots(dayId, nextServices),
+        };
+      })
+    );
+  }
+
+  function addServiceToDay(
+    dayId: string,
+    serviceType: EventServiceType,
+    cameraCategory: CameraCategoryTier = "CAT_2",
+    quantity = 1
+  ) {
+    setCustomDays((prev) =>
+      prev.map((d) => {
+        if (d.id !== dayId) return d;
+        const crewCat = mapCameraTierToCrewTier(cameraCategory);
+        const newSrv: DayServiceSelectionItem = {
+          id: `${dayId}-${serviceType.toLowerCase()}-${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2, 5)}`,
+          serviceType,
+          cameraCategory,
+          crewCategory: crewCat,
+          quantity,
+          tierPricePerUnit: resolveCategoryTierRate(cameraCategory, crewCat),
+        };
+        const nextServices = [...(d.services || []), newSrv];
+        return {
+          ...d,
+          mode: "CUSTOM_TIER",
+          services: nextServices,
+          tierSlots: syncServicesToTierSlots(dayId, nextServices),
+        };
+      })
+    );
+  }
+
+  function removeServiceFromDay(dayId: string, serviceId: string) {
+    setCustomDays((prev) =>
+      prev.map((d) => {
+        if (d.id !== dayId) return d;
+        const currentServices = d.services || [];
+        if (currentServices.length <= 1) return d;
+        const nextServices = currentServices.filter((s) => s.id !== serviceId);
+        return {
+          ...d,
+          services: nextServices,
+          tierSlots: syncServicesToTierSlots(dayId, nextServices),
+        };
+      })
+    );
+  }
+
+  // Assign a Tier-Based Package Preset to a specific day independently
+  function applyDayTierPreset(
+    dayId: string,
+    presetType: "TIER_1_2CAM" | "TIER_2_2CAM" | "TIER_3_4CAM" | "TIER_3_5CAM_DRONE" | "MIXED_MEHNDI"
+  ) {
+    setCustomDays((prev) =>
+      prev.map((d) => {
+        if (d.id !== dayId) return d;
+        let nextServices: DayServiceSelectionItem[] = [];
+
+        if (presetType === "TIER_1_2CAM") {
+          nextServices = [
+            {
+              id: `${dayId}-p1`,
+              serviceType: "Photographer",
+              cameraCategory: "CAT_1",
+              crewCategory: "CREW_CAT_1",
+              quantity: 1,
+              tierPricePerUnit: 10000,
+            },
+            {
+              id: `${dayId}-v1`,
+              serviceType: "Videographer",
+              cameraCategory: "CAT_1",
+              crewCategory: "CREW_CAT_1",
+              quantity: 1,
+              tierPricePerUnit: 10000,
+            },
+          ];
+        } else if (presetType === "TIER_2_2CAM") {
+          nextServices = [
+            {
+              id: `${dayId}-p2`,
+              serviceType: "Photographer",
+              cameraCategory: "CAT_2",
+              crewCategory: "CREW_CAT_2",
+              quantity: 1,
+              tierPricePerUnit: 15000,
+            },
+            {
+              id: `${dayId}-v2`,
+              serviceType: "Videographer",
+              cameraCategory: "CAT_2",
+              crewCategory: "CREW_CAT_2",
+              quantity: 1,
+              tierPricePerUnit: 15000,
+            },
+          ];
+        } else if (presetType === "TIER_3_4CAM") {
+          nextServices = [
+            {
+              id: `${dayId}-p3`,
+              serviceType: "Photographer",
+              cameraCategory: "CAT_3",
+              crewCategory: "CREW_CAT_3",
+              quantity: 2,
+              tierPricePerUnit: 20000,
+            },
+            {
+              id: `${dayId}-v3`,
+              serviceType: "Videographer",
+              cameraCategory: "CAT_3",
+              crewCategory: "CREW_CAT_3",
+              quantity: 2,
+              tierPricePerUnit: 20000,
+            },
+          ];
+        } else if (presetType === "TIER_3_5CAM_DRONE") {
+          nextServices = [
+            {
+              id: `${dayId}-p3d`,
+              serviceType: "Photographer",
+              cameraCategory: "CAT_3",
+              crewCategory: "CREW_CAT_3",
+              quantity: 2,
+              tierPricePerUnit: 20000,
+            },
+            {
+              id: `${dayId}-v3d`,
+              serviceType: "Videographer",
+              cameraCategory: "CAT_3",
+              crewCategory: "CREW_CAT_3",
+              quantity: 2,
+              tierPricePerUnit: 20000,
+            },
+            {
+              id: `${dayId}-d3d`,
+              serviceType: "Drone",
+              cameraCategory: "CAT_3",
+              crewCategory: "CREW_CAT_3",
+              quantity: 1,
+              tierPricePerUnit: 20000,
+            },
+          ];
+        } else if (presetType === "MIXED_MEHNDI") {
+          nextServices = [
+            {
+              id: `${dayId}-pmix`,
+              serviceType: "Photographer",
+              cameraCategory: "CAT_3",
+              crewCategory: "CREW_CAT_3",
+              quantity: 1,
+              tierPricePerUnit: 20000,
+            },
+            {
+              id: `${dayId}-vmix20`,
+              serviceType: "Videographer",
+              cameraCategory: "CAT_3",
+              crewCategory: "CREW_CAT_3",
+              quantity: 1,
+              tierPricePerUnit: 20000,
+            },
+            {
+              id: `${dayId}-vmix10`,
+              serviceType: "Videographer",
+              cameraCategory: "CAT_1",
+              crewCategory: "CREW_CAT_1",
+              quantity: 1,
+              tierPricePerUnit: 10000,
+            },
+          ];
+        }
+
+        return {
+          ...d,
+          mode: "CUSTOM_TIER",
+          services: nextServices,
+          tierSlots: syncServicesToTierSlots(dayId, nextServices),
+        };
+      })
+    );
+  }
+
+  function addCustomEventDay(
+    customEventTitle?: string,
+    defaultTier: CameraCategoryTier = "CAT_2"
+  ) {
+    setCustomDays((prev) => {
+      const nextNum = prev.length + 1;
+      const eventTitle =
+        customEventTitle ||
+        newCustomEventName ||
+        EVENT_FUNCTIONS_OPTIONS[(nextNum - 1) % EVENT_FUNCTIONS_OPTIONS.length];
+      const dayId = `day-${nextNum}-${Date.now()}`;
+      const rate = resolveCategoryTierRate(defaultTier);
+
+      const newDay = createEventDayWithServices({
+        id: dayId,
+        dayNumber: nextNum,
+        eventFunction: eventTitle,
+        services: [
+          {
+            id: `${dayId}-photo`,
+            serviceType: "Photographer",
+            cameraCategory: defaultTier,
+            crewCategory: mapCameraTierToCrewTier(defaultTier),
+            quantity: defaultTier === "CAT_3" ? 2 : 1,
+            tierPricePerUnit: rate,
+          },
+          {
+            id: `${dayId}-video`,
+            serviceType: "Videographer",
+            cameraCategory: defaultTier,
+            crewCategory: mapCameraTierToCrewTier(defaultTier),
+            quantity: defaultTier === "CAT_3" ? 2 : 1,
+            tierPricePerUnit: rate,
+          },
+        ],
+      });
+
+      const next = [...prev, newDay];
+      setEventDaysCount(
+        next.length >= 4 ? "4+ Days" : `${next.length} Day${next.length > 1 ? "s" : ""}`
+      );
+      if (!selectedFunctions.includes(eventTitle)) {
+        setSelectedFunctions((fns) => [...fns, eventTitle]);
+      }
+      return next;
+    });
+  }
+
+  function removeCustomEventDay(dayId: string) {
+    setCustomDays((prev) => {
+      if (prev.length <= 1) return prev;
+      const filtered = prev
+        .filter((d) => d.id !== dayId)
+        .map((d, idx) => ({ ...d, dayNumber: idx + 1 }));
+      setEventDaysCount(
+        filtered.length >= 4
+          ? "4+ Days"
+          : `${filtered.length} Day${filtered.length > 1 ? "s" : ""}`
+      );
+      return filtered;
+    });
+  }
+
+  function copyDay1ToAllDays() {
+    setCustomDays((prev) => {
+      if (prev.length <= 1) return prev;
+      const day1 = prev[0];
+      return prev.map((d, idx) => {
+        if (idx === 0) return d;
+        const copiedServices = (day1.services || []).map((s, sIdx) => ({
+          ...s,
+          id: `${d.id}-copied-srv-${sIdx}`,
+        }));
+        return {
+          ...d,
+          mode: day1.mode,
+          selectedPackageId: day1.selectedPackageId,
+          selectedPackageName: day1.selectedPackageName,
+          selectedPackagePrice: day1.selectedPackagePrice,
+          extraDeliverableFee: day1.extraDeliverableFee,
+          services: copiedServices,
+          tierSlots: syncServicesToTierSlots(d.id, copiedServices),
+        };
+      });
+    });
+  }
+
+  function applyStandardThreeDayPreset() {
+    setConfigMode("CUSTOM_DAYS");
+    setEventDaysCount("3 Days");
+    setSelectedFunctions(["Mehndi / Mayoun", "Barat", "Walima"]);
+    setCustomDays(createDefaultThreeDayWeddingConfig());
+  }
+
+  function applyMixedTierMehndiPreset() {
+    setConfigMode("CUSTOM_DAYS");
+    setEventDaysCount("3 Days");
+    setSelectedFunctions(["Mehndi / Mayoun", "Barat", "Walima"]);
+    setCustomDays(createMixedTierMehndiExampleConfig());
   }
 
   function handleNextStep(targetStep: 1 | 2 | 3) {
@@ -231,6 +700,19 @@ export default function InquiryForm() {
     setFieldErrors({});
     setStatus("loading");
 
+    const dayBreakdownLines = livePricingQuote.days.map(
+      (d) =>
+        `Day ${d.dayNumber} (${d.eventFunction}): ${d.headlineSummary} = PKR ${d.daySubtotal.toLocaleString("en-PK")}`
+    );
+
+    const resolvedPackageSummary =
+      configMode === "GLOBAL_PACKAGE" && packageInterest
+        ? packageInterest
+        : `Custom ${livePricingQuote.daysCount}-Day Event Configuration (PKR ${livePricingQuote.grandTotal.toLocaleString("en-PK")})`;
+
+    const resolvedBudget =
+      budget || `PKR ${livePricingQuote.grandTotal.toLocaleString("en-PK")}`;
+
     try {
       const res = await fetch("/api/contact", {
         method: "POST",
@@ -242,17 +724,30 @@ export default function InquiryForm() {
           whatsapp: whatsappNumber.trim() || phone.trim(),
           email: email.trim(),
           eventType,
-          functions: selectedFunctions,
+          functions:
+            configMode === "CUSTOM_DAYS"
+              ? livePricingQuote.days.map((d) => d.eventFunction)
+              : selectedFunctions,
           weddingDate,
           eventDaysCount,
           guestCount,
           city: city.trim() || "Burewala",
           venue: venue.trim(),
           services,
-          packageInterest: packageInterest || "Custom Quote",
+          packageInterest: resolvedPackageSummary,
           addons: selectedAddons,
-          budget,
-          message: message.trim(),
+          budget: resolvedBudget,
+          calculatedEstimate: livePricingQuote.grandTotal,
+          customDaysConfig: customDays,
+          dayBreakdownLines,
+          message: [
+            message.trim(),
+            `--- Custom Event Configuration Breakdown ---`,
+            ...dayBreakdownLines,
+            `Estimated Grand Total: PKR ${livePricingQuote.grandTotal.toLocaleString("en-PK")}`,
+          ]
+            .filter(Boolean)
+            .join("\n"),
         }),
       });
 
@@ -266,9 +761,14 @@ export default function InquiryForm() {
             (groomName.trim() ? `${brideName.trim()} & ${groomName.trim()}` : brideName.trim()),
           weddingDate,
           city: city.trim() || "Burewala",
-          packageInterest: packageInterest || "Custom Quote",
-          functions: selectedFunctions,
+          packageInterest: resolvedPackageSummary,
+          functions:
+            configMode === "CUSTOM_DAYS"
+              ? livePricingQuote.days.map((d) => d.eventFunction)
+              : selectedFunctions,
           addons: selectedAddons,
+          estimatedTotal: livePricingQuote.grandTotal,
+          dayBreakdownSummary: dayBreakdownLines,
           whatsappUrl: result.whatsappUrl || "",
         });
         setStatus("success");
@@ -318,7 +818,7 @@ export default function InquiryForm() {
             Thank You, {confirmation.clientName}!
           </h4>
           <p className="text-sm text-text-muted max-w-md mx-auto leading-relaxed">
-            Your event booking request has been synced to the{" "}
+            Your custom event configuration has been synced to the{" "}
             <strong className="text-primary">
               {profile?.publicStudioName || profile?.studioName || "Royal Studio"}
             </strong>{" "}
@@ -326,7 +826,7 @@ export default function InquiryForm() {
           </p>
         </div>
 
-        <div className="mx-auto max-w-md rounded-xl border border-border bg-background p-4 text-left text-xs space-y-2.5">
+        <div className="mx-auto max-w-lg rounded-xl border border-border bg-background p-4 text-left text-xs space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-text-muted flex items-center gap-1.5">
               <Calendar size={13} className="text-accent" />
@@ -343,26 +843,25 @@ export default function InquiryForm() {
             </span>
             <span className="font-semibold text-primary">{confirmation.city}</span>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-text-muted">Package &amp; Coverage:</span>
-            <span className="font-semibold text-accent">
-              {confirmation.packageInterest} · {services}
+          <div className="border-t border-border pt-2 space-y-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted block">
+              Day-by-Day Equipment &amp; Crew Configuration:
+            </span>
+            {confirmation.dayBreakdownSummary.map((line, idx) => (
+              <div
+                key={idx}
+                className="flex items-center justify-between text-xs text-primary bg-surface px-2.5 py-1.5 rounded-lg border border-border/60"
+              >
+                <span>{line}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between border-t border-border pt-2.5">
+            <span className="font-semibold text-primary">Final Grand Total:</span>
+            <span className="font-mono text-sm font-bold text-accent tabular-nums">
+              PKR {confirmation.estimatedTotal.toLocaleString("en-PK")}
             </span>
           </div>
-          <div className="flex items-start justify-between gap-2">
-            <span className="text-text-muted shrink-0">Functions:</span>
-            <span className="font-medium text-primary text-right">
-              {confirmation.functions.join(", ")}
-            </span>
-          </div>
-          {confirmation.addons.length > 0 && (
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-text-muted shrink-0">Add-Ons:</span>
-              <span className="font-medium text-primary text-right">
-                {confirmation.addons.join(", ")}
-              </span>
-            </div>
-          )}
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
@@ -425,7 +924,7 @@ export default function InquiryForm() {
             {(
               [
                 { num: 1, title: "1. Schedule & Venue" },
-                { num: 2, title: "2. Package & Add-Ons" },
+                { num: 2, title: "2. Custom Event Configuration" },
                 { num: 3, title: "3. Client & Confirm" },
               ] as const
             ).map((item) => {
@@ -488,7 +987,7 @@ export default function InquiryForm() {
                 onChange={(e) => setEventType(e.target.value)}
               >
                 <option value="Wedding">Full Wedding Celebration</option>
-                <option value="Engagement">Nikah / Engagement</option>
+                <option value="Engagement">Nikkah / Engagement</option>
                 <option value="Bridal">Bridal &amp; Couple Editorial</option>
                 <option value="Fashion">Fashion / Brand Campaign</option>
                 <option value="Corporate">Corporate Event / Summit</option>
@@ -534,7 +1033,7 @@ export default function InquiryForm() {
                 id="eventDaysCount"
                 name="eventDaysCount"
                 value={eventDaysCount}
-                onChange={(e) => setEventDaysCount(e.target.value)}
+                onChange={(e) => handleDaysCountChange(e.target.value)}
               >
                 <option value="1 Day">1 Day Coverage</option>
                 <option value="2 Days">2 Days (e.g. Barat + Walima)</option>
@@ -645,7 +1144,7 @@ export default function InquiryForm() {
                 onClick={() => handleNextStep(2)}
                 className="w-full sm:w-auto"
               >
-                <span>Continue to Package &amp; Add-Ons</span>
+                <span>Configure Custom Events &amp; Crew Tiers</span>
                 <ArrowRight size={15} />
               </Button>
             </div>
@@ -653,96 +1152,625 @@ export default function InquiryForm() {
         </div>
       )}
 
-      {/* STEP 2: Package Selection, Services & Add-Ons */}
+      {/* STEP 2: CUSTOM EVENT CONFIGURATION & PER-DAY EQUIPMENT/CREW SERVICES */}
       {(showAllStepsAtOnce || step === 2) && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           {showAllStepsAtOnce && (
             <div className="text-xs font-semibold tracking-widest uppercase text-accent border-b border-border pb-2">
-              2. Package Selection, Services &amp; Add-Ons
+              2. Custom Event Configuration &amp; Per-Day Crew/Equipment Selection
             </div>
           )}
 
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
-            <div>
-              <label
-                htmlFor="packageInterest"
-                className="mb-1.5 block text-xs font-medium tracking-widest uppercase text-text-muted"
-              >
-                Preferred Package
-              </label>
-              <Select
-                id="packageInterest"
-                name="packageInterest"
-                value={packageInterest}
-                onChange={(e) => setPackageInterest(e.target.value)}
-              >
-                <option value="">Custom Bespoke Quote</option>
-                {pricingPackages.map((pkg) => (
-                  <option key={pkg.id} value={pkg.name}>
-                    {pkg.name} ({pkg.price})
-                  </option>
-                ))}
-              </Select>
+          {/* Header & Mode Switcher */}
+          <div className="rounded-2xl border border-border bg-surface p-4 sm:p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-accent block">
+                  Custom Event Configuration
+                </span>
+                <h4 className="font-display text-lg sm:text-xl text-primary">
+                  Assign Independent Equipment &amp; Crew Tiers Per Event Day
+                </h4>
+                <p className="text-xs text-text-muted">
+                  Add any celebration event (Mehndi, Barat, Walima, Nikkah, Mayun) and customize Photographer, Videographer &amp; Drone services with independent Category + Tier pricing.
+                </p>
+              </div>
+              <div className="inline-flex rounded-xl border border-border bg-background p-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setConfigMode("CUSTOM_DAYS")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                    configMode === "CUSTOM_DAYS"
+                      ? "bg-accent text-[#111111] shadow-xs"
+                      : "text-text-muted hover:text-primary"
+                  )}
+                >
+                  Custom Event Configuration
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfigMode("GLOBAL_PACKAGE")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap",
+                    configMode === "GLOBAL_PACKAGE"
+                      ? "bg-accent text-[#111111] shadow-xs"
+                      : "text-text-muted hover:text-primary"
+                  )}
+                >
+                  Single Global Package
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label
-                htmlFor="services"
-                className="mb-1.5 block text-xs font-medium tracking-widest uppercase text-text-muted"
-              >
-                Primary Coverage <span className="text-accent">*</span>
-              </label>
-              <Select
-                id="services"
-                name="services"
-                value={services}
-                onChange={(e) => setServices(e.target.value)}
-                required
-              >
-                <option value="Full Royal Signature">Full Royal Signature (Photo + Film + Drone)</option>
-                <option value="Photo + Film Package">Wedding Photography + Cinematic Film</option>
-                <option value="Wedding Photography">Wedding Photography Only</option>
-                <option value="Cinematic Films">Cinematic Wedding Films Only</option>
-                <option value="Bridal & Couple Shoot">Bridal &amp; Couple Signature Portraits</option>
-                <option value="Drone & Crane Coverage">4K Drone &amp; Crane Aerial Coverage</option>
-                <option value="Commercial / Brand Shoot">Commercial / Fashion / Corporate Shoot</option>
-              </Select>
-            </div>
-
-            <div className="sm:col-span-2 xl:col-span-1">
-              <label
-                htmlFor="budget"
-                className="mb-1.5 block text-xs font-medium tracking-widest uppercase text-text-muted"
-              >
-                Estimated Budget Range
-              </label>
-              <Select
-                id="budget"
-                name="budget"
-                value={budget}
-                onChange={(e) => setBudget(e.target.value)}
-              >
-                <option value="">Select budget range</option>
-                <option value="PKR 50,000 – 100,000">PKR 50,000 – 100,000</option>
-                <option value="PKR 100,000 – 200,000">PKR 100,000 – 200,000</option>
-                <option value="PKR 200,000 – 300,000">PKR 200,000 – 300,000</option>
-                <option value="PKR 300,000+">PKR 300,000+</option>
-                {budget &&
-                  ![
-                    "",
-                    "PKR 50,000 – 100,000",
-                    "PKR 100,000 – 200,000",
-                    "PKR 200,000 – 300,000",
-                    "PKR 300,000+",
-                  ].includes(budget) && <option value={budget}>{budget}</option>}
-              </Select>
+            {/* Unified Pricing Rate Legend */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-border/60">
+              {UNIFIED_TIER_LIST.map((tier) => (
+                <div
+                  key={tier.cameraCategory}
+                  className="flex items-center justify-between rounded-xl border border-border/80 bg-background px-3 py-2 text-xs"
+                >
+                  <div>
+                    <div className="font-semibold text-primary">
+                      Cat {tier.tierNumber} + Tier {tier.tierNumber}
+                    </div>
+                    <div className="text-[11px] text-text-muted">
+                      Camera + Crew Combined
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-accent tabular-nums">
+                    PKR {(tier.ratePerCamPerDay / 1000).toFixed(0)}k/cam/day
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
+
+          {configMode === "CUSTOM_DAYS" ? (
+            <div className="space-y-4">
+              {/* "Add Event" Bar (e.g., Add Nikkah, Add Mayun, Add Barat, etc.) & Quick Templates */}
+              <div className="rounded-2xl border border-accent/40 bg-surface p-4 space-y-3">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div>
+                    <span className="text-xs font-bold text-primary block">
+                      Add Event Day to Your Booking Schedule
+                    </span>
+                    <span className="text-[11px] text-text-muted">
+                      Click any event below (e.g. Nikkah or Mayun) or select from the menu and click &ldquo;Add Event&rdquo;.
+                    </span>
+                  </div>
+
+                  {/* Select + Add Event Button */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label="Select Event Type to Add"
+                      value={newCustomEventName}
+                      onChange={(e) => setNewCustomEventName(e.target.value)}
+                      className="rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary"
+                    >
+                      {EVENT_FUNCTIONS_OPTIONS.map((fn) => (
+                        <option key={fn} value={fn}>
+                          {fn}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => addCustomEventDay(newCustomEventName, "CAT_2")}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-accent px-4 py-2 text-xs font-bold text-[#111111] hover:opacity-90 transition-opacity cursor-pointer whitespace-nowrap"
+                    >
+                      <Plus size={14} />
+                      <span>Add Event</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Quick 1-Click Add Event Buttons (Add Nikkah, Add Mayun, etc.) & Multi-Day Scenario Templates */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border/60">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {QUICK_ADD_EVENT_PRESETS.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() =>
+                          addCustomEventDay(preset.eventName, preset.defaultTier)
+                        }
+                        className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-semibold text-primary hover:border-accent hover:text-accent transition-colors cursor-pointer"
+                      >
+                        <span>{preset.label}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={applyStandardThreeDayPreset}
+                      className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-medium text-text-muted hover:border-accent hover:text-primary transition-colors cursor-pointer"
+                    >
+                      <Layers size={12} className="text-accent" />
+                      <span>Load 3-Day (Mehndi 15k · Barat 20k+Drone · Walima 20k)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={applyMixedTierMehndiPreset}
+                      className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-medium text-text-muted hover:border-accent hover:text-primary transition-colors cursor-pointer"
+                    >
+                      <Sparkles size={12} className="text-accent" />
+                      <span>Load Mixed-Tier Mehndi (20k + 10k)</span>
+                    </button>
+                    {customDays.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={copyDay1ToAllDays}
+                        className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2.5 py-1.5 text-[11px] font-medium text-text-muted hover:border-accent hover:text-primary transition-colors cursor-pointer"
+                      >
+                        <Copy size={12} />
+                        <span>Copy Day 1 to All</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Per-Day Independent Event Configuration Cards */}
+              <div className="space-y-4">
+                {customDays.map((day, dayIndex) => {
+                  const dayCalc = livePricingQuote.days[dayIndex];
+                  const dayServices = day.services || [];
+
+                  return (
+                    <div
+                      key={day.id}
+                      className="rounded-2xl border border-border bg-surface p-4 sm:p-5 space-y-4"
+                    >
+                      {/* Day Card Top Bar */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <span className="inline-flex items-center justify-center rounded-lg bg-accent px-2.5 py-1 text-xs font-bold text-[#111111]">
+                            Day {day.dayNumber}
+                          </span>
+                          <select
+                            aria-label={`Day ${day.dayNumber} Event Function`}
+                            value={day.eventFunction}
+                            onChange={(e) =>
+                              updateDayConfig(day.id, { eventFunction: e.target.value })
+                            }
+                            className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-semibold text-primary"
+                          >
+                            {EVENT_FUNCTIONS_OPTIONS.map((fn) => (
+                              <option key={fn} value={fn}>
+                                {fn}
+                              </option>
+                            ))}
+                            <option value={`Day ${day.dayNumber} Celebration`}>
+                              Day {day.dayNumber} Celebration
+                            </option>
+                          </select>
+
+                          {/* Per-Day Mode Switch: Custom Services/Tiers vs Pre-Built Package */}
+                          <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateDayConfig(day.id, { mode: "CUSTOM_TIER" })
+                              }
+                              className={cn(
+                                "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
+                                day.mode === "CUSTOM_TIER"
+                                  ? "bg-accent text-[#111111]"
+                                  : "text-text-muted hover:text-primary"
+                              )}
+                            >
+                              Custom Crew &amp; Tier Services
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const firstPkg = pricingPackages[0];
+                                updateDayConfig(day.id, {
+                                  mode: "PREBUILT_PACKAGE",
+                                  selectedPackageName:
+                                    day.selectedPackageName || firstPkg?.name || "Essential",
+                                  selectedPackagePrice:
+                                    day.selectedPackagePrice ||
+                                    (firstPkg ? parseNumericPackagePrice(firstPkg.price) : 50000),
+                                });
+                              }}
+                              className={cn(
+                                "px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer",
+                                day.mode === "PREBUILT_PACKAGE"
+                                  ? "bg-accent text-[#111111]"
+                                  : "text-text-muted hover:text-primary"
+                              )}
+                            >
+                              Pre-Built Package
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-3">
+                          <div className="text-right">
+                            <span className="text-[10px] uppercase tracking-wider text-text-muted block">
+                              Day {day.dayNumber} ({day.eventFunction}) Subtotal
+                            </span>
+                            <span className="font-mono text-sm font-bold text-accent tabular-nums">
+                              PKR {(dayCalc?.daySubtotal || 0).toLocaleString("en-PK")}
+                            </span>
+                          </div>
+                          {customDays.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeCustomEventDay(day.id)}
+                              title={`Remove Day ${day.dayNumber}`}
+                              className="p-1.5 rounded-lg border border-border text-text-muted hover:text-red-500 hover:border-red-500/40 transition-colors cursor-pointer"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {day.mode === "PREBUILT_PACKAGE" ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-text-muted">
+                              Select Pre-Built Package for Day {day.dayNumber} ({day.eventFunction})
+                            </label>
+                            <Select
+                              value={day.selectedPackageName || ""}
+                              onChange={(e) => {
+                                const found = pricingPackages.find(
+                                  (p) => p.name === e.target.value
+                                );
+                                updateDayConfig(day.id, {
+                                  selectedPackageName: e.target.value,
+                                  selectedPackagePrice: found
+                                    ? parseNumericPackagePrice(found.price)
+                                    : 60000,
+                                });
+                              }}
+                            >
+                              {pricingPackages.map((pkg) => (
+                                <option key={pkg.id} value={pkg.name}>
+                                  {pkg.name} ({pkg.price})
+                                </option>
+                              ))}
+                            </Select>
+                          </div>
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-text-muted">
+                              Package Day Rate (PKR)
+                            </label>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={5000}
+                              value={day.selectedPackagePrice || 0}
+                              onChange={(e) =>
+                                updateDayConfig(day.id, {
+                                  selectedPackagePrice: Math.max(0, Number(e.target.value || 0)),
+                                })
+                              }
+                              className="font-mono tabular-nums"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {/* Quick Tier-Based Package Presets for this specific day */}
+                          <div className="flex flex-wrap items-center gap-1.5 pb-1">
+                            <span className="text-[11px] font-semibold text-text-muted mr-1">
+                              Quick Day Presets:
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => applyDayTierPreset(day.id, "TIER_1_2CAM")}
+                              className="rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-primary hover:border-accent cursor-pointer"
+                            >
+                              1P + 1V @ 10k (PKR 20k)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyDayTierPreset(day.id, "TIER_2_2CAM")}
+                              className="rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-primary hover:border-accent cursor-pointer"
+                            >
+                              1P + 1V @ 15k (PKR 30k)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyDayTierPreset(day.id, "TIER_3_4CAM")}
+                              className="rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-primary hover:border-accent cursor-pointer"
+                            >
+                              2P + 2V @ 20k (PKR 80k)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyDayTierPreset(day.id, "TIER_3_5CAM_DRONE")}
+                              className="rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-primary hover:border-accent cursor-pointer"
+                            >
+                              2P + 2V + 1 Drone @ 20k (PKR 100k)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => applyDayTierPreset(day.id, "MIXED_MEHNDI")}
+                              className="rounded-lg border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-primary hover:border-accent cursor-pointer"
+                            >
+                              Mixed: 1P+1V @20k + 1V @10k (PKR 50k)
+                            </button>
+                          </div>
+
+                          {/* Selected Services Array for this Event Day (Photographer, Videographer, Drone) */}
+                          <div className="space-y-2.5">
+                            {dayServices.map((srv) => {
+                              const unitRate = resolveCategoryTierRate(
+                                srv.cameraCategory,
+                                srv.crewCategory
+                              );
+                              const lineTotal = Math.max(0, srv.quantity) * unitRate;
+                              const { equipmentSpec, crewSpec } =
+                                getEquipmentCrewSpecForService(
+                                  srv.serviceType,
+                                  srv.cameraCategory
+                                );
+
+                              return (
+                                <div
+                                  key={srv.id}
+                                  className="rounded-xl border border-border bg-background p-3 space-y-2.5"
+                                >
+                                  <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5 items-center">
+                                    {/* Service Role Selector (Photographer / Videographer / Drone) */}
+                                    <div className="md:col-span-3">
+                                      <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1">
+                                        Service Role
+                                      </label>
+                                      <select
+                                        value={srv.serviceType}
+                                        onChange={(e) =>
+                                          updateDayServiceItem(day.id, srv.id, {
+                                            serviceType: e.target.value as EventServiceType,
+                                          })
+                                        }
+                                        className="w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-primary"
+                                      >
+                                        <option value="Photographer">Photographer</option>
+                                        <option value="Videographer">Videographer</option>
+                                        <option value="Drone">Drone</option>
+                                      </select>
+                                    </div>
+
+                                    {/* Equipment Category + Crew Tier Selector */}
+                                    <div className="md:col-span-5">
+                                      <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1">
+                                        Equipment Category + Crew Tier
+                                      </label>
+                                      <select
+                                        value={srv.cameraCategory}
+                                        onChange={(e) =>
+                                          updateDayServiceItem(day.id, srv.id, {
+                                            cameraCategory: e.target
+                                              .value as CameraCategoryTier,
+                                          })
+                                        }
+                                        className="w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-semibold text-primary"
+                                      >
+                                        {UNIFIED_TIER_LIST.map((t) => (
+                                          <option
+                                            key={t.cameraCategory}
+                                            value={t.cameraCategory}
+                                          >
+                                            Cat {t.tierNumber} + Tier {t.tierNumber} — PKR{" "}
+                                            {t.ratePerCamPerDay.toLocaleString("en-PK")}/unit
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+
+                                    {/* Crew / Camera Quantity Counter */}
+                                    <div className="md:col-span-2">
+                                      <label className="block text-[10px] font-semibold uppercase tracking-wider text-text-muted mb-1">
+                                        Crew / Cam Qty
+                                      </label>
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateDayServiceItem(day.id, srv.id, {
+                                              quantity: Math.max(1, srv.quantity - 1),
+                                            })
+                                          }
+                                          className="h-7 w-7 rounded-lg border border-border bg-surface text-xs font-bold text-primary hover:border-accent cursor-pointer"
+                                        >
+                                          -
+                                        </button>
+                                        <span className="w-6 text-center font-mono text-xs font-bold text-primary tabular-nums">
+                                          {srv.quantity}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            updateDayServiceItem(day.id, srv.id, {
+                                              quantity: srv.quantity + 1,
+                                            })
+                                          }
+                                          className="h-7 w-7 rounded-lg border border-border bg-surface text-xs font-bold text-primary hover:border-accent cursor-pointer"
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Line Subtotal & Delete */}
+                                    <div className="md:col-span-2 flex items-center justify-between md:justify-end gap-2">
+                                      <div className="text-right">
+                                        <span className="text-[10px] text-text-muted block">
+                                          Subtotal
+                                        </span>
+                                        <span className="font-mono text-xs font-bold text-accent tabular-nums">
+                                          PKR {lineTotal.toLocaleString("en-PK")}
+                                        </span>
+                                      </div>
+                                      {dayServices.length > 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            removeServiceFromDay(day.id, srv.id)
+                                          }
+                                          title="Remove Service Line"
+                                          className="p-1.5 rounded-lg border border-border text-text-muted hover:text-red-500 hover:border-red-500/40 transition-colors cursor-pointer"
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Equipment & Crew Spec Subtitle */}
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-border/50 text-[11px] text-text-muted">
+                                    <span>
+                                      Equipment: <strong className="text-primary">{equipmentSpec}</strong> · Crew:{" "}
+                                      <strong className="text-primary">{crewSpec}</strong>
+                                    </span>
+                                    <span className="font-mono tabular-nums">
+                                      {srv.quantity} × PKR {unitRate.toLocaleString("en-PK")} = PKR{" "}
+                                      {lineTotal.toLocaleString("en-PK")}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Add Service Buttons for this Day (Photographer, Videographer, Drone) */}
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <span className="text-[11px] font-semibold text-text-muted">
+                              Add Service to Day {day.dayNumber}:
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                addServiceToDay(day.id, "Photographer", "CAT_2", 1)
+                              }
+                              className="inline-flex items-center gap-1 rounded-xl border border-dashed border-accent/60 bg-background px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-accent/15 transition-colors cursor-pointer"
+                            >
+                              <Camera size={12} className="text-accent" />
+                              <span>+ Photographer</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                addServiceToDay(day.id, "Videographer", "CAT_2", 1)
+                              }
+                              className="inline-flex items-center gap-1 rounded-xl border border-dashed border-accent/60 bg-background px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-accent/15 transition-colors cursor-pointer"
+                            >
+                              <Video size={12} className="text-accent" />
+                              <span>+ Videographer</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                addServiceToDay(day.id, "Drone", "CAT_3", 1)
+                              }
+                              className="inline-flex items-center gap-1 rounded-xl border border-dashed border-accent/60 bg-background px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-accent/15 transition-colors cursor-pointer"
+                            >
+                              <Plane size={12} className="text-accent" />
+                              <span>+ Drone</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            /* Global Package Mode */
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+              <div>
+                <label
+                  htmlFor="packageInterest"
+                  className="mb-1.5 block text-xs font-medium tracking-widest uppercase text-text-muted"
+                >
+                  Preferred Global Package
+                </label>
+                <Select
+                  id="packageInterest"
+                  name="packageInterest"
+                  value={packageInterest}
+                  onChange={(e) => setPackageInterest(e.target.value)}
+                >
+                  <option value="">Select Studio Package</option>
+                  {pricingPackages.map((pkg) => (
+                    <option key={pkg.id} value={pkg.name}>
+                      {pkg.name} ({pkg.price})
+                    </option>
+                  ))}
+                </Select>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="services"
+                  className="mb-1.5 block text-xs font-medium tracking-widest uppercase text-text-muted"
+                >
+                  Primary Coverage <span className="text-accent">*</span>
+                </label>
+                <Select
+                  id="services"
+                  name="services"
+                  value={services}
+                  onChange={(e) => setServices(e.target.value)}
+                  required
+                >
+                  <option value="Full Royal Signature">
+                    Full Royal Signature (Photo + Film + Drone)
+                  </option>
+                  <option value="Photo + Film Package">
+                    Wedding Photography + Cinematic Film
+                  </option>
+                  <option value="Wedding Photography">Wedding Photography Only</option>
+                  <option value="Cinematic Films">Cinematic Wedding Films Only</option>
+                  <option value="Bridal & Couple Shoot">
+                    Bridal &amp; Couple Signature Portraits
+                  </option>
+                  <option value="Drone & Crane Coverage">
+                    4K Drone &amp; Crane Aerial Coverage
+                  </option>
+                  <option value="Commercial / Brand Shoot">
+                    Commercial / Fashion / Corporate Shoot
+                  </option>
+                </Select>
+              </div>
+
+              <div className="sm:col-span-2 xl:col-span-1">
+                <label
+                  htmlFor="budget"
+                  className="mb-1.5 block text-xs font-medium tracking-widest uppercase text-text-muted"
+                >
+                  Estimated Budget Range
+                </label>
+                <Select
+                  id="budget"
+                  name="budget"
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value)}
+                >
+                  <option value="">Auto-calculated from selection</option>
+                  <option value="PKR 50,000 – 100,000">PKR 50,000 – 100,000</option>
+                  <option value="PKR 100,000 – 200,000">PKR 100,000 – 200,000</option>
+                  <option value="PKR 200,000 – 300,000">PKR 200,000 – 300,000</option>
+                  <option value="PKR 300,000+">PKR 300,000+</option>
+                </Select>
+              </div>
+            </div>
+          )}
 
           {/* Optional Add-Ons Checkboxes */}
           <div>
             <label className="mb-2 block text-xs font-medium tracking-widest uppercase text-text-muted">
-              Optional Luxury Add-Ons
+              Optional Luxury Add-Ons (Albums, SDE Reel, LED Wall)
             </label>
             <div className="flex flex-wrap gap-2">
               {ADDON_OPTIONS.map((addon) => {
@@ -792,6 +1820,23 @@ export default function InquiryForm() {
         </div>
       )}
 
+      {/* DETAILED PRICE BREAKDOWN COMPONENT + MODAL TRIGGER */}
+      <PriceBreakdownTable
+        quote={livePricingQuote}
+        selectedAddons={selectedAddons}
+        compact={false}
+        onOpenModal={() => setIsBreakdownModalOpen(true)}
+      />
+
+      <PriceBreakdownModal
+        isOpen={isBreakdownModalOpen}
+        onClose={() => setIsBreakdownModalOpen(false)}
+        quote={livePricingQuote}
+        selectedAddons={selectedAddons}
+        weddingDate={weddingDate}
+        city={city}
+      />
+
       {/* STEP 3: Client Contact Details & Submission */}
       {(showAllStepsAtOnce || step === 3) && (
         <div className="space-y-4">
@@ -821,7 +1866,8 @@ export default function InquiryForm() {
                   if (!brideName.trim() || brideName.trim().length < 2) {
                     setFieldErrors((prev) => ({
                       ...prev,
-                      brideName: "Please enter the Bride or primary client full name (min 2 characters).",
+                      brideName:
+                        "Please enter the Bride or primary client full name (min 2 characters).",
                     }));
                   }
                 }}
@@ -1012,7 +2058,10 @@ export default function InquiryForm() {
                 "Submitting Booking Inquiry..."
               ) : (
                 <>
-                  <span>Complete Event Booking Inquiry</span>
+                  <span>
+                    Complete Booking Inquiry (PKR{" "}
+                    {livePricingQuote.grandTotal.toLocaleString("en-PK")})
+                  </span>
                   <Send size={16} />
                 </>
               )}

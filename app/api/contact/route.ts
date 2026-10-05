@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { dbInstance } from "@/lib/admin/db";
 import { persistWebsiteInquiryToFirestore } from "@/lib/db/storageAdapter";
+import {
+  calculateDaySummary,
+  type CustomDayConfiguration,
+} from "@/lib/pricing/unifiedPricing";
 
 function sanitizeField(value: unknown, maxLength = 500): string {
   if (typeof value !== "string") return "";
@@ -162,6 +166,11 @@ export async function POST(request: Request) {
       db.clients.unshift(client);
     }
 
+    const calculatedEstimate = Math.max(0, Number(data.calculatedEstimate || 0));
+    const customDaysConfig: CustomDayConfiguration[] = Array.isArray(data.customDaysConfig)
+      ? data.customDaysConfig
+      : [];
+
     const newInquiryEvent = {
       id: linkedEventId,
       clientId: client.id,
@@ -182,7 +191,7 @@ export async function POST(request: Request) {
       venue: venue || city,
       city,
       status: "Inquiry" as const,
-      packagePrice: 0,
+      packagePrice: calculatedEstimate,
       advancePaid: 0,
       discount: 0,
       tax: 0,
@@ -192,16 +201,61 @@ export async function POST(request: Request) {
       createdBy: "website-inquiry",
       createdDate: submittedAt,
       updatedDate: submittedAt,
-      isMultiDay: eventDaysCount !== "1 Day" || functionsList.length > 1,
+      isMultiDay:
+        customDaysConfig.length > 1 ||
+        eventDaysCount !== "1 Day" ||
+        functionsList.length > 1,
+      daysCount: Math.max(1, customDaysConfig.length || 1),
       staffCost: 0,
       rentalCost: 0,
       eventExpenses: 0,
-      netProfit: 0,
-      netMargin: 0,
+      netProfit: calculatedEstimate,
+      netMargin: calculatedEstimate > 0 ? 100 : 0,
       totalClientPayments: 0,
-      remainingBalance: 0,
+      remainingBalance: calculatedEstimate,
     };
     db.events.unshift(newInquiryEvent);
+
+    if (customDaysConfig.length > 0 && Array.isArray(db.daySchedules)) {
+      const baseDateObj = new Date(`${weddingDate}T12:00:00`);
+      customDaysConfig.forEach((dayCfg, idx) => {
+        const dayCalc = calculateDaySummary(dayCfg);
+        let dayDateStr = weddingDate;
+        if (!isNaN(baseDateObj.getTime())) {
+          const d = new Date(baseDateObj);
+          d.setDate(d.getDate() + idx);
+          dayDateStr = d.toISOString().split("T")[0];
+        }
+        const primarySlot = dayCfg.tierSlots?.[0];
+        db.daySchedules.push({
+          id: `ds-${linkedEventId}-${idx + 1}`,
+          eventId: linkedEventId,
+          dayNumber: idx + 1,
+          date: dayDateStr,
+          eventType: dayCfg.eventFunction || `Day ${idx + 1}`,
+          venue: venue || city,
+          timingMode: "NIGHT_TIME",
+          durationHours: 5,
+          startTime: "18:00",
+          endTime: "23:00",
+          callTime: "17:00",
+          dressCode: "Formal Black",
+          notes: dayCalc.headlineSummary,
+          customPackageName: dayCalc.headlineSummary,
+          customPrice: dayCalc.daySubtotal,
+          cameraCategory: primarySlot?.cameraCategory || "CAT_2",
+          cameraCount: dayCalc.totalCameraUnits,
+          cameraRatePerDay:
+            dayCalc.slotSummaries?.[0]?.ratePerCam || 15000,
+          crewCategory: primarySlot?.crewCategory || "CREW_CAT_2",
+          crewCount: dayCalc.totalCameraUnits,
+          crewRatePerDay: 0,
+          photographersCount: dayCalc.totalPhotographers,
+          cinematographersCount: dayCalc.totalVideographers,
+          droneIncluded: dayCalc.totalDrones > 0,
+        });
+      });
+    }
 
     if (!db.cms) {
       db.cms = {

@@ -10,31 +10,88 @@ import {
   CrewCategoryTier,
   TimingMode,
 } from '../types';
+import {
+  UNIFIED_PRICING_TIERS,
+  UNIFIED_TIER_LIST,
+  resolveCategoryTierRate,
+  mapCameraTierToCrewTier,
+  calculateServiceLineItem,
+  calculateTierSlotSummary,
+  calculateDaySummary,
+  calculateUnifiedMultiDayPricing,
+  createEventDayWithServices,
+  createDefaultThreeDayWeddingConfig,
+  createMixedTierMehndiExampleConfig,
+  syncServicesToTierSlots,
+  convertTierSlotsToServices,
+  type EventServiceType,
+  type DayServiceSelectionItem,
+  type CalculatedServiceLineItem,
+  type DayTierSlot,
+  type CustomDayConfiguration,
+  type CalculatedTierSlotSummary,
+  type CalculatedDaySummary,
+  type CalculatedMultiDayQuote,
+} from '@/lib/pricing/unifiedPricing';
+
+export {
+  UNIFIED_PRICING_TIERS,
+  UNIFIED_TIER_LIST,
+  resolveCategoryTierRate,
+  mapCameraTierToCrewTier,
+  calculateServiceLineItem,
+  calculateTierSlotSummary,
+  calculateDaySummary,
+  calculateUnifiedMultiDayPricing,
+  createEventDayWithServices,
+  createDefaultThreeDayWeddingConfig,
+  createMixedTierMehndiExampleConfig,
+  syncServicesToTierSlots,
+  convertTierSlotsToServices,
+  type EventServiceType,
+  type DayServiceSelectionItem,
+  type CalculatedServiceLineItem,
+  type DayTierSlot,
+  type CustomDayConfiguration,
+  type CalculatedTierSlotSummary,
+  type CalculatedDaySummary,
+  type CalculatedMultiDayQuote,
+};
 
 export const CAMERA_CATEGORY_RATES: Record<
   CameraCategoryTier,
-  { id: CameraCategoryTier; label: string; shortLabel: string; ratePerDay: number; description: string }
+  {
+    id: CameraCategoryTier;
+    crewTier: CrewCategoryTier;
+    label: string;
+    shortLabel: string;
+    ratePerDay: number;
+    description: string;
+  }
 > = {
   CAT_1: {
     id: 'CAT_1',
-    label: 'Category 1 — Standard 4K Mirrorless Rig',
-    shortLabel: 'Category 1 (PKR 10k/day)',
+    crewTier: 'CREW_CAT_1',
+    label: 'Category 1 Camera + Tier 1 Crew (Combined)',
+    shortLabel: 'Cat 1 Cam + Tier 1 Crew (PKR 10k/cam/day)',
     ratePerDay: 10000,
-    description: 'Sony A7 IV / Canon R6 Mark II standard event body',
+    description: 'Combined: Standard 4K Camera + Tier 1 Photographer/Videographer (PKR 10,000/day)',
   },
   CAT_2: {
     id: 'CAT_2',
-    label: 'Category 2 — Pro Cinema Full-Frame Line',
-    shortLabel: 'Category 2 (PKR 15k/day)',
+    crewTier: 'CREW_CAT_2',
+    label: 'Category 2 Camera + Tier 2 Crew (Combined)',
+    shortLabel: 'Cat 2 Cam + Tier 2 Crew (PKR 15k/cam/day)',
     ratePerDay: 15000,
-    description: 'Sony FX3 / A7S III + G-Master prime cinema kit',
+    description: 'Combined: Pro Full-Frame Cinema Camera + Tier 2 Senior Operator (PKR 15,000/day)',
   },
   CAT_3: {
     id: 'CAT_3',
-    label: 'Category 3 — Flagship 8K / Cinema Master Rig',
-    shortLabel: 'Category 3 (PKR 20k/day)',
+    crewTier: 'CREW_CAT_3',
+    label: 'Category 3 Camera + Tier 3 Crew (Combined)',
+    shortLabel: 'Cat 3 Cam + Tier 3 Crew (PKR 20k/cam/day)',
     ratePerDay: 20000,
-    description: 'RED V-Raptor / Sony FX6 / Ronin 4D 8K flagship cinema rig',
+    description: 'Combined: Flagship 8K Cinema Rig + Tier 3 Master DOP/Director (PKR 20,000/day)',
   },
 };
 
@@ -44,24 +101,24 @@ export const CREW_CATEGORY_RATES: Record<
 > = {
   CREW_CAT_1: {
     id: 'CREW_CAT_1',
-    label: 'Crew Category 1 — Associate Crew & Boys',
-    shortLabel: 'Tier 1 Crew (PKR 8k/day)',
-    ratePerDay: 8000,
-    description: 'Associate photographers, lighting boys & gimbal assistants',
+    label: 'Tier 1 Crew + Category 1 Camera (Combined)',
+    shortLabel: 'Tier 1 + Cat 1 (PKR 10k/day)',
+    ratePerDay: 10000,
+    description: 'Included in combined PKR 10,000/day per camera + Tier 1 operator rate',
   },
   CREW_CAT_2: {
     id: 'CREW_CAT_2',
-    label: 'Crew Category 2 — Senior Photographers & Videographers',
-    shortLabel: 'Tier 2 Senior (PKR 12k/day)',
-    ratePerDay: 12000,
-    description: 'Lead bridal portraitists, senior candid shooters & DOPs',
+    label: 'Tier 2 Crew + Category 2 Camera (Combined)',
+    shortLabel: 'Tier 2 + Cat 2 (PKR 15k/day)',
+    ratePerDay: 15000,
+    description: 'Included in combined PKR 15,000/day per camera + Tier 2 senior operator rate',
   },
   CREW_CAT_3: {
     id: 'CREW_CAT_3',
-    label: 'Crew Category 3 — Master Directors & 8K Cinema Crew',
-    shortLabel: 'Tier 3 Master (PKR 18k/day)',
-    ratePerDay: 18000,
-    description: 'Creative directors, crane/drone pilots & master cinema crew',
+    label: 'Tier 3 Crew + Category 3 Camera (Combined)',
+    shortLabel: 'Tier 3 + Cat 3 (PKR 20k/day)',
+    ratePerDay: 20000,
+    description: 'Included in combined PKR 20,000/day per camera + Tier 3 master operator rate',
   },
 };
 

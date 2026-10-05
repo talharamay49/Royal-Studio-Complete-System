@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect } from 'react';
 import {
   UserPlus,
   Search,
-  Calendar,
   Clock,
   Camera,
   Users,
@@ -17,7 +16,8 @@ import {
   CheckCircle2,
   Package as PackageIcon,
   Calculator,
-  MapPin,
+  Sparkles,
+  Copy,
 } from 'lucide-react';
 import { Modal } from './Modal';
 import {
@@ -37,12 +37,15 @@ import {
 } from '../../types';
 import {
   CAMERA_CATEGORY_RATES,
-  CREW_CATEGORY_RATES,
   enforceDayTimeWindow,
-  calculateDynamicBookingPricing,
   formatPKR,
   formatDate,
+  calculateTierSlotSummary,
+  mapCameraTierToCrewTier,
+  type DayTierSlot,
 } from '../../utils/calculations';
+
+export type DayPackageMode = 'BUILTIN' | 'CUSTOM';
 
 export interface BookingDayInput {
   id: string;
@@ -54,14 +57,27 @@ export interface BookingDayInput {
   endTime: string;
   durationHours: number;
   notes: string;
+  // Per-Day Package Mode: Pre-Defined Studio Package ('BUILTIN') OR Customized Package ('CUSTOM')
+  packageMode: DayPackageMode;
+  // When 'BUILTIN' (Pre-Defined Package):
+  selectedPackageId: string;
+  packageBaseRate: number;
+  // When 'CUSTOM' (Customized Package under Day 1 / Day 2 / Day 3):
+  // Category 1 Cam + Tier 1 Crew = 10k/cam/day
+  // Category 2 Cam + Tier 2 Crew = 15k/cam/day
+  // Category 3 Cam + Tier 3 Crew = 20k/cam/day
+  cameraCategory: CameraCategoryTier;
+  crewCategory: CrewCategoryTier;
+  cameraCount: number;
+  tierSlots?: DayTierSlot[];
+  extraCustomAmount: number;
+  customPackageName: string;
+  customPackageDeliverables: string;
+  saveCustomToLibrary: boolean;
+  // Per-day assigned inventory cameras & crew members
+  assignedCameraIds: string[];
+  assignedCrewIds: string[];
 }
-
-const BOOKING_ADDONS = [
-  { id: 'addon-drone', name: '4K Drone Aerial Coverage', price: 25000 },
-  { id: 'addon-sde', name: 'Same-Day Edit (SDE) Highlight Reel', price: 30000 },
-  { id: 'addon-gimbal', name: 'Ronin 4D / Crane Cinema Rig', price: 20000 },
-  { id: 'addon-album', name: 'Luxury Italian Acrylic Album', price: 35000 },
-];
 
 const DAY_TIME_PRESETS = [
   { label: '09:00 – 14:00 (5h)', start: '09:00', end: '14:00' },
@@ -74,6 +90,59 @@ const NIGHT_TIME_PRESETS = [
   { label: '18:00 – 23:00', start: '18:00', end: '23:00' },
   { label: '19:00 – 23:59', start: '19:00', end: '23:59' },
   { label: '17:00 – 22:30', start: '17:00', end: '22:30' },
+];
+
+const WEDDING_CEREMONY_CHIPS = [
+  'Mehndi',
+  'Barat',
+  'Walima',
+  'Nikah',
+  'Mayun / Dholki',
+  'Engagement',
+  'Bridal Shoot',
+  'Qawali Night',
+];
+
+const GENERAL_FUNCTION_CHIPS = [
+  'Main Event',
+  'Day 1 Session',
+  'Day 2 Session',
+  'Gala Dinner',
+  'Stage Coverage',
+];
+
+const COMBINED_TIER_OPTIONS: Array<{
+  camTier: CameraCategoryTier;
+  crewTier: CrewCategoryTier;
+  title: string;
+  subtitle: string;
+  ratePerCamPerDay: number;
+  badge: string;
+}> = [
+  {
+    camTier: 'CAT_1',
+    crewTier: 'CREW_CAT_1',
+    title: 'Category 1 Camera + Tier 1 Crew',
+    subtitle: 'Standard 4K Camera + Tier 1 Operator (Combined)',
+    ratePerCamPerDay: 10000,
+    badge: 'PKR 10,000 / cam / day',
+  },
+  {
+    camTier: 'CAT_2',
+    crewTier: 'CREW_CAT_2',
+    title: 'Category 2 Camera + Tier 2 Crew',
+    subtitle: 'Pro Full-Frame Cinema + Tier 2 Senior Crew (Combined)',
+    ratePerCamPerDay: 15000,
+    badge: 'PKR 15,000 / cam / day',
+  },
+  {
+    camTier: 'CAT_3',
+    crewTier: 'CREW_CAT_3',
+    title: 'Category 3 Camera + Tier 3 Crew',
+    subtitle: 'Flagship 8K Cinema Rig + Tier 3 Master DOP (Combined)',
+    ratePerCamPerDay: 20000,
+    badge: 'PKR 20,000 / cam / day',
+  },
 ];
 
 interface IntegratedBookingModalProps {
@@ -103,6 +172,33 @@ function addDaysToDateStr(dateStr: string, daysToAdd: number): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+function resolveWeddingSubtypeFromDayType(dayEventType: string): WeddingSubtype {
+  const norm = dayEventType.toLowerCase();
+  if (norm.includes('mehndi') || norm.includes('mayun') || norm.includes('dholki')) return 'Mehndi';
+  if (norm.includes('barat')) return 'Barat';
+  if (norm.includes('walima')) return 'Walima';
+  if (norm.includes('nikah')) return 'Nikah';
+  if (norm.includes('engagement')) return 'Engagement';
+  return 'Other';
+}
+
+export function getDayCalculatedCost(day: BookingDayInput): number {
+  if (day.packageMode === 'BUILTIN') {
+    return Math.max(0, Number(day.packageBaseRate || 0));
+  }
+  const extra = Math.max(0, Number(day.extraCustomAmount || 0));
+  if (Array.isArray(day.tierSlots) && day.tierSlots.length > 0) {
+    const slotsSum = day.tierSlots.reduce(
+      (acc, slot) => acc + calculateTierSlotSummary(slot).subtotal,
+      0
+    );
+    return slotsSum + extra;
+  }
+  const combinedRate = CAMERA_CATEGORY_RATES[day.cameraCategory]?.ratePerDay || 15000;
+  const cams = Math.max(0, Number(day.cameraCount || 0));
+  return cams * combinedRate + extra;
 }
 
 export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
@@ -135,38 +231,136 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
   const [newClientAddress, setNewClientAddress] = useState<string>('');
   const [isCreatingClient, setIsCreatingClient] = useState<boolean>(false);
 
-  // Step 2: Event Details, Multi-Day Toggle & Per-Date Timing (DM 5-Hr vs Night Time)
+  // Step 2: Overall Booking Category & Per-Date Functions + Timing (DM 5-Hr vs Night Time)
   const [title, setTitle] = useState<string>('');
   const [category, setCategory] = useState<EventCategory>('Wedding');
-  const [weddingSubtype, setWeddingSubtype] = useState<WeddingSubtype>('Barat');
   const [venue, setVenue] = useState<string>('');
   const [city, setCity] = useState<string>('Burewala');
   const [notes, setNotes] = useState<string>('');
   const [isMultiDay, setIsMultiDay] = useState<boolean>(false);
   const [bookingDays, setBookingDays] = useState<BookingDayInput[]>([]);
 
-  // Step 3: Camera Inventory, Camera Categories, Crew Categories & Package/Custom Pricing
-  const [cameraCategory, setCameraCategory] = useState<CameraCategoryTier>('CAT_2');
-  const [cameraCount, setCameraCount] = useState<number>(2);
-  const [selectedEquipmentIds, setSelectedEquipmentIds] = useState<string[]>([]);
-
-  const [crewCategory, setCrewCategory] = useState<CrewCategoryTier>('CREW_CAT_2');
-  const [crewCount, setCrewCount] = useState<number>(2);
-  const [selectedCrewIds, setSelectedCrewIds] = useState<string[]>([]);
-
-  const [packageMode, setPackageMode] = useState<'BUILTIN' | 'CUSTOM' | 'NONE'>('BUILTIN');
-  const [selectedPackageId, setSelectedPackageId] = useState<string>('');
-  const [packageBaseRate, setPackageBaseRate] = useState<number>(0);
-  const [customPackageName, setCustomPackageName] = useState<string>('');
-  const [customPackageDeliverables, setCustomPackageDeliverables] = useState<string>(
-    '8K Master Highlight Film, Full Editorial Portrait Gallery, Luxury Print Release'
-  );
-  const [saveCustomToLibrary, setSaveCustomToLibrary] = useState<boolean>(true);
-
-  const [selectedAddOnIds, setSelectedAddOnIds] = useState<string[]>([]);
+  // Step 3: Financial Adjustments
   const [discount, setDiscount] = useState<number>(0);
   const [advancePaid, setAdvancePaid] = useState<number>(50000);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Camera inventory items & active team members
+  const cameraInventory = useMemo(() => {
+    return equipment.filter((eq) => eq.category === 'Camera');
+  }, [equipment]);
+
+  const activeTeamRoster = useMemo(() => {
+    return teamMembers.filter(
+      (tm) =>
+        tm.isActive &&
+        tm.availabilityStatus !== 'On Leave' &&
+        tm.availabilityStatus !== 'Inactive'
+    );
+  }, [teamMembers]);
+
+  // Helper to check busy cameras and crew on a specific date
+  const getBusyResourcesForDate = (dateStr: string) => {
+    const overlappingEventIds = new Set<string>();
+    const eventTitleById = new Map<string, string>();
+
+    events.forEach((evt) => {
+      if (evt.status === 'Cancelled') return;
+      eventTitleById.set(evt.id, evt.title);
+      if (evt.eventDate === dateStr) {
+        overlappingEventIds.add(evt.id);
+      }
+    });
+
+    daySchedules.forEach((ds) => {
+      if (ds.date === dateStr) {
+        const parentEvt = events.find((e) => e.id === ds.eventId);
+        if (parentEvt && parentEvt.status !== 'Cancelled') {
+          overlappingEventIds.add(ds.eventId);
+          eventTitleById.set(ds.eventId, parentEvt.title);
+        }
+      }
+    });
+
+    const busyEqMap = new Map<string, string>();
+    equipmentAssignments.forEach((ea) => {
+      if (overlappingEventIds.has(ea.eventId) && !ea.isCheckedIn) {
+        busyEqMap.set(ea.equipmentId, eventTitleById.get(ea.eventId) || 'Booked Event');
+      }
+    });
+
+    const busyCrewMap = new Map<string, string>();
+    teamAssignments.forEach((ta) => {
+      if (overlappingEventIds.has(ta.eventId) && ta.assignmentStatus !== 'Cancelled') {
+        busyCrewMap.set(ta.teamMemberId, eventTitleById.get(ta.eventId) || 'Booked Event');
+      }
+    });
+
+    return { busyEqMap, busyCrewMap };
+  };
+
+  // Build default per-day package & resource config
+  const buildDefaultDayConfig = (
+    dayFunction: string,
+    dateStr: string,
+    dayIndex: number,
+    timingMode: TimingMode = 'NIGHT_TIME',
+    startTime = '18:00',
+    endTime = '23:00'
+  ): BookingDayInput => {
+    const enforced = enforceDayTimeWindow(startTime, endTime, timingMode);
+    const { busyEqMap, busyCrewMap } = getBusyResourcesForDate(dateStr);
+
+    const availCams = cameraInventory
+      .filter(
+        (c) => c.status !== 'Maintenance' && c.status !== 'Damaged' && !busyEqMap.has(c.id)
+      )
+      .slice(0, 2)
+      .map((c) => c.id);
+
+    const availCrew = activeTeamRoster
+      .filter((tm) => !busyCrewMap.has(tm.id))
+      .slice(0, 2)
+      .map((tm) => tm.id);
+
+    const defaultCamCount = Math.max(1, availCams.length || 2);
+    const firstPkg = packages[dayIndex % Math.max(1, packages.length)] || packages[0];
+
+    return {
+      id: `day-${Date.now()}-${dayIndex + 1}`,
+      date: dateStr,
+      eventType: dayFunction,
+      venue: '',
+      timingMode,
+      startTime: enforced.startTime,
+      endTime: enforced.endTime,
+      durationHours: enforced.durationHours,
+      notes: '',
+      packageMode: 'CUSTOM',
+      selectedPackageId: firstPkg ? firstPkg.id : '',
+      packageBaseRate: firstPkg ? firstPkg.price : 30000,
+      cameraCategory: 'CAT_2',
+      crewCategory: 'CREW_CAT_2',
+      cameraCount: defaultCamCount,
+      tierSlots: [
+        {
+          id: `slot-${Date.now()}-${dayIndex + 1}-1`,
+          cameraCategory: 'CAT_2',
+          crewCategory: 'CREW_CAT_2',
+          photographers: 1,
+          videographers: 1,
+          drones: 0,
+        },
+      ],
+      extraCustomAmount: 0,
+      customPackageName: `${dayFunction} Customized Package`,
+      customPackageDeliverables:
+        'Full Editorial Photography, 4K/8K Master Highlight Film, Online Private Gallery',
+      saveCustomToLibrary: false,
+      assignedCameraIds: availCams,
+      assignedCrewIds: availCrew,
+    };
+  };
 
   // Initialize state whenever modal opens for a calendar date/slot
   useEffect(() => {
@@ -177,11 +371,7 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
       defaultTimingMode === 'DAY_TIME'
         ? `${String(startH).padStart(2, '0')}:00`
         : initialStartTime || '18:00';
-    const rawEnd =
-      defaultTimingMode === 'DAY_TIME'
-        ? `${String(Math.min(23, startH + 5)).padStart(2, '0')}:00`
-        : `${String(Math.min(23, startH + 5)).padStart(2, '0')}:00`;
-    const enforced = enforceDayTimeWindow(rawStart, rawEnd, defaultTimingMode);
+    const rawEnd = `${String(Math.min(23, startH + 5)).padStart(2, '0')}:00`;
 
     setStep(1);
     setCustomerSearch('');
@@ -192,115 +382,10 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
 
     setIsMultiDay(false);
     setBookingDays([
-      {
-        id: 'day-1',
-        date: initialDate,
-        eventType: 'Barat',
-        venue: '',
-        timingMode: defaultTimingMode,
-        startTime: enforced.startTime,
-        endTime: enforced.endTime,
-        durationHours: enforced.durationHours,
-        notes: '',
-      },
+      buildDefaultDayConfig('Barat', initialDate, 0, defaultTimingMode, rawStart, rawEnd),
     ]);
-
-    const firstPkg = packages[0];
-    if (firstPkg) {
-      setSelectedPackageId(firstPkg.id);
-      setPackageBaseRate(firstPkg.price);
-      setPackageMode('BUILTIN');
-    } else {
-      setPackageMode('NONE');
-      setPackageBaseRate(0);
-    }
-
-    setCameraCategory('CAT_2');
-    setCrewCategory('CREW_CAT_2');
-    setSelectedAddOnIds([]);
     setDiscount(0);
-  }, [isOpen, initialDate, initialStartTime, clients, packages]);
-
-  // Compute busy equipment and busy crew across all selected bookingDays
-  const activeDatesSet = useMemo(() => {
-    return new Set(bookingDays.map((d) => d.date).filter(Boolean));
-  }, [bookingDays]);
-
-  const { busyEquipmentMap, busyCrewMap } = useMemo(() => {
-    const overlappingEventIds = new Set<string>();
-    const eventTitleById = new Map<string, string>();
-
-    events.forEach((evt) => {
-      if (evt.status === 'Cancelled') return;
-      eventTitleById.set(evt.id, evt.title);
-      if (activeDatesSet.has(evt.eventDate)) {
-        overlappingEventIds.add(evt.id);
-      }
-    });
-
-    daySchedules.forEach((ds) => {
-      if (activeDatesSet.has(ds.date)) {
-        const parentEvt = events.find((e) => e.id === ds.eventId);
-        if (parentEvt && parentEvt.status !== 'Cancelled') {
-          overlappingEventIds.add(ds.eventId);
-          eventTitleById.set(ds.eventId, parentEvt.title);
-        }
-      }
-    });
-
-    const eqMap = new Map<string, string>();
-    equipmentAssignments.forEach((ea) => {
-      if (overlappingEventIds.has(ea.eventId) && !ea.isCheckedIn) {
-        eqMap.set(ea.equipmentId, eventTitleById.get(ea.eventId) || 'Booked Event');
-      }
-    });
-
-    const crewMap = new Map<string, string>();
-    teamAssignments.forEach((ta) => {
-      if (overlappingEventIds.has(ta.eventId) && ta.assignmentStatus !== 'Cancelled') {
-        crewMap.set(ta.teamMemberId, eventTitleById.get(ta.eventId) || 'Booked Event');
-      }
-    });
-
-    return { busyEquipmentMap: eqMap, busyCrewMap: crewMap };
-  }, [events, daySchedules, equipmentAssignments, teamAssignments, activeDatesSet]);
-
-  // Camera inventory items & available cameras
-  const cameraInventory = useMemo(() => {
-    return equipment.filter((eq) => eq.category === 'Camera');
-  }, [equipment]);
-
-  const supportGearInventory = useMemo(() => {
-    return equipment.filter((eq) => eq.category !== 'Camera');
-  }, [equipment]);
-
-  const availableCameras = useMemo(() => {
-    return cameraInventory.filter(
-      (cam) => cam.status !== 'Maintenance' && cam.status !== 'Damaged' && !busyEquipmentMap.has(cam.id)
-    );
-  }, [cameraInventory, busyEquipmentMap]);
-
-  const availableTeamMembers = useMemo(() => {
-    return teamMembers.filter(
-      (tm) =>
-        tm.isActive &&
-        tm.availabilityStatus !== 'On Leave' &&
-        tm.availabilityStatus !== 'Inactive' &&
-        !busyCrewMap.has(tm.id)
-    );
-  }, [teamMembers, busyCrewMap]);
-
-  // Auto-select available cameras and crew when dates change
-  useEffect(() => {
-    if (!isOpen) return;
-    const defaultCams = availableCameras.slice(0, 2).map((c) => c.id);
-    setSelectedEquipmentIds(defaultCams);
-    setCameraCount(Math.max(1, defaultCams.length));
-
-    const defaultCrew = availableTeamMembers.slice(0, 2).map((m) => m.id);
-    setSelectedCrewIds(defaultCrew);
-    setCrewCount(Math.max(1, defaultCrew.length));
-  }, [isOpen, initialDate]);
+  }, [isOpen, initialDate, initialStartTime, clients.length, packages.length]);
 
   const filteredClients = useMemo(() => {
     const q = customerSearch.trim().toLowerCase();
@@ -319,49 +404,57 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
     [clients, selectedClientId]
   );
 
-  // Add-ons total
-  const addOnsTotal = useMemo(() => {
-    return BOOKING_ADDONS.filter((a) => selectedAddOnIds.includes(a.id)).reduce(
-      (acc, a) => acc + a.price,
-      0
-    );
-  }, [selectedAddOnIds]);
-
-  // Dynamic Pricing Formula Calculation
+  // Live Per-Day and Overall Booking Totals
   const pricingSummary = useMemo(() => {
-    const camRate = CAMERA_CATEGORY_RATES[cameraCategory].ratePerDay;
-    const crewRate = CREW_CATEGORY_RATES[crewCategory].ratePerDay;
-    const daysCount = Math.max(1, bookingDays.length);
-    const effectivePkgRate = packageMode === 'NONE' ? 0 : packageBaseRate;
-
-    return calculateDynamicBookingPricing({
-      cameraCount,
-      cameraCategoryRate: camRate,
-      crewCount,
-      crewCategoryRate: crewRate,
-      daysCount,
-      packageBaseRate: effectivePkgRate,
-      addOnsTotal,
-      discount,
+    const dayBreakdowns = bookingDays.map((day, idx) => {
+      const cost = getDayCalculatedCost(day);
+      const camRate = CAMERA_CATEGORY_RATES[day.cameraCategory]?.ratePerDay || 15000;
+      const pkgObj = packages.find((p) => p.id === day.selectedPackageId);
+      const slotDescriptions =
+        day.packageMode === 'CUSTOM' && Array.isArray(day.tierSlots) && day.tierSlots.length > 0
+          ? day.tierSlots.map((s) => calculateTierSlotSummary(s).formulaText).join(' + ')
+          : '';
+      const formulaLabel =
+        day.packageMode === 'BUILTIN'
+          ? `Pre-Defined: ${pkgObj?.name || 'Studio Package'} (${formatPKR(cost)})`
+          : slotDescriptions
+          ? `Customized: ${slotDescriptions}${
+              day.extraCustomAmount > 0 ? ` + ${formatPKR(day.extraCustomAmount)}` : ''
+            } = ${formatPKR(cost)}`
+          : `Customized: ${day.cameraCount} Cam × ${formatPKR(camRate)} (${day.cameraCategory.replace(
+              'CAT_',
+              'Cat '
+            )} + Tier ${day.cameraCategory.replace('CAT_', '')} Crew)${
+              day.extraCustomAmount > 0 ? ` + ${formatPKR(day.extraCustomAmount)}` : ''
+            } = ${formatPKR(cost)}`;
+      return {
+        dayNumber: idx + 1,
+        eventType: day.eventType,
+        date: day.date,
+        packageMode: day.packageMode,
+        cost,
+        formulaLabel,
+      };
     });
-  }, [
-    cameraCount,
-    cameraCategory,
-    crewCount,
-    crewCategory,
-    bookingDays.length,
-    packageMode,
-    packageBaseRate,
-    addOnsTotal,
-    discount,
-  ]);
+
+    const subtotalAllDays = dayBreakdowns.reduce((sum, d) => sum + d.cost, 0);
+    const disc = Math.max(0, Number(discount || 0));
+    const totalCost = Math.max(0, subtotalAllDays - disc);
+
+    return {
+      dayBreakdowns,
+      subtotalAllDays,
+      discount: disc,
+      totalCost,
+    };
+  }, [bookingDays, packages, discount]);
 
   // Step 1 Handlers
   const handleSelectExistingCustomer = (client: Client) => {
     setSelectedClientId(client.id);
     setCity(client.city || 'Burewala');
     if (!title.trim()) {
-      setTitle(`${client.name} — ${category} Coverage`);
+      setTitle(`${client.name} — ${category} Booking`);
     }
     setStep(2);
   };
@@ -384,7 +477,7 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
       setSelectedClientId(created.id);
       setCity(created.city || 'Burewala');
       if (!title.trim()) {
-        setTitle(`${created.name} — ${category} Coverage`);
+        setTitle(`${created.name} — ${category} Booking`);
       }
       setIsQuickAddClient(false);
       setNewClientName('');
@@ -399,50 +492,109 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
     }
   };
 
+  // Category Change Handler
+  const handleCategoryChange = (nextCategory: EventCategory) => {
+    setCategory(nextCategory);
+    if (selectedCustomer) {
+      setTitle(`${selectedCustomer.name} — ${nextCategory} Booking`);
+    }
+    setBookingDays((prev) =>
+      prev.map((d, idx) => {
+        if (idx === 0) {
+          const defaultLabel =
+            nextCategory === 'Wedding'
+              ? prev.length > 1
+                ? 'Mehndi'
+                : 'Barat'
+              : nextCategory;
+          return {
+            ...d,
+            eventType: defaultLabel,
+            customPackageName: `${defaultLabel} Customized Package`,
+          };
+        }
+        return d;
+      })
+    );
+  };
+
   // Step 2 Multi-Day & Timing Mode Handlers
   const handleToggleMultiDay = (multi: boolean) => {
     setIsMultiDay(multi);
     if (!multi && bookingDays.length > 1) {
-      setBookingDays([bookingDays[0]]);
+      const single = bookingDays[0];
+      const lbl = category === 'Wedding' ? 'Barat' : category;
+      setBookingDays([
+        {
+          ...single,
+          eventType: lbl,
+          customPackageName: `${lbl} Customized Package`,
+        },
+      ]);
     } else if (multi && bookingDays.length === 1) {
       const firstDay = bookingDays[0];
       const secondDate = addDaysToDateStr(firstDay.date, 1);
+      const day1Lbl = category === 'Wedding' ? 'Mehndi' : 'Day 1 Session';
+      const day2Lbl = category === 'Wedding' ? 'Barat' : 'Day 2 Session';
       setBookingDays([
-        { ...firstDay, eventType: 'Mehndi / Day 1' },
         {
-          id: `day-${Date.now()}`,
-          date: secondDate,
-          eventType: 'Barat / Day 2',
-          venue: firstDay.venue || venue,
-          timingMode: 'NIGHT_TIME',
-          startTime: '18:00',
-          endTime: '23:00',
-          durationHours: 5,
-          notes: '',
+          ...firstDay,
+          eventType: day1Lbl,
+          customPackageName: `${day1Lbl} Customized Package`,
         },
+        buildDefaultDayConfig(day2Lbl, secondDate, 1, 'NIGHT_TIME', '18:00', '23:00'),
       ]);
     }
+  };
+
+  // 1-Click Multi-Day Wedding Ceremony Sequence Presets
+  const handleApplyWeddingSequencePreset = (ceremonies: string[]) => {
+    const baseDate = bookingDays[0]?.date || initialDate;
+    setIsMultiDay(ceremonies.length > 1);
+    const generated: BookingDayInput[] = ceremonies.map((ceremony, idx) => {
+      const existing = bookingDays[idx];
+      const dateStr = addDaysToDateStr(baseDate, idx);
+      const isDayCeremony =
+        ceremony.toLowerCase().includes('walima') ||
+        ceremony.toLowerCase().includes('nikah');
+      const mode: TimingMode = existing
+        ? existing.timingMode
+        : isDayCeremony
+        ? 'DAY_TIME'
+        : 'NIGHT_TIME';
+      const startT = existing?.startTime || (mode === 'DAY_TIME' ? '12:00' : '18:00');
+      const endT = existing?.endTime || (mode === 'DAY_TIME' ? '17:00' : '23:00');
+      const freshDefault = buildDefaultDayConfig(ceremony, dateStr, idx, mode, startT, endT);
+
+      if (existing) {
+        return {
+          ...existing,
+          date: dateStr,
+          eventType: ceremony,
+          customPackageName: `${ceremony} Customized Package`,
+        };
+      }
+      return freshDefault;
+    });
+    setBookingDays(generated);
+    addToast(`Configured ${ceremonies.length}-Day schedule: ${ceremonies.join(' → ')}`, 'info');
   };
 
   const handleAddBookingDay = () => {
     const lastDay = bookingDays[bookingDays.length - 1];
     const nextDate = lastDay ? addDaysToDateStr(lastDay.date, 1) : initialDate;
     const dayIdx = bookingDays.length + 1;
-    const defaultSubtypes = ['Mehndi', 'Barat', 'Walima', 'Nikah', 'Mayun'];
+    const defaultSubtypes =
+      category === 'Wedding'
+        ? ['Mehndi', 'Barat', 'Walima', 'Nikah', 'Mayun / Dholki']
+        : ['Day 1 Session', 'Day 2 Session', 'Day 3 Session', 'Day 4 Session'];
+    const nextLabel =
+      defaultSubtypes[(dayIdx - 1) % defaultSubtypes.length] || `Day ${dayIdx}`;
+
     setIsMultiDay(true);
     setBookingDays((prev) => [
       ...prev,
-      {
-        id: `day-${Date.now()}-${dayIdx}`,
-        date: nextDate,
-        eventType: defaultSubtypes[(dayIdx - 1) % defaultSubtypes.length] || `Day ${dayIdx}`,
-        venue: venue || lastDay?.venue || '',
-        timingMode: 'NIGHT_TIME',
-        startTime: '18:00',
-        endTime: '23:00',
-        durationHours: 5,
-        notes: '',
-      },
+      buildDefaultDayConfig(nextLabel, nextDate, dayIdx - 1, 'NIGHT_TIME', '18:00', '23:00'),
     ]);
   };
 
@@ -460,6 +612,11 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
       prev.map((day) => {
         if (day.id !== id) return day;
         const updated = { ...day, ...patch };
+
+        // Sync crewCategory automatically whenever cameraCategory changes
+        if (patch.cameraCategory) {
+          updated.crewCategory = CAMERA_CATEGORY_RATES[patch.cameraCategory].crewTier;
+        }
 
         // If switching timingMode to DAY_TIME, default to a strict 5-hour daytime slot
         if (patch.timingMode === 'DAY_TIME' && day.timingMode !== 'DAY_TIME') {
@@ -491,77 +648,119 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
         }
 
         // Enforce strict 5-hour Day Time (DM) window constraint on any time change
-        const enforced = enforceDayTimeWindow(
-          updated.startTime,
-          updated.endTime,
-          updated.timingMode
-        );
-        if (enforced.wasClamped && updated.timingMode === 'DAY_TIME') {
-          addToast(
-            'Day Time (DM) enforces a strict maximum 5-hour window for this date.',
-            'info'
+        if (patch.startTime !== undefined || patch.endTime !== undefined) {
+          const enforced = enforceDayTimeWindow(
+            updated.startTime,
+            updated.endTime,
+            updated.timingMode
           );
+          if (enforced.wasClamped && updated.timingMode === 'DAY_TIME') {
+            addToast(
+              'Day Time (DM) enforces a strict maximum 5-hour window for this date.',
+              'info'
+            );
+          }
+          updated.startTime = enforced.startTime;
+          updated.endTime = enforced.endTime;
+          updated.durationHours = enforced.durationHours;
         }
-        updated.startTime = enforced.startTime;
-        updated.endTime = enforced.endTime;
-        updated.durationHours = enforced.durationHours;
         return updated;
       })
     );
   };
 
-  // Step 3 Camera & Crew Selection Handlers
-  const handleToggleCameraSelection = (camId: string) => {
-    if (busyEquipmentMap.has(camId)) {
-      addToast(
-        `Camera is already reserved for "${busyEquipmentMap.get(camId)}" on the selected date(s).`,
-        'warning'
-      );
+  // Per-Day Camera & Crew Toggle Handlers
+  const handleToggleDayCamera = (dayId: string, camId: string, busyTitle?: string) => {
+    if (busyTitle) {
+      addToast(`Camera is already reserved for "${busyTitle}" on this date.`, 'warning');
       return;
     }
-    setSelectedEquipmentIds((prev) => {
-      const exists = prev.includes(camId);
-      const next = exists ? prev.filter((id) => id !== camId) : [...prev, camId];
-      const selectedCamsCount = next.filter((id) =>
-        cameraInventory.some((c) => c.id === id)
-      ).length;
-      setCameraCount(selectedCamsCount);
-      return next;
-    });
-  };
-
-  const handleCameraCountChange = (nextCount: number) => {
-    const clamped = Math.max(0, Math.min(20, nextCount));
-    setCameraCount(clamped);
-    // Sync selected cameras from available inventory up to clamped count
-    const nonCameraIds = selectedEquipmentIds.filter(
-      (id) => !cameraInventory.some((c) => c.id === id)
+    setBookingDays((prev) =>
+      prev.map((day) => {
+        if (day.id !== dayId) return day;
+        const exists = day.assignedCameraIds.includes(camId);
+        const nextCamIds = exists
+          ? day.assignedCameraIds.filter((id) => id !== camId)
+          : [...day.assignedCameraIds, camId];
+        return {
+          ...day,
+          assignedCameraIds: nextCamIds,
+          cameraCount: Math.max(1, nextCamIds.length),
+        };
+      })
     );
-    const autoPickedCams = availableCameras.slice(0, clamped).map((c) => c.id);
-    setSelectedEquipmentIds([...autoPickedCams, ...nonCameraIds]);
   };
 
-  const handleToggleCrewSelection = (memberId: string) => {
-    if (busyCrewMap.has(memberId)) {
-      addToast(
-        `Team member is already assigned to "${busyCrewMap.get(memberId)}" on the selected date(s).`,
-        'warning'
-      );
+  const handleDayCameraCountChange = (dayId: string, nextCount: number) => {
+    const clamped = Math.max(1, Math.min(20, nextCount));
+    setBookingDays((prev) =>
+      prev.map((day) => {
+        if (day.id !== dayId) return day;
+        const { busyEqMap, busyCrewMap } = getBusyResourcesForDate(day.date);
+        const availCams = cameraInventory
+          .filter(
+            (c) => c.status !== 'Maintenance' && c.status !== 'Damaged' && !busyEqMap.has(c.id)
+          )
+          .slice(0, clamped)
+          .map((c) => c.id);
+        const availCrew = activeTeamRoster
+          .filter((tm) => !busyCrewMap.has(tm.id))
+          .slice(0, clamped)
+          .map((tm) => tm.id);
+        return {
+          ...day,
+          cameraCount: clamped,
+          assignedCameraIds: availCams,
+          assignedCrewIds: availCrew,
+        };
+      })
+    );
+  };
+
+  const handleToggleDayCrew = (dayId: string, memberId: string, busyTitle?: string) => {
+    if (busyTitle) {
+      addToast(`Team member is already assigned to "${busyTitle}" on this date.`, 'warning');
       return;
     }
-    setSelectedCrewIds((prev) => {
-      const exists = prev.includes(memberId);
-      const next = exists ? prev.filter((id) => id !== memberId) : [...prev, memberId];
-      setCrewCount(next.length);
-      return next;
-    });
+    setBookingDays((prev) =>
+      prev.map((day) => {
+        if (day.id !== dayId) return day;
+        const exists = day.assignedCrewIds.includes(memberId);
+        const nextCrewIds = exists
+          ? day.assignedCrewIds.filter((id) => id !== memberId)
+          : [...day.assignedCrewIds, memberId];
+        return {
+          ...day,
+          assignedCrewIds: nextCrewIds,
+        };
+      })
+    );
   };
 
-  const handleCrewCountChange = (nextCount: number) => {
-    const clamped = Math.max(0, Math.min(30, nextCount));
-    setCrewCount(clamped);
-    const autoPickedCrew = availableTeamMembers.slice(0, clamped).map((m) => m.id);
-    setSelectedCrewIds(autoPickedCrew);
+  // Copy Day 1's Package / Tier Setup to All Other Days
+  const handleCopyDay1SetupToAllDays = () => {
+    const firstDay = bookingDays[0];
+    if (!firstDay) return;
+    setBookingDays((prev) =>
+      prev.map((d, idx) =>
+        idx === 0
+          ? d
+          : {
+              ...d,
+              packageMode: firstDay.packageMode,
+              selectedPackageId: firstDay.selectedPackageId,
+              packageBaseRate: firstDay.packageBaseRate,
+              cameraCategory: firstDay.cameraCategory,
+              crewCategory: firstDay.crewCategory,
+              cameraCount: firstDay.cameraCount,
+              extraCustomAmount: firstDay.extraCustomAmount,
+              customPackageName: `${d.eventType} Customized Package`,
+              customPackageDeliverables: firstDay.customPackageDeliverables,
+              saveCustomToLibrary: firstDay.saveCustomToLibrary,
+            }
+      )
+    );
+    addToast(`Copied Day 1 (${firstDay.eventType}) package & tier setup to all days.`, 'info');
   };
 
   // Final Booking Submission
@@ -580,51 +779,43 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
       return;
     }
 
+    const ceremoniesLabel = bookingDays.map((d) => d.eventType).join(', ');
     const resolvedTitle =
       title.trim() ||
       `${selectedCustomer?.name || 'Client'} — ${
-        isMultiDay ? `${bookingDays.length}-Day ${category}` : `${category} Coverage`
+        bookingDays.length > 1
+          ? `${bookingDays.length}-Day ${category} (${ceremoniesLabel})`
+          : `${category} (${primaryDay.eventType})`
       }`;
+
+    const inferredWeddingSubtype: WeddingSubtype | undefined =
+      category === 'Wedding'
+        ? resolveWeddingSubtypeFromDayType(primaryDay.eventType)
+        : undefined;
 
     setIsSubmitting(true);
     try {
-      const chosenAddOns = BOOKING_ADDONS.filter((a) => selectedAddOnIds.includes(a.id));
-      const addOnText =
-        chosenAddOns.length > 0
-          ? `Add-Ons: ${chosenAddOns.map((a) => a.name).join(', ')}`
-          : '';
-      const combinedNotes = [notes.trim(), addOnText].filter(Boolean).join(' | ');
-
-      const customPackagePayload =
-        packageMode === 'CUSTOM' && customPackageName.trim() && saveCustomToLibrary
-          ? {
-              name: customPackageName.trim(),
-              category,
-              price: packageBaseRate,
-              description: `Custom ${isMultiDay ? `${bookingDays.length}-Day` : 'Single-Day'} package (${CAMERA_CATEGORY_RATES[cameraCategory].shortLabel}, ${CREW_CATEGORY_RATES[crewCategory].shortLabel})`,
-              requiredPhotographers: Math.max(1, Math.ceil(crewCount / 2)),
-              requiredVideographers: Math.max(1, Math.floor(crewCount / 2)),
-              includedServices: customPackageDeliverables
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean),
-              deliverables: customPackageDeliverables
-                .split(',')
-                .map((s) => s.trim())
-                .filter(Boolean),
-            }
-          : undefined;
+      const allSelectedEquipmentIds = Array.from(
+        new Set(bookingDays.flatMap((d) => d.assignedCameraIds))
+      );
+      const allSelectedCrewIds = Array.from(
+        new Set(bookingDays.flatMap((d) => d.assignedCrewIds))
+      );
 
       await createEvent({
         clientId: selectedClientId,
         title: resolvedTitle,
         category,
-        weddingSubtype: category === 'Wedding' ? weddingSubtype : undefined,
-        packageId: packageMode === 'BUILTIN' ? selectedPackageId || undefined : undefined,
+        weddingSubtype: inferredWeddingSubtype,
+        packageId:
+          primaryDay.packageMode === 'BUILTIN'
+            ? primaryDay.selectedPackageId || undefined
+            : undefined,
         customPackageName:
-          packageMode === 'CUSTOM' ? customPackageName.trim() || 'Custom Event Package' : undefined,
-        packageBasePrice: packageMode === 'NONE' ? 0 : packageBaseRate,
-        customPackageToCreate: customPackagePayload,
+          primaryDay.packageMode === 'CUSTOM'
+            ? primaryDay.customPackageName.trim() || `${primaryDay.eventType} Customized Package`
+            : undefined,
+        packageBasePrice: pricingSummary.subtotalAllDays,
         eventDate: primaryDay.date,
         timingMode: primaryDay.timingMode,
         startTime: primaryDay.startTime,
@@ -635,29 +826,75 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
         advancePaid: Number(advancePaid || 0),
         discount: Number(discount || 0),
         tax: 0,
-        notes: combinedNotes,
+        notes: notes.trim(),
         isMultiDay: isMultiDay || bookingDays.length > 1,
-        daySchedulesInput: bookingDays.map((d, idx) => ({
-          dayNumber: idx + 1,
-          date: d.date,
-          eventType: d.eventType || `Day ${idx + 1}`,
-          venue: d.venue.trim() || venue.trim() || city.trim() || 'Burewala',
-          timingMode: d.timingMode,
-          startTime: d.startTime,
-          endTime: d.endTime,
-          durationHours: d.durationHours,
-          notes: d.notes,
-        })),
-        cameraCategory,
-        cameraCount,
-        cameraRatePerDay: CAMERA_CATEGORY_RATES[cameraCategory].ratePerDay,
-        crewCategory,
-        crewCount,
-        crewRatePerDay: CREW_CATEGORY_RATES[crewCategory].ratePerDay,
-        addOnsTotal,
+        daySchedulesInput: bookingDays.map((d, idx) => {
+          const dayCalculatedCost = getDayCalculatedCost(d);
+          const dayCombinedRate = CAMERA_CATEGORY_RATES[d.cameraCategory].ratePerDay;
+
+          const customPackageForDay =
+            d.packageMode === 'CUSTOM' &&
+            d.saveCustomToLibrary &&
+            (d.customPackageName.trim() || `${d.eventType} Customized Package`)
+              ? {
+                  name: d.customPackageName.trim() || `${d.eventType} Customized Package`,
+                  category,
+                  price: dayCalculatedCost,
+                  description: `Customized ${d.eventType} package (${d.cameraCount} Cam × ${CAMERA_CATEGORY_RATES[d.cameraCategory].shortLabel})`,
+                  requiredPhotographers: Math.max(1, Math.ceil(d.cameraCount / 2)),
+                  requiredVideographers: Math.max(1, Math.floor(d.cameraCount / 2)),
+                  includedServices: d.customPackageDeliverables
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                  deliverables: d.customPackageDeliverables
+                    .split(',')
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                }
+              : undefined;
+
+          return {
+            dayNumber: idx + 1,
+            date: d.date,
+            eventType: d.eventType || `Day ${idx + 1}`,
+            venue: d.venue.trim() || venue.trim() || city.trim() || 'Burewala',
+            timingMode: d.timingMode,
+            startTime: d.startTime,
+            endTime: d.endTime,
+            durationHours: d.durationHours,
+            notes: d.notes,
+            packageMode: d.packageMode,
+            standardPackageId:
+              d.packageMode === 'BUILTIN' ? d.selectedPackageId || undefined : undefined,
+            customPackageName:
+              d.packageMode === 'CUSTOM'
+                ? d.customPackageName.trim() || `${d.eventType} Customized Package`
+                : undefined,
+            packageBaseRate: dayCalculatedCost,
+            customPrice: dayCalculatedCost,
+            extraCustomAmount: d.extraCustomAmount,
+            cameraCategory: d.cameraCategory,
+            crewCategory: d.crewCategory,
+            cameraCount: d.cameraCount,
+            crewCount: Math.max(d.cameraCount, d.assignedCrewIds.length),
+            cameraRatePerDay: dayCombinedRate,
+            crewRatePerDay: dayCombinedRate,
+            assignedCameraIds: d.assignedCameraIds,
+            assignedCrewIds: d.assignedCrewIds,
+            customPackageToCreate: customPackageForDay,
+          };
+        }),
+        cameraCategory: primaryDay.cameraCategory,
+        cameraCount: primaryDay.cameraCount,
+        cameraRatePerDay: CAMERA_CATEGORY_RATES[primaryDay.cameraCategory].ratePerDay,
+        crewCategory: primaryDay.crewCategory,
+        crewCount: Math.max(primaryDay.cameraCount, primaryDay.assignedCrewIds.length),
+        crewRatePerDay: CAMERA_CATEGORY_RATES[primaryDay.cameraCategory].ratePerDay,
+        addOnsTotal: 0,
         autoAllocateResources: true,
-        selectedEquipmentIds,
-        selectedCrewIds,
+        selectedEquipmentIds: allSelectedEquipmentIds,
+        selectedCrewIds: allSelectedCrewIds,
       });
 
       onClose();
@@ -693,17 +930,15 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
             },
             {
               num: 2 as const,
-              title: '2. Dates & DM/Night Timing',
-              sub: `${bookingDays.length} Day(s) · ${
-                bookingDays[0]?.timingMode === 'DAY_TIME' ? 'Day Time (5h DM)' : 'Night Time'
-              }`,
+              title: '2. Event Days & Timing',
+              sub: `${bookingDays.length} Day(s): ${bookingDays
+                .map((d) => d.eventType)
+                .join(', ')}`,
             },
             {
               num: 3 as const,
-              title: '3. Gear, Crew & Pricing',
-              sub: `${cameraCount} Cam · ${crewCount} Crew · ${formatPKR(
-                pricingSummary.totalCost
-              )}`,
+              title: '3. Day Packages & Cam/Crew Tiers',
+              sub: `${bookingDays.length} Day(s) · Total ${formatPKR(pricingSummary.totalCost)}`,
             },
           ].map((item) => {
             const active = step === item.num;
@@ -889,7 +1124,7 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                           setSelectedClientId(found.id);
                           setCity(found.city || 'Burewala');
                           if (!title.trim()) {
-                            setTitle(`${found.name} — ${category} Coverage`);
+                            setTitle(`${found.name} — ${category} Booking`);
                           }
                         }
                       }}
@@ -999,65 +1234,46 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
               </button>
             </div>
 
-            {/* Event Core Metadata */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="sm:col-span-2">
+            {/* Streamlined Event Core Metadata */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Event Title *
+                  Booking Category *
+                </label>
+                <select
+                  value={category}
+                  onChange={(e) => handleCategoryChange(e.target.value as EventCategory)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900"
+                >
+                  <option value="Wedding">Wedding (Single or Multi-Day)</option>
+                  <option value="Nikah">Nikah Ceremony</option>
+                  <option value="Engagement">Engagement</option>
+                  <option value="Bridal Shower">Bridal Shower</option>
+                  <option value="Corporate">Corporate Event</option>
+                  <option value="Birthday">Birthday Event</option>
+                  <option value="Concert">Concert / Live Show</option>
+                  <option value="Other">Other Shoot</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Overall Booking Title (Auto-generated if left blank)
                 </label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. Royal Wedding Barat & Walima Coverage"
+                  placeholder="e.g. Hamza & Ayeza Wedding Coverage"
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-slate-900"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Event Category
-                </label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value as EventCategory)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900"
-                >
-                  <option value="Wedding">Wedding</option>
-                  <option value="Nikah">Nikah</option>
-                  <option value="Engagement">Engagement</option>
-                  <option value="Bridal Shower">Bridal Shower</option>
-                  <option value="Corporate">Corporate</option>
-                  <option value="Birthday">Birthday</option>
-                  <option value="Concert">Concert</option>
-                  <option value="Other">Other</option>
-                </select>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {category === 'Wedding' && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Primary Wedding Function
-                  </label>
-                  <select
-                    value={weddingSubtype}
-                    onChange={(e) => setWeddingSubtype(e.target.value as WeddingSubtype)}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900"
-                  >
-                    <option value="Barat">Barat</option>
-                    <option value="Walima">Walima</option>
-                    <option value="Mehndi">Mehndi</option>
-                    <option value="Nikah">Nikah</option>
-                    <option value="Engagement">Engagement</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-              )}
-              <div className={category === 'Wedding' ? '' : 'sm:col-span-2'}>
+              <div className="sm:col-span-2">
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Primary Venue / Hall Location
+                  Default Venue / Marquee / Hall Location
                 </label>
                 <input
                   type="text"
@@ -1084,11 +1300,11 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <div className="text-xs font-bold text-slate-900">
-                    Event Duration &amp; Per-Date Time Slot Configuration
+                    Per-Day Ceremony &amp; Time Slot Schedule
                   </div>
                   <p className="text-[11px] text-slate-500">
-                    Configure Single Day or Multi-Day schedules. Selecting{' '}
-                    <strong>Day Time (DM)</strong> strictly enforces a 5-hour window per date.
+                    Each day defines its ceremony (e.g., Mehndi, Barat, Walima) and timing mode.{' '}
+                    <strong>Day Time (DM)</strong> strictly enforces a 5-hour window.
                   </p>
                 </div>
 
@@ -1118,11 +1334,43 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                 </div>
               </div>
 
+              {/* Quick 1-Click Multi-Day Wedding Sequence Templates */}
+              {category === 'Wedding' && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-200/80">
+                  <span className="text-[11px] font-bold text-slate-700 inline-flex items-center gap-1 mr-1">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Quick Wedding Templates:</span>
+                  </span>
+                  {[
+                    { label: '1-Day Barat Only', seq: ['Barat'] },
+                    { label: '1-Day Walima Only', seq: ['Walima'] },
+                    { label: '2-Day: Barat + Walima', seq: ['Barat', 'Walima'] },
+                    { label: '3-Day: Mehndi + Barat + Walima', seq: ['Mehndi', 'Barat', 'Walima'] },
+                    {
+                      label: '4-Day: Mayun + Mehndi + Barat + Walima',
+                      seq: ['Mayun / Dholki', 'Mehndi', 'Barat', 'Walima'],
+                    },
+                  ].map((tpl) => (
+                    <button
+                      key={tpl.label}
+                      type="button"
+                      onClick={() => handleApplyWeddingSequencePreset(tpl.seq)}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-50 text-slate-800 border border-slate-300 hover:border-amber-400 text-[11px] font-semibold transition-colors cursor-pointer"
+                    >
+                      {tpl.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* Per-Date Schedule Cards */}
               <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
                 {bookingDays.map((dayItem, index) => {
                   const isDayTime = dayItem.timingMode === 'DAY_TIME';
                   const presets = isDayTime ? DAY_TIME_PRESETS : NIGHT_TIME_PRESETS;
+                  const functionChips =
+                    category === 'Wedding' ? WEDDING_CEREMONY_CHIPS : GENERAL_FUNCTION_CHIPS;
+
                   return (
                     <div
                       key={dayItem.id}
@@ -1131,7 +1379,7 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
                         <div className="flex items-center gap-2">
                           <span className="px-2 py-0.5 rounded bg-slate-900 text-white text-[11px] font-mono font-bold">
-                            Day {index + 1}
+                            Day {index + 1}: {dayItem.eventType}
                           </span>
                           <span className="text-xs font-bold text-slate-900">
                             {formatDate(dayItem.date)}
@@ -1187,6 +1435,36 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                         </div>
                       </div>
 
+                      {/* Quick Ceremony / Day Function Selector Chips */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-1">
+                          Day {index + 1} Ceremony:
+                        </span>
+                        {functionChips.map((chip) => {
+                          const isSelectedChip =
+                            dayItem.eventType.toLowerCase() === chip.toLowerCase();
+                          return (
+                            <button
+                              key={chip}
+                              type="button"
+                              onClick={() =>
+                                handleUpdateBookingDay(dayItem.id, {
+                                  eventType: chip,
+                                  customPackageName: `${chip} Customized Package`,
+                                })
+                              }
+                              className={`px-2.5 py-0.5 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${
+                                isSelectedChip
+                                  ? 'bg-amber-400 text-slate-950 border-amber-500 font-bold'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {chip}
+                            </button>
+                          );
+                        })}
+                      </div>
+
                       {/* Strict 5-Hour DM Constraint Banner */}
                       {isDayTime && (
                         <div className="px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300/80 flex items-center justify-between gap-2 text-[11px] text-amber-950">
@@ -1200,7 +1478,7 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                         </div>
                       )}
 
-                      {/* Date, Sub-Event Name, Start Time, End Time */}
+                      {/* Date, Custom Ceremony Name, Start Time, End Time */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                         <div>
                           <label className="block text-[11px] font-semibold text-slate-600 mb-1">
@@ -1218,7 +1496,7 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
 
                         <div>
                           <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                            Function / Label
+                            Day Function Name
                           </label>
                           <input
                             type="text"
@@ -1227,7 +1505,7 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                               handleUpdateBookingDay(dayItem.id, { eventType: e.target.value })
                             }
                             placeholder="e.g. Mehndi / Barat"
-                            className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900"
+                            className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900"
                           />
                         </div>
 
@@ -1263,7 +1541,7 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                       {/* Quick Time Window Presets */}
                       <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                         <span className="text-[10px] font-semibold text-slate-500 mr-1">
-                          Quick Slots:
+                          Quick Time Slots:
                         </span>
                         {presets.map((p) => {
                           const isCurrent =
@@ -1336,434 +1614,657 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                 onClick={() => setStep(3)}
                 className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold cursor-pointer"
               >
-                <span>Next: Camera Inventory, Crew &amp; Pricing</span>
+                <span>Next: Day 1 / Day 2 Packages &amp; Cam+Crew Tiers</span>
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
         )}
 
-        {/* ===================== STEP 3: INVENTORY, CREW CATEGORIES, PACKAGES & DYNAMIC PRICING ===================== */}
+        {/* ===================== STEP 3: PER-DAY PRE-DEFINED OR CUSTOMIZED (CAM + CREW COMBINED TIER) PACKAGES ===================== */}
         {step === 3 && (
           <form onSubmit={handleConfirmBooking} className="space-y-4">
-            {/* 1. CAMERA CATEGORIES & CAMERA INVENTORY AVAILABILITY LINKAGE */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <Camera className="w-4 h-4 text-amber-600" />
-                    <span>Camera Categories &amp; Per-Day Inventory Linkage</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    Select camera tier rate and assign available cameras from inventory (double-booking prevented across {bookingDays.length} day(s)).
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs font-semibold text-slate-700">Cameras Count:</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={20}
-                    value={cameraCount}
-                    onChange={(e) => handleCameraCountChange(Number(e.target.value))}
-                    className="w-16 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 text-center"
-                  />
-                </div>
-              </div>
-
-              {/* Camera Category Rate Cards (PKR 10k / 15k / 20k per day) */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {(['CAT_1', 'CAT_2', 'CAT_3'] as CameraCategoryTier[]).map((tierKey) => {
-                  const tier = CAMERA_CATEGORY_RATES[tierKey];
-                  const active = cameraCategory === tierKey;
-                  return (
-                    <button
-                      key={tierKey}
-                      type="button"
-                      onClick={() => setCameraCategory(tierKey)}
-                      className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                        active
-                          ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                          : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold">
-                          {tierKey.replace('CAT_', 'Category ')}
-                        </span>
-                        <span
-                          className={`text-xs font-mono font-extrabold ${
-                            active ? 'text-amber-400' : 'text-slate-900'
-                          }`}
-                        >
-                          {formatPKR(tier.ratePerDay)}/day
-                        </span>
-                      </div>
-                      <div
-                        className={`text-[11px] mt-1 line-clamp-1 ${
-                          active ? 'text-slate-300' : 'text-slate-500'
-                        }`}
-                      >
-                        {tier.description}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Camera Inventory Units Selection */}
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between text-[11px] text-slate-600">
-                  <span className="font-semibold">
-                    Studio Camera Inventory ({availableCameras.length} available on selected dates)
-                  </span>
-                  <span className="font-mono font-semibold text-slate-900">
-                    Camera Subtotal: {cameraCount} × {formatPKR(CAMERA_CATEGORY_RATES[cameraCategory].ratePerDay)} × {bookingDays.length}d ={' '}
-                    {formatPKR(pricingSummary.cameraDailyCost * bookingDays.length)}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {cameraInventory.map((cam) => {
-                    const busyEventTitle = busyEquipmentMap.get(cam.id);
-                    const isMaintenance =
-                      cam.status === 'Maintenance' || cam.status === 'Damaged';
-                    const isUnavailable = Boolean(busyEventTitle) || isMaintenance;
-                    const isSelected = selectedEquipmentIds.includes(cam.id);
-
-                    return (
-                      <button
-                        key={cam.id}
-                        type="button"
-                        disabled={isUnavailable}
-                        onClick={() => handleToggleCameraSelection(cam.id)}
-                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border inline-flex items-center gap-1.5 transition-all ${
-                          isUnavailable
-                            ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                            : isSelected
-                            ? 'bg-amber-400/25 border-amber-600 text-slate-950 cursor-pointer'
-                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-400 cursor-pointer'
-                        }`}
-                      >
-                        {isSelected && <Check className="w-3 h-3 text-amber-800" />}
-                        <span>{cam.name}</span>
-                        {busyEventTitle && (
-                          <span className="text-[10px] text-rose-600 font-normal">
-                            (Booked: {busyEventTitle})
-                          </span>
-                        )}
-                        {isMaintenance && (
-                          <span className="text-[10px] text-amber-700 font-normal">
-                            ({cam.status})
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* 2. STAFF & CREW CATEGORIES (PHOTOGRAPHERS / VIDEOGRAPHERS / BOYS) WITH PER-DAY CHARGES */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <Users className="w-4 h-4 text-amber-600" />
-                    <span>Staff &amp; Crew Categories (Photographers / Videographers / Boys)</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    Select crew tier rate per day and assign available studio staff across {bookingDays.length} day(s).
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-xs font-semibold text-slate-700">Crew / Boys Count:</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={30}
-                    value={crewCount}
-                    onChange={(e) => handleCrewCountChange(Number(e.target.value))}
-                    className="w-16 px-2.5 py-1 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 text-center"
-                  />
-                </div>
-              </div>
-
-              {/* Crew Category Rate Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {(['CREW_CAT_1', 'CREW_CAT_2', 'CREW_CAT_3'] as CrewCategoryTier[]).map(
-                  (cTierKey) => {
-                    const cTier = CREW_CATEGORY_RATES[cTierKey];
-                    const active = crewCategory === cTierKey;
-                    return (
-                      <button
-                        key={cTierKey}
-                        type="button"
-                        onClick={() => setCrewCategory(cTierKey)}
-                        className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                          active
-                            ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                            : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold">{cTier.shortLabel.split('(')[0]}</span>
-                          <span
-                            className={`text-xs font-mono font-extrabold ${
-                              active ? 'text-amber-400' : 'text-slate-900'
-                            }`}
-                          >
-                            {formatPKR(cTier.ratePerDay)}/day
-                          </span>
-                        </div>
-                        <div
-                          className={`text-[11px] mt-1 line-clamp-1 ${
-                            active ? 'text-slate-300' : 'text-slate-500'
-                          }`}
-                        >
-                          {cTier.description}
-                        </div>
-                      </button>
-                    );
-                  }
-                )}
-              </div>
-
-              {/* Roster Staff Selection */}
-              <div className="space-y-1.5 pt-1">
-                <div className="flex items-center justify-between text-[11px] text-slate-600">
-                  <span className="font-semibold">
-                    Assign Studio Photographers, Videographers &amp; Crew Boys ({availableTeamMembers.length} available)
-                  </span>
-                  <span className="font-mono font-semibold text-slate-900">
-                    Crew Subtotal: {crewCount} × {formatPKR(CREW_CATEGORY_RATES[crewCategory].ratePerDay)} × {bookingDays.length}d ={' '}
-                    {formatPKR(pricingSummary.crewDailyCost * bookingDays.length)}
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                  {teamMembers
-                    .filter((tm) => tm.isActive)
-                    .map((tm) => {
-                      const busyEvt = busyCrewMap.get(tm.id);
-                      const onLeave = tm.availabilityStatus === 'On Leave';
-                      const isUnavailable = Boolean(busyEvt) || onLeave;
-                      const isSelected = selectedCrewIds.includes(tm.id);
-
-                      return (
-                        <button
-                          key={tm.id}
-                          type="button"
-                          disabled={isUnavailable}
-                          onClick={() => handleToggleCrewSelection(tm.id)}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border inline-flex items-center gap-1.5 transition-all ${
-                            isUnavailable
-                              ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                              : isSelected
-                              ? 'bg-slate-900 border-slate-900 text-white cursor-pointer'
-                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-400 cursor-pointer'
-                          }`}
-                        >
-                          {isSelected && <Check className="w-3 h-3 text-amber-400" />}
-                          <span>
-                            {tm.name} · {tm.role}
-                          </span>
-                          {busyEvt && (
-                            <span className="text-[10px] text-rose-500 font-normal">
-                              (Booked)
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                </div>
-              </div>
-            </div>
-
-            {/* 3. BUILT-IN PACKAGE SELECTION OR CUSTOM PACKAGE CREATION ON THE FLY */}
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            {/* Top Header & Copy Day 1 Helper */}
+            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
                 <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                   <PackageIcon className="w-4 h-4 text-amber-600" />
-                  <span>Built-in Package or On-the-Fly Custom Package Creation</span>
+                  <span>
+                    Configure Each Day (Day 1{bookingDays.length > 1 ? `, Day 2${bookingDays.length > 2 ? ', Day 3...' : ''}` : ''}): Pre-Defined Package OR Customized Camera + Crew Tier
+                  </span>
                 </div>
-
-                <div className="inline-flex items-center p-0.5 bg-white border border-slate-300 rounded-lg">
-                  {(
-                    [
-                      { id: 'BUILTIN', label: 'Built-in Package' },
-                      { id: 'CUSTOM', label: '+ Create Custom Package' },
-                      { id: 'NONE', label: 'Resource-Only (No Base Pkg)' },
-                    ] as const
-                  ).map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => {
-                        setPackageMode(tab.id);
-                        if (tab.id === 'NONE') {
-                          setPackageBaseRate(0);
-                        } else if (tab.id === 'BUILTIN') {
-                          const found =
-                            packages.find((p) => p.id === selectedPackageId) || packages[0];
-                          if (found) {
-                            setSelectedPackageId(found.id);
-                            setPackageBaseRate(found.price);
-                          }
-                        }
-                      }}
-                      className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
-                        packageMode === tab.id
-                          ? 'bg-slate-900 text-white'
-                          : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+                <p className="text-[11px] text-slate-500">
+                  Under <strong>Customized Package</strong>, selecting a tier combines Camera + Crew payment:
+                  <strong> Cat 1 + Tier 1 = PKR 10k/cam</strong> ·{' '}
+                  <strong>Cat 2 + Tier 2 = PKR 15k/cam</strong> ·{' '}
+                  <strong>Cat 3 + Tier 3 = PKR 20k/cam</strong> per day.
+                </p>
               </div>
 
-              {packageMode === 'BUILTIN' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Select Studio Package
-                    </label>
-                    <select
-                      value={selectedPackageId}
-                      onChange={(e) => {
-                        const pId = e.target.value;
-                        setSelectedPackageId(pId);
-                        const found = packages.find((p) => p.id === pId);
-                        if (found) {
-                          setPackageBaseRate(found.price);
-                        }
-                      }}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-900"
-                    >
-                      {packages.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({formatPKR(p.price)})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Package Base Rate (PKR)
-                    </label>
-                    <input
-                      type="number"
-                      value={packageBaseRate}
-                      onChange={(e) => setPackageBaseRate(Number(e.target.value))}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {packageMode === 'CUSTOM' && (
-                <div className="space-y-2.5 bg-white p-3 rounded-lg border border-slate-200">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        New Custom Package Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={customPackageName}
-                        onChange={(e) => setCustomPackageName(e.target.value)}
-                        placeholder="e.g. Royal 8K Multi-Day Bespoke Signature"
-                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                        Custom Package Base Rate (PKR)
-                      </label>
-                      <input
-                        type="number"
-                        value={packageBaseRate}
-                        onChange={(e) => setPackageBaseRate(Number(e.target.value))}
-                        className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                      Custom Deliverables &amp; Services (Comma separated)
-                    </label>
-                    <input
-                      type="text"
-                      value={customPackageDeliverables}
-                      onChange={(e) => setCustomPackageDeliverables(e.target.value)}
-                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-xs text-slate-900"
-                    />
-                  </div>
-                  <label className="inline-flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={saveCustomToLibrary}
-                      onChange={(e) => setSaveCustomToLibrary(e.target.checked)}
-                      className="rounded border-slate-300"
-                    />
-                    <span>Save this custom package to Studio Packages library for future bookings</span>
-                  </label>
-                </div>
+              {bookingDays.length > 1 && (
+                <button
+                  type="button"
+                  onClick={handleCopyDay1SetupToAllDays}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white hover:bg-amber-50 text-slate-800 border border-slate-300 text-[11px] font-bold transition-colors cursor-pointer shrink-0"
+                >
+                  <Copy className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Copy Day 1 Setup to All {bookingDays.length} Days</span>
+                </button>
               )}
             </div>
 
-            {/* 4. DYNAMIC PRICING FORMULA & FINANCIAL SUMMARY */}
+            {/* PER-DAY CONFIGURATION CARDS (DAY 1, DAY 2, DAY 3...) */}
+            <div className="space-y-4 max-h-[460px] overflow-y-auto pr-1">
+              {bookingDays.map((dayItem, idx) => {
+                const dayCost = getDayCalculatedCost(dayItem);
+                const { busyEqMap, busyCrewMap } = getBusyResourcesForDate(dayItem.date);
+                const combinedRate = CAMERA_CATEGORY_RATES[dayItem.cameraCategory].ratePerDay;
+
+                return (
+                  <div
+                    key={dayItem.id}
+                    className="p-4 rounded-xl bg-white border-2 border-slate-200 shadow-2xs space-y-3.5"
+                  >
+                    {/* Day Header Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-200">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-900 text-white text-xs font-mono font-extrabold">
+                          Day {idx + 1}: {dayItem.eventType}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-700">
+                          {formatDate(dayItem.date)} ·{' '}
+                          {dayItem.timingMode === 'DAY_TIME' ? 'Day Time (5h DM)' : 'Night Time'} (
+                          {dayItem.startTime}–{dayItem.endTime})
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-md bg-amber-400/25 border border-amber-500 text-slate-950 text-xs font-mono font-extrabold">
+                          Day {idx + 1} Total: {formatPKR(dayCost)}
+                        </span>
+                      </div>
+
+                      {/* Toggle: Pre-Defined Package vs Customized Package (Camera + Crew Tier) */}
+                      <div className="inline-flex items-center p-0.5 bg-slate-100 border border-slate-300 rounded-lg shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const found =
+                              packages.find((p) => p.id === dayItem.selectedPackageId) ||
+                              packages[0];
+                            handleUpdateBookingDay(dayItem.id, {
+                              packageMode: 'BUILTIN',
+                              selectedPackageId: found ? found.id : '',
+                              packageBaseRate: found ? found.price : dayItem.packageBaseRate,
+                            });
+                          }}
+                          className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors cursor-pointer ${
+                            dayItem.packageMode === 'BUILTIN'
+                              ? 'bg-slate-900 text-white shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Pre-Defined Package
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleUpdateBookingDay(dayItem.id, {
+                              packageMode: 'CUSTOM',
+                              customPackageName:
+                                dayItem.customPackageName ||
+                                `${dayItem.eventType} Customized Package`,
+                            })
+                          }
+                          className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors cursor-pointer ${
+                            dayItem.packageMode === 'CUSTOM'
+                              ? 'bg-amber-400 text-slate-950 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          Customized Package (Cam + Crew Tier)
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ==================== OPTION A: PRE-DEFINED PACKAGE FOR DAY {idx + 1} ==================== */}
+                    {dayItem.packageMode === 'BUILTIN' && (
+                      <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="sm:col-span-2">
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                              Select Pre-Defined Studio Package for Day {idx + 1} ({dayItem.eventType})
+                            </label>
+                            <select
+                              value={dayItem.selectedPackageId}
+                              onChange={(e) => {
+                                const pId = e.target.value;
+                                const found = packages.find((p) => p.id === pId);
+                                handleUpdateBookingDay(dayItem.id, {
+                                  selectedPackageId: pId,
+                                  packageBaseRate: found ? found.price : dayItem.packageBaseRate,
+                                });
+                              }}
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-900"
+                            >
+                              {packages.map((p) => (
+                                <option key={p.id} value={p.id}>
+                                  {p.name} — {formatPKR(p.price)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                              Day {idx + 1} Package Price (PKR)
+                            </label>
+                            <input
+                              type="number"
+                              value={dayItem.packageBaseRate}
+                              onChange={(e) =>
+                                handleUpdateBookingDay(dayItem.id, {
+                                  packageBaseRate: Number(e.target.value),
+                                })
+                              }
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ==================== OPTION B: CUSTOMIZED PACKAGE FOR DAY {idx + 1} (COMBINED CAM + CREW TIER) ==================== */}
+                    {dayItem.packageMode === 'CUSTOM' && (
+                      <div className="p-3.5 rounded-xl bg-amber-50/40 border border-amber-200/90 space-y-3.5">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                              <Camera className="w-3.5 h-3.5 text-amber-700" />
+                              <span>
+                                Day {idx + 1} ({dayItem.eventType}) — Select Combined Camera + Crew Tier
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600">
+                              Combined rate includes both Camera &amp; Photographer/Videographer Crew per camera for Day {idx + 1}.
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-300 shrink-0">
+                            <label className="text-xs font-bold text-slate-800">
+                              Day {idx + 1} Cameras (with Crew):
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              max={20}
+                              value={dayItem.cameraCount}
+                              onChange={(e) =>
+                                handleDayCameraCountChange(dayItem.id, Number(e.target.value))
+                              }
+                              className="w-14 px-2 py-1 bg-slate-50 border border-slate-300 rounded text-xs font-mono font-extrabold text-slate-900 text-center"
+                            />
+                          </div>
+                        </div>
+
+                         {/* 3 Combined Camera + Crew Tier Cards (10k / 15k / 20k per cam per day) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                          {COMBINED_TIER_OPTIONS.map((opt) => {
+                            const isSelectedTier = dayItem.cameraCategory === opt.camTier;
+                            const tierDaySubtotal = dayItem.cameraCount * opt.ratePerCamPerDay;
+                            return (
+                              <button
+                                key={opt.camTier}
+                                type="button"
+                                onClick={() =>
+                                  handleUpdateBookingDay(dayItem.id, {
+                                    cameraCategory: opt.camTier,
+                                    crewCategory: opt.crewTier,
+                                    tierSlots:
+                                      dayItem.tierSlots && dayItem.tierSlots.length === 1
+                                        ? [
+                                            {
+                                              ...dayItem.tierSlots[0],
+                                              cameraCategory: opt.camTier,
+                                              crewCategory: opt.crewTier,
+                                            },
+                                          ]
+                                        : dayItem.tierSlots,
+                                  })
+                                }
+                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                  isSelectedTier
+                                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs ring-2 ring-amber-400'
+                                    : 'bg-white text-slate-800 border-slate-200 hover:border-slate-400'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="text-xs font-extrabold">{opt.title}</span>
+                                  {isSelectedTier && (
+                                    <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                                  )}
+                                </div>
+                                <div
+                                  className={`text-xs font-mono font-extrabold mt-1 ${
+                                    isSelectedTier ? 'text-amber-400' : 'text-amber-800'
+                                  }`}
+                                >
+                                  {opt.badge}
+                                </div>
+                                <div
+                                  className={`text-[10px] mt-1 ${
+                                    isSelectedTier ? 'text-slate-300' : 'text-slate-500'
+                                  }`}
+                                >
+                                  {opt.subtitle}
+                                </div>
+                                <div
+                                  className={`mt-2 pt-1.5 border-t text-[11px] font-mono font-bold ${
+                                    isSelectedTier
+                                      ? 'border-slate-700 text-emerald-300'
+                                      : 'border-slate-100 text-slate-700'
+                                  }`}
+                                >
+                                  {dayItem.cameraCount} Cam × {formatPKR(opt.ratePerCamPerDay)} ={' '}
+                                  {formatPKR(tierDaySubtotal)}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Per-Slot Role Breakdown (Photographers, Videographers, Drones) & Mixed-Tier Support on Same Day */}
+                        {Array.isArray(dayItem.tierSlots) && dayItem.tierSlots.length > 0 && (
+                          <div className="space-y-2 pt-1">
+                            {dayItem.tierSlots.map((slot, sIdx) => {
+                              const slotCalc = calculateTierSlotSummary(slot);
+                              return (
+                                <div
+                                  key={slot.id}
+                                  className="p-2.5 rounded-xl bg-white border border-slate-200 space-y-2"
+                                >
+                                  <div className="flex items-center justify-between gap-2 text-xs">
+                                    <span className="font-bold text-slate-800">
+                                      {dayItem.tierSlots!.length > 1
+                                        ? `Tier Slot #${sIdx + 1} (Mixed Tier on Day ${idx + 1})`
+                                        : `Day ${idx + 1} Role Breakdown (Photographers / Videographers / Drone)`}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono font-bold text-amber-700">
+                                        {slotCalc.formulaText}
+                                      </span>
+                                      {dayItem.tierSlots!.length > 1 && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const nextSlots = dayItem.tierSlots!.filter(
+                                              (s) => s.id !== slot.id
+                                            );
+                                            const totalUnits = nextSlots.reduce(
+                                              (acc, s) =>
+                                                acc + s.photographers + s.videographers + s.drones,
+                                              0
+                                            );
+                                            handleUpdateBookingDay(dayItem.id, {
+                                              tierSlots: nextSlots,
+                                              cameraCount: Math.max(1, totalUnits),
+                                            });
+                                          }}
+                                          className="text-[11px] text-rose-600 hover:underline cursor-pointer"
+                                        >
+                                          Remove Slot
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                        Category + Crew Tier
+                                      </label>
+                                      <select
+                                        value={slot.cameraCategory}
+                                        onChange={(e) => {
+                                          const newCat = e.target.value as CameraCategoryTier;
+                                          const nextSlots = dayItem.tierSlots!.map((s) =>
+                                            s.id === slot.id
+                                              ? {
+                                                  ...s,
+                                                  cameraCategory: newCat,
+                                                  crewCategory: mapCameraTierToCrewTier(newCat),
+                                                }
+                                              : s
+                                          );
+                                          handleUpdateBookingDay(dayItem.id, {
+                                            tierSlots: nextSlots,
+                                            cameraCategory: nextSlots[0].cameraCategory,
+                                            crewCategory: nextSlots[0].crewCategory,
+                                          });
+                                        }}
+                                        className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-xs font-semibold text-slate-900"
+                                      >
+                                        <option value="CAT_1">Cat 1 + Tier 1 (10k/cam)</option>
+                                        <option value="CAT_2">Cat 2 + Tier 2 (15k/cam)</option>
+                                        <option value="CAT_3">Cat 3 + Tier 3 (20k/cam)</option>
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                        Photographers
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={slot.photographers}
+                                        onChange={(e) => {
+                                          const val = Math.max(0, Number(e.target.value || 0));
+                                          const nextSlots = dayItem.tierSlots!.map((s) =>
+                                            s.id === slot.id ? { ...s, photographers: val } : s
+                                          );
+                                          const totalUnits = nextSlots.reduce(
+                                            (acc, s) =>
+                                              acc + s.photographers + s.videographers + s.drones,
+                                            0
+                                          );
+                                          handleUpdateBookingDay(dayItem.id, {
+                                            tierSlots: nextSlots,
+                                            cameraCount: Math.max(1, totalUnits),
+                                          });
+                                        }}
+                                        className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-xs font-mono text-center"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                        Videographers
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={slot.videographers}
+                                        onChange={(e) => {
+                                          const val = Math.max(0, Number(e.target.value || 0));
+                                          const nextSlots = dayItem.tierSlots!.map((s) =>
+                                            s.id === slot.id ? { ...s, videographers: val } : s
+                                          );
+                                          const totalUnits = nextSlots.reduce(
+                                            (acc, s) =>
+                                              acc + s.photographers + s.videographers + s.drones,
+                                            0
+                                          );
+                                          handleUpdateBookingDay(dayItem.id, {
+                                            tierSlots: nextSlots,
+                                            cameraCount: Math.max(1, totalUnits),
+                                          });
+                                        }}
+                                        className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-xs font-mono text-center"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                                        Drone Cameras
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        value={slot.drones}
+                                        onChange={(e) => {
+                                          const val = Math.max(0, Number(e.target.value || 0));
+                                          const nextSlots = dayItem.tierSlots!.map((s) =>
+                                            s.id === slot.id ? { ...s, drones: val } : s
+                                          );
+                                          const totalUnits = nextSlots.reduce(
+                                            (acc, s) =>
+                                              acc + s.photographers + s.videographers + s.drones,
+                                            0
+                                          );
+                                          handleUpdateBookingDay(dayItem.id, {
+                                            tierSlots: nextSlots,
+                                            cameraCount: Math.max(1, totalUnits),
+                                          });
+                                        }}
+                                        className="w-full px-2 py-1 bg-slate-50 border border-slate-300 rounded text-xs font-mono text-center"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextSlots: DayTierSlot[] = [
+                                  ...(dayItem.tierSlots || []),
+                                  {
+                                    id: `${dayItem.id}-slot-${Date.now()}`,
+                                    cameraCategory: 'CAT_1',
+                                    crewCategory: 'CREW_CAT_1',
+                                    photographers: 0,
+                                    videographers: 1,
+                                    drones: 0,
+                                  },
+                                ];
+                                const totalUnits = nextSlots.reduce(
+                                  (acc, s) => acc + s.photographers + s.videographers + s.drones,
+                                  0
+                                );
+                                handleUpdateBookingDay(dayItem.id, {
+                                  tierSlots: nextSlots,
+                                  cameraCount: Math.max(1, totalUnits),
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-dashed border-amber-500 bg-white hover:bg-amber-50 text-[11px] font-bold text-amber-900 cursor-pointer"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>
+                                + Add Mixed Tier Slot on Day {idx + 1} (e.g. 1P+1V @20k + 1V @10k)
+                              </span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Live Calculation Bar for Day {idx + 1} Customized Package */}
+                        <div className="p-2.5 rounded-lg bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+                          <div>
+                            <span className="text-slate-400">Day {idx + 1} Formula: </span>
+                            <strong className="text-amber-300">
+                              {dayItem.cameraCount} Camera(s) × {formatPKR(combinedRate)} (
+                              {dayItem.cameraCategory.replace('CAT_', 'Category ')} Cam + Tier{' '}
+                              {dayItem.cameraCategory.replace('CAT_', '')} Crew)
+                            </strong>
+                            {dayItem.extraCustomAmount > 0 && (
+                              <span className="text-emerald-300">
+                                {' '}
+                                + {formatPKR(dayItem.extraCustomAmount)} Extra
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm font-extrabold text-amber-400">
+                            = {formatPKR(dayCost)}
+                          </div>
+                        </div>
+
+                        {/* Optional Custom Package Name, Deliverables & Extra Add-on for Day {idx + 1} */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                              Day {idx + 1} Custom Package Title
+                            </label>
+                            <input
+                              type="text"
+                              value={dayItem.customPackageName}
+                              onChange={(e) =>
+                                handleUpdateBookingDay(dayItem.id, {
+                                  customPackageName: e.target.value,
+                                })
+                              }
+                              placeholder={`e.g. ${dayItem.eventType} Custom Package`}
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                              Deliverables (Album / Video / Drone)
+                            </label>
+                            <input
+                              type="text"
+                              value={dayItem.customPackageDeliverables}
+                              onChange={(e) =>
+                                handleUpdateBookingDay(dayItem.id, {
+                                  customPackageDeliverables: e.target.value,
+                                })
+                              }
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                              Extra Deliverable / Album Fee (PKR)
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              value={dayItem.extraCustomAmount}
+                              onChange={(e) =>
+                                handleUpdateBookingDay(dayItem.id, {
+                                  extraCustomAmount: Number(e.target.value),
+                                })
+                              }
+                              placeholder="0"
+                              className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ==================== PER-DAY CAMERA INVENTORY & CREW ASSIGNMENT FOR DAY {idx + 1} ==================== */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      {/* Camera Inventory Picker for Day {idx + 1} */}
+                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] text-slate-700">
+                          <span className="font-bold inline-flex items-center gap-1">
+                            <Camera className="w-3 h-3 text-amber-600" />
+                            <span>Day {idx + 1} Cameras from Inventory</span>
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-500">
+                            {dayItem.assignedCameraIds.length} selected
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {cameraInventory.map((cam) => {
+                            const busyTitle = busyEqMap.get(cam.id);
+                            const isMaint =
+                              cam.status === 'Maintenance' || cam.status === 'Damaged';
+                            const isUnavailable = Boolean(busyTitle) || isMaint;
+                            const isSelected = dayItem.assignedCameraIds.includes(cam.id);
+                            return (
+                              <button
+                                key={cam.id}
+                                type="button"
+                                disabled={isUnavailable}
+                                onClick={() => handleToggleDayCamera(dayItem.id, cam.id, busyTitle)}
+                                className={`px-2 py-1 rounded text-[10px] font-semibold border inline-flex items-center gap-1 transition-all ${
+                                  isUnavailable
+                                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                                    : isSelected
+                                    ? 'bg-slate-900 border-slate-900 text-white cursor-pointer'
+                                    : 'bg-white border-slate-200 text-slate-700 hover:border-slate-400 cursor-pointer'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-2.5 h-2.5 text-amber-400" />}
+                                <span>{cam.name}</span>
+                                {busyTitle && (
+                                  <span className="text-[9px] text-rose-500">(Booked)</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Crew / Boys Picker for Day {idx + 1} */}
+                      <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+                        <div className="flex items-center justify-between text-[11px] text-slate-700">
+                          <span className="font-bold inline-flex items-center gap-1">
+                            <Users className="w-3 h-3 text-amber-600" />
+                            <span>Day {idx + 1} Photographers / Video Crew</span>
+                          </span>
+                          <span className="font-mono text-[10px] text-slate-500">
+                            {dayItem.assignedCrewIds.length} assigned
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                          {activeTeamRoster.map((tm) => {
+                            const busyTitle = busyCrewMap.get(tm.id);
+                            const isUnavailable = Boolean(busyTitle);
+                            const isSelected = dayItem.assignedCrewIds.includes(tm.id);
+                            return (
+                              <button
+                                key={tm.id}
+                                type="button"
+                                disabled={isUnavailable}
+                                onClick={() => handleToggleDayCrew(dayItem.id, tm.id, busyTitle)}
+                                className={`px-2 py-1 rounded text-[10px] font-semibold border inline-flex items-center gap-1 transition-all ${
+                                  isUnavailable
+                                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                                    : isSelected
+                                    ? 'bg-slate-900 border-slate-900 text-white cursor-pointer'
+                                    : 'bg-white border-slate-200 text-slate-700 hover:border-slate-400 cursor-pointer'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-2.5 h-2.5 text-amber-400" />}
+                                <span>
+                                  {tm.name} ({tm.role})
+                                </span>
+                                {busyTitle && (
+                                  <span className="text-[9px] text-rose-500">(Booked)</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* OVERALL DYNAMIC PRICING SUMMARY CARD */}
             <div className="p-4 rounded-xl bg-slate-900 text-white space-y-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
                 <div className="flex items-center gap-2">
                   <Calculator className="w-4 h-4 text-amber-400" />
                   <span className="text-xs font-bold tracking-wide">
-                    Dynamic Multi-Day Resource &amp; Package Pricing Formula
+                    Day-by-Day Combined Camera + Crew Tier &amp; Package Pricing Summary
                   </span>
                 </div>
                 <span className="text-[11px] font-mono text-amber-300">
-                  Total = [(Cameras × Rate) + (Crew × Rate)] × Days + Base Package
+                  Cat 1 + Tier 1 = 10k · Cat 2 + Tier 2 = 15k · Cat 3 + Tier 3 = 20k / cam / day
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
-                <div className="p-2.5 rounded-lg bg-slate-800/90 border border-slate-700">
-                  <div className="text-[10px] text-slate-400">
-                    Cameras ({cameraCount} × {formatPKR(CAMERA_CATEGORY_RATES[cameraCategory].ratePerDay)} × {bookingDays.length}d)
+              {/* Per-Day Breakdown List */}
+              <div className="space-y-1.5">
+                {pricingSummary.dayBreakdowns.map((dbItem) => (
+                  <div
+                    key={dbItem.dayNumber}
+                    className="px-3 py-2 rounded-lg bg-slate-800/90 border border-slate-700 flex flex-wrap items-center justify-between gap-2 text-xs font-mono"
+                  >
+                    <div>
+                      <span className="text-amber-400 font-bold">
+                        Day {dbItem.dayNumber} ({dbItem.eventType} · {formatDate(dbItem.date)}):
+                      </span>{' '}
+                      <span className="text-slate-200">{dbItem.formulaLabel}</span>
+                    </div>
+                    <span className="font-extrabold text-white">{formatPKR(dbItem.cost)}</span>
                   </div>
-                  <div className="text-sm font-bold text-white mt-0.5">
-                    {formatPKR(pricingSummary.cameraDailyCost * bookingDays.length)}
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-slate-800/90 border border-slate-700">
-                  <div className="text-[10px] text-slate-400">
-                    Staff/Crew ({crewCount} × {formatPKR(CREW_CATEGORY_RATES[crewCategory].ratePerDay)} × {bookingDays.length}d)
-                  </div>
-                  <div className="text-sm font-bold text-white mt-0.5">
-                    {formatPKR(pricingSummary.crewDailyCost * bookingDays.length)}
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-slate-800/90 border border-slate-700">
-                  <div className="text-[10px] text-slate-400">Package Base Rate</div>
-                  <div className="text-sm font-bold text-white mt-0.5">
-                    {formatPKR(pricingSummary.packageBaseRate)}
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-amber-400 text-slate-950">
-                  <div className="text-[10px] font-bold uppercase">Calculated Total Cost</div>
-                  <div className="text-base font-extrabold mt-0.5">
-                    {formatPKR(pricingSummary.totalCost)}
-                  </div>
-                </div>
+                ))}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-1">
                 <div>
                   <label className="block text-[11px] text-slate-300 mb-1">
-                    Advance Deposit Received (PKR)
+                    Advance Deposit Paid (PKR)
                   </label>
                   <input
                     type="number"
@@ -1785,10 +2286,18 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                 </div>
                 <div>
                   <label className="block text-[11px] text-slate-300 mb-1">
-                    Remaining Balance Due
+                    Remaining Balance
                   </label>
                   <div className="px-3 py-1.5 bg-slate-800/60 border border-slate-700 rounded-lg text-xs font-mono font-bold text-amber-300">
                     {formatPKR(Math.max(0, pricingSummary.totalCost - Number(advancePaid || 0)))}
+                  </div>
+                </div>
+                <div className="p-2 rounded-lg bg-amber-400 text-slate-950 flex flex-col justify-center">
+                  <div className="text-[10px] font-bold uppercase leading-none">
+                    Total Booking Cost
+                  </div>
+                  <div className="text-base font-mono font-extrabold mt-0.5 leading-tight">
+                    {formatPKR(pricingSummary.totalCost)}
                   </div>
                 </div>
               </div>
