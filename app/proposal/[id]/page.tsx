@@ -32,6 +32,7 @@ import {
   Film,
   QrCode,
   FileText,
+  Mail,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
@@ -118,6 +119,13 @@ export default function ClientProposalPage() {
   >(null);
   const [hasReviewedTerms, setHasReviewedTerms] = useState(true);
   const [hoveredMilestoneIdx, setHoveredMilestoneIdx] = useState<number | null>(null);
+  const [adminEmailNotification, setAdminEmailNotification] = useState<{
+    sent: boolean;
+    recipient: string;
+    subject: string;
+    timestamp: string;
+    message?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined" || !proposalId) return;
@@ -191,12 +199,37 @@ export default function ClientProposalPage() {
 
   const paidAmount = Number(data?.event?.totalClientPayments || 0);
   const remainingBalance = Math.max(0, liveGrandTotal - paidAmount);
+  const paidPercentage =
+    liveGrandTotal > 0
+      ? Math.min(100, Math.round((paidAmount / liveGrandTotal) * 100))
+      : 0;
+  const overallPaymentStatus: "FULL" | "PARTIAL" | "UNPAID" =
+    paidAmount >= liveGrandTotal && liveGrandTotal > 0
+      ? "FULL"
+      : paidAmount > 0
+      ? "PARTIAL"
+      : "UNPAID";
 
   // 30% Advance, 60% Event End Day, 10% Album Delivery Milestones
   const milestones = useMemo(() => {
     const m1 = Math.round(liveGrandTotal * 0.3);
     const m2 = Math.round(liveGrandTotal * 0.6);
     const m3 = Math.max(0, liveGrandTotal - m1 - m2);
+
+    const cov1 = Math.min(m1, Math.max(0, paidAmount));
+    const rem1 = Math.max(0, m1 - cov1);
+    const status1: "FULL" | "PARTIAL" | "UNPAID" =
+      cov1 >= m1 && m1 > 0 ? "FULL" : cov1 > 0 ? "PARTIAL" : "UNPAID";
+
+    const cov2 = Math.min(m2, Math.max(0, paidAmount - m1));
+    const rem2 = Math.max(0, m2 - cov2);
+    const status2: "FULL" | "PARTIAL" | "UNPAID" =
+      cov2 >= m2 && m2 > 0 ? "FULL" : cov2 > 0 ? "PARTIAL" : "UNPAID";
+
+    const cov3 = Math.min(m3, Math.max(0, paidAmount - m1 - m2));
+    const rem3 = Math.max(0, m3 - cov3);
+    const status3: "FULL" | "PARTIAL" | "UNPAID" =
+      cov3 >= m3 && m3 > 0 ? "FULL" : cov3 > 0 ? "PARTIAL" : "UNPAID";
 
     const lastDayDate =
       data?.daySchedules && data.daySchedules.length > 0
@@ -209,7 +242,10 @@ export default function ClientProposalPage() {
         description: "Due upon proposal acceptance to lock dates & production crew",
         dueDate: data?.quotation?.issueDate || "Upon Booking",
         amount: m1,
-        isPaid: paidAmount >= m1 && m1 > 0,
+        coveredAmount: cov1,
+        remainingAmount: rem1,
+        paymentStatus: status1,
+        isPaid: status1 === "FULL",
         workflowBadge: "Pre-Production & Crew Lock",
         tooltipTitle: "Pre-Production, Storyboarding & Date Lock",
         tooltipSummary:
@@ -225,7 +261,10 @@ export default function ClientProposalPage() {
         description: "Due on final celebration shoot day — initiates Editing & Album Design",
         dueDate: lastDayDate,
         amount: m2,
-        isPaid: paidAmount >= m1 + m2 && m2 > 0,
+        coveredAmount: cov2,
+        remainingAmount: rem2,
+        paymentStatus: status2,
+        isPaid: status2 === "FULL",
         workflowBadge: "Editing & Initial Album Design Stage",
         tooltipTitle: "Master Post-Production, Color Grading & First Album Drafts",
         tooltipSummary:
@@ -241,7 +280,10 @@ export default function ClientProposalPage() {
         description: "Due upon handover of graded 4K films & handcrafted luxury albums",
         dueDate: "On Final Delivery",
         amount: m3,
-        isPaid: paidAmount >= liveGrandTotal && liveGrandTotal > 0,
+        coveredAmount: cov3,
+        remainingAmount: rem3,
+        paymentStatus: status3,
+        isPaid: status3 === "FULL",
         workflowBadge: "Final Album Binding & Master Handover",
         tooltipTitle: "Album Print Production, Binding & Final 4K Master Delivery",
         tooltipSummary:
@@ -294,11 +336,55 @@ export default function ClientProposalPage() {
     }
   }
 
-  function handleOpenConfirmApprovalModal(e: React.FormEvent) {
+  async function handleOpenConfirmApprovalModal(e: React.FormEvent) {
     e.preventDefault();
     if (!data || !signatureName.trim()) return;
     setHasReviewedTerms(true);
     setIsConfirmApprovalOpen(true);
+
+    // Immediately trigger studio admin email notification when client clicks 'Digitally Accept & Approve Proposal'
+    const fallbackAdminEmail =
+      data.profile?.notificationEmail ||
+      data.profile?.email ||
+      "royalstudio089@gmail.com";
+    const nowIso = new Date().toISOString();
+    setAdminEmailNotification({
+      sent: true,
+      recipient: fallbackAdminEmail,
+      subject: `[${data.profile?.studioName || "Royal Studio"}] Proposal Digitally Accepted & Approved — ${data.quotation.quotationNumber}`,
+      timestamp: nowIso,
+    });
+
+    try {
+      const res = await fetch(`/api/proposal/${encodeURIComponent(proposalId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "NOTIFY_ADMIN_APPROVAL",
+          clientSignatureName: signatureName.trim(),
+          clientNotes: clientNotes.trim(),
+          selectedAddons,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        if (json.emailNotification) {
+          setAdminEmailNotification(json.emailNotification);
+        }
+        if (json.event) {
+          setData((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  event: json.event,
+                }
+              : prev
+          );
+        }
+      }
+    } catch {
+      // Non-blocking: optimistic notification banner already displayed
+    }
   }
 
   async function handleConfirmAndSubmitApproval() {
@@ -327,6 +413,9 @@ export default function ClientProposalPage() {
               }
             : prev
         );
+        if (json.emailNotification) {
+          setAdminEmailNotification(json.emailNotification);
+        }
         setApprovalSuccess(true);
         setIsConfirmApprovalOpen(false);
         setShowApprovalHistory(true);
@@ -714,10 +803,10 @@ export default function ClientProposalPage() {
   )}`;
 
   return (
-    <div className="min-h-screen bg-[#0D0D0F] text-[#F5F2EB] py-10 px-4 sm:px-6 lg:px-8">
+    <div className="proposal-print-page min-h-screen bg-[#0D0D0F] text-[#F5F2EB] py-10 px-4 sm:px-6 lg:px-8">
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Top Action Navigation */}
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
+        <div className="no-print flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
           <div className="flex items-center gap-3">
             <Link
               href="/contact"
@@ -807,7 +896,7 @@ export default function ClientProposalPage() {
         </div>
 
         {/* Hero Proposal Header Card */}
-        <div className="rounded-2xl border border-[#D4AF37]/30 bg-gradient-to-b from-[#17171C] to-[#121216] p-6 sm:p-8 space-y-6">
+        <div className="proposal-print-card rounded-2xl border border-[#D4AF37]/30 bg-gradient-to-b from-[#17171C] to-[#121216] p-6 sm:p-8 space-y-6">
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
             <div className="space-y-2">
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#D4AF37]">
@@ -839,7 +928,7 @@ export default function ClientProposalPage() {
                 <button
                   type="button"
                   onClick={() => setIsQrModalOpen(true)}
-                  className="hidden sm:flex items-center gap-2.5 p-2 rounded-xl border border-[#D4AF37]/30 bg-[#0D0D0F]/90 hover:border-[#D4AF37] transition-all text-left cursor-pointer group"
+                  className="no-print hidden sm:flex items-center gap-2.5 p-2 rounded-xl border border-[#D4AF37]/30 bg-[#0D0D0F]/90 hover:border-[#D4AF37] transition-all text-left cursor-pointer group"
                   title="Click to enlarge QR Code & share proposal link with customer"
                 >
                   <img
@@ -861,9 +950,38 @@ export default function ClientProposalPage() {
                 </button>
               )}
 
-              <div className="md:text-right space-y-1 shrink-0">
-                <div className="text-[11px] uppercase tracking-wider text-[#A39E93]">
-                  Proposal Status
+              <div
+                className={`rounded-xl border p-3.5 md:text-right space-y-1.5 shrink-0 transition-all ${
+                  overallPaymentStatus === "FULL"
+                    ? "border-emerald-500/45 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.12)]"
+                    : overallPaymentStatus === "PARTIAL"
+                    ? "border-amber-500/45 bg-amber-500/10 shadow-[0_0_20px_rgba(245,158,11,0.12)]"
+                    : "border-white/10 bg-[#0D0D0F]/80"
+                }`}
+              >
+                <div className="flex flex-wrap items-center md:justify-end gap-1.5">
+                  <span className="text-[10px] uppercase tracking-wider text-[#A39E93]">
+                    Proposal Status
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
+                      overallPaymentStatus === "FULL"
+                        ? "payment-status-badge-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/40"
+                        : overallPaymentStatus === "PARTIAL"
+                        ? "payment-status-badge-partial bg-amber-500/20 text-amber-300 border border-amber-400/40"
+                        : "payment-status-badge-unpaid bg-white/10 text-[#A39E93] border border-white/15"
+                    }`}
+                  >
+                    <CreditCard className="w-3 h-3" />
+                    <span>
+                      Payment Status:{" "}
+                      {overallPaymentStatus === "FULL"
+                        ? "Full Payment"
+                        : overallPaymentStatus === "PARTIAL"
+                        ? `Partial (${paidPercentage}%)`
+                        : "Pending Advance"}
+                    </span>
+                  </span>
                 </div>
                 <div className="text-sm font-bold text-[#D4AF37]">
                   {lifecycleStage === "CONFIRMED"
@@ -872,11 +990,33 @@ export default function ClientProposalPage() {
                     ? "Client Approved · Pending Lock"
                     : `Pending Review (${event.status})`}
                 </div>
-                <div className="text-2xl sm:text-3xl font-mono font-bold text-[#F5F2EB] pt-1">
+                <div className="text-2xl sm:text-3xl font-mono font-bold text-[#F5F2EB] pt-0.5">
                   {formatPKR(liveGrandTotal)}
                 </div>
-                <div className="text-[11px] text-[#A39E93]">
-                  Valid until {quotation.validUntil}
+                <div className="flex flex-wrap items-center md:justify-end gap-2 text-[11px] text-[#A39E93]">
+                  {paidAmount > 0 ? (
+                    <>
+                      <span
+                        className={
+                          overallPaymentStatus === "FULL"
+                            ? "text-emerald-300 font-semibold"
+                            : "text-amber-300 font-semibold"
+                        }
+                      >
+                        Paid: {formatPKR(paidAmount)}
+                      </span>
+                      {remainingBalance > 0 && (
+                        <>
+                          <span>·</span>
+                          <span className="text-[#F5F2EB]">
+                            Due: {formatPKR(remainingBalance)}
+                          </span>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <span>Valid until {quotation.validUntil}</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1333,8 +1473,8 @@ export default function ClientProposalPage() {
               );
             })()}
 
-            {/* 3 Lifecycle Stage Cards: Pending (Clock), Approved (FileCheck), Confirmed (ShieldCheck) */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* 4 Proposal & Payment Status Cards: Pending, Approved, Confirmed, and Payment Status */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* Stage 1: Pending */}
               {(() => {
                 const isCurrent = lifecycleStage === "PENDING";
@@ -1494,8 +1634,110 @@ export default function ClientProposalPage() {
                   </div>
                 );
               })()}
+
+              {/* Card 4: Payment Status Card (Visually Differentiates Full vs Partial vs Unpaid) */}
+              <div
+                className={`rounded-xl border p-3.5 transition-all ${
+                  overallPaymentStatus === "FULL"
+                    ? "border-emerald-500/60 bg-emerald-500/10 shadow-[0_0_20px_rgba(16,185,129,0.16)]"
+                    : overallPaymentStatus === "PARTIAL"
+                    ? "border-amber-500/60 bg-amber-500/10 shadow-[0_0_20px_rgba(245,158,11,0.15)]"
+                    : "border-white/15 bg-[#0D0D0F]/80"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                        overallPaymentStatus === "FULL"
+                          ? "bg-emerald-500 text-slate-950"
+                          : overallPaymentStatus === "PARTIAL"
+                          ? "bg-amber-400 text-slate-950"
+                          : "bg-white/10 text-[#A39E93]"
+                      }`}
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">
+                      Payment Status
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                      overallPaymentStatus === "FULL"
+                        ? "payment-status-badge-full bg-emerald-400 text-slate-950"
+                        : overallPaymentStatus === "PARTIAL"
+                        ? "payment-status-badge-partial bg-amber-400 text-slate-950"
+                        : "payment-status-badge-unpaid bg-white/10 text-[#A39E93]"
+                    }`}
+                  >
+                    {overallPaymentStatus === "FULL"
+                      ? "Full Payment"
+                      : overallPaymentStatus === "PARTIAL"
+                      ? `Partial (${paidPercentage}%)`
+                      : "Pending Deposit"}
+                  </span>
+                </div>
+
+                {/* Visual Payment Progress Bar */}
+                <div className="my-2">
+                  <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        overallPaymentStatus === "FULL"
+                          ? "bg-emerald-400"
+                          : overallPaymentStatus === "PARTIAL"
+                          ? "bg-amber-400"
+                          : "bg-white/20"
+                      }`}
+                      style={{ width: `${Math.max(overallPaymentStatus === "UNPAID" ? 4 : 0, paidPercentage)}%` }}
+                    />
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-[#A39E93] leading-relaxed">
+                  {overallPaymentStatus === "FULL"
+                    ? "100% of proposal total settled. All production & delivery milestones funded."
+                    : overallPaymentStatus === "PARTIAL"
+                    ? `Advance received (${formatPKR(paidAmount)}). Remaining balance: ${formatPKR(remainingBalance)}.`
+                    : `30% booking advance (${formatPKR(milestones[0]?.amount || 0)}) due to lock dates.`}
+                </p>
+                <div
+                  className={`mt-2 pt-2 border-t border-white/5 text-[10px] font-mono ${
+                    overallPaymentStatus === "FULL"
+                      ? "text-emerald-300"
+                      : overallPaymentStatus === "PARTIAL"
+                      ? "text-amber-300"
+                      : "text-[#D4AF37]"
+                  }`}
+                >
+                  Paid: {formatPKR(paidAmount)} / {formatPKR(liveGrandTotal)}
+                </div>
+              </div>
             </div>
           </div>
+
+          {adminEmailNotification?.sent && (
+            <div className="rounded-xl border border-[#D4AF37]/45 bg-[#D4AF37]/10 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
+              <div className="flex items-center gap-2.5">
+                <Mail className="w-4 h-4 text-[#D4AF37] shrink-0" />
+                <div>
+                  <span className="font-bold text-[#F5F2EB]">
+                    Admin Email Notification Sent Immediately:{" "}
+                  </span>
+                  <span className="text-[#A39E93]">
+                    Studio admin notified at{" "}
+                    <strong className="text-[#D4AF37] font-mono">
+                      {adminEmailNotification.recipient}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+              <span className="text-[10px] font-mono text-[#D4AF37] shrink-0">
+                {formatDateTimeStamp(adminEmailNotification.timestamp)}
+              </span>
+            </div>
+          )}
 
           {isApproved && (
             <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1517,7 +1759,7 @@ export default function ClientProposalPage() {
               <button
                 type="button"
                 onClick={handleDownloadPDF}
-                className="px-3.5 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs cursor-pointer shrink-0"
+                className="no-print px-3.5 py-1.5 rounded-lg bg-emerald-500 text-slate-950 font-bold text-xs cursor-pointer shrink-0"
               >
                 Download Confirmed Proposal PDF
               </button>
@@ -1526,7 +1768,7 @@ export default function ClientProposalPage() {
         </div>
 
         {/* Itemized Day-by-Day Package & Services Breakdown */}
-        <div className="rounded-2xl border border-white/10 bg-[#151519] p-6 sm:p-7 space-y-5">
+        <div className="proposal-print-card rounded-2xl border border-white/10 bg-[#151519] p-6 sm:p-7 space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-4">
             <div>
               <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D4AF37] block">
@@ -1679,7 +1921,7 @@ export default function ClientProposalPage() {
         </div>
 
         {/* Section 02: Interactive Optional Add-Ons */}
-        <div className="rounded-2xl border border-white/10 bg-[#151519] p-6 sm:p-7 space-y-5">
+        <div className="proposal-print-card rounded-2xl border border-white/10 bg-[#151519] p-6 sm:p-7 space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
             <div>
               <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D4AF37] block">
@@ -1696,14 +1938,14 @@ export default function ClientProposalPage() {
               type="button"
               onClick={handleSaveAddons}
               disabled={savingAddons}
-              className="px-4 py-2 rounded-xl bg-[#D4AF37] hover:opacity-90 text-[#111111] text-xs font-bold transition-opacity cursor-pointer shrink-0"
+              className="no-print px-4 py-2 rounded-xl bg-[#D4AF37] hover:opacity-90 text-[#111111] text-xs font-bold transition-opacity cursor-pointer shrink-0"
             >
               {savingAddons ? "Updating Proposal..." : "Save Add-On Selection"}
             </button>
           </div>
 
           {addonsSavedNotice && (
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300 flex items-center gap-2">
+            <div className="no-print rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2.5 text-xs text-emerald-300 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>
                 Your add-on preferences have been saved and synced with your studio quotation.
@@ -1750,7 +1992,7 @@ export default function ClientProposalPage() {
 
         {/* Section 03: Payment Milestone Schedule & Financial Summary */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 rounded-2xl border border-white/10 bg-[#151519] p-6 space-y-4">
+          <div className="proposal-print-card lg:col-span-7 rounded-2xl border border-white/10 bg-[#151519] p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D4AF37] block">
@@ -1760,7 +2002,7 @@ export default function ClientProposalPage() {
                   Payment Milestone Schedule (30% / 60% / 10%)
                 </h3>
               </div>
-              <span className="inline-flex items-center gap-1 text-[11px] text-[#D4AF37] bg-[#D4AF37]/10 border border-[#D4AF37]/30 px-2.5 py-1 rounded-lg">
+              <span className="no-print inline-flex items-center gap-1 text-[11px] text-[#D4AF37] bg-[#D4AF37]/10 border border-[#D4AF37]/30 px-2.5 py-1 rounded-lg">
                 <Info className="w-3.5 h-3.5" />
                 <span>Hover any milestone for Editing &amp; Album Design details</span>
               </span>
@@ -1769,6 +2011,7 @@ export default function ClientProposalPage() {
             <div className="space-y-3">
               {milestones.map((m, idx) => {
                 const isTooltipOpen = hoveredMilestoneIdx === idx;
+                const mStatus = m.paymentStatus;
                 return (
                   <div
                     key={idx}
@@ -1777,28 +2020,60 @@ export default function ClientProposalPage() {
                     onFocus={() => setHoveredMilestoneIdx(idx)}
                     onBlur={() => setHoveredMilestoneIdx(null)}
                     tabIndex={0}
-                    className="group relative rounded-xl border border-white/10 hover:border-[#D4AF37]/60 bg-[#0D0D0F] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_24px_rgba(212,175,55,0.16)] focus:outline-none focus:border-[#D4AF37]"
+                    className={`group relative rounded-xl border p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_24px_rgba(212,175,55,0.16)] focus:outline-none ${
+                      mStatus === "FULL"
+                        ? "border-emerald-500/45 bg-emerald-500/5 hover:border-emerald-400"
+                        : mStatus === "PARTIAL"
+                        ? "border-amber-500/50 bg-amber-500/5 hover:border-amber-400"
+                        : "border-white/10 bg-[#0D0D0F] hover:border-[#D4AF37]/60"
+                    }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         <div className="text-xs font-bold text-[#F5F2EB] flex flex-wrap items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-[#D4AF37]/70 group-hover:bg-[#D4AF37] group-hover:animate-ping shrink-0" />
-                          <span>{m.stage}</span>
-                          <span className="text-[#A39E93] font-normal">·</span>
                           <span
-                            className={
-                              m.isPaid ? "text-emerald-400" : "text-[#D4AF37]"
-                            }
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              mStatus === "FULL"
+                                ? "bg-emerald-400"
+                                : mStatus === "PARTIAL"
+                                ? "bg-amber-400 animate-pulse"
+                                : "bg-[#D4AF37]/70 group-hover:bg-[#D4AF37] group-hover:animate-ping"
+                            }`}
+                          />
+                          <span>{m.stage}</span>
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              mStatus === "FULL"
+                                ? "payment-status-badge-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/35"
+                                : mStatus === "PARTIAL"
+                                ? "payment-status-badge-partial bg-amber-500/20 text-amber-300 border border-amber-500/35"
+                                : "payment-status-badge-unpaid bg-white/10 text-[#A39E93] border border-white/15"
+                            }`}
                           >
-                            {m.isPaid ? "Completed" : `Due: ${m.dueDate}`}
+                            <CreditCard className="w-2.5 h-2.5" />
+                            <span>
+                              Payment Status:{" "}
+                              {mStatus === "FULL"
+                                ? "Full Payment"
+                                : mStatus === "PARTIAL"
+                                ? "Partial Payment"
+                                : `Pending · Due ${m.dueDate}`}
+                            </span>
                           </span>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 border border-white/10 group-hover:border-[#D4AF37]/50 group-hover:bg-[#D4AF37]/10 text-[10px] font-semibold text-[#D4AF37] transition-all">
+                          <span className="no-print inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 border border-white/10 group-hover:border-[#D4AF37]/50 group-hover:bg-[#D4AF37]/10 text-[10px] font-semibold text-[#D4AF37] transition-all">
                             <Sparkles className="w-2.5 h-2.5 group-hover:animate-pulse" />
                             <span>{m.workflowBadge}</span>
                             <Info className="w-3 h-3 text-[#A39E93] group-hover:text-[#D4AF37]" />
                           </span>
                         </div>
                         <p className="text-[11px] text-[#A39E93]">{m.description}</p>
+                        {mStatus === "PARTIAL" && (
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-amber-300 pt-0.5">
+                            <span>Covered: {formatPKR(m.coveredAmount)}</span>
+                            <span>·</span>
+                            <span>Remaining on Milestone: {formatPKR(m.remainingAmount)}</span>
+                          </div>
+                        )}
                       </div>
                       <div className="font-mono text-sm font-bold text-[#F5F2EB] group-hover:text-[#D4AF37] transition-colors shrink-0">
                         {formatPKR(m.amount)}
@@ -1808,7 +2083,7 @@ export default function ClientProposalPage() {
                     {/* Interactive Hover-Based Tooltip for Editing & Album Design Stage Summary with Entrance Animation */}
                     <div
                       role="tooltip"
-                      className={`mt-3 pt-3 border-t border-[#D4AF37]/35 bg-gradient-to-b from-[#1A1A22] to-[#141419] rounded-xl p-3.5 text-xs space-y-2.5 shadow-xl transition-all duration-300 ${
+                      className={`no-print mt-3 pt-3 border-t border-[#D4AF37]/35 bg-gradient-to-b from-[#1A1A22] to-[#141419] rounded-xl p-3.5 text-xs space-y-2.5 shadow-xl transition-all duration-300 ${
                         isTooltipOpen
                           ? "block opacity-100 translate-y-0 animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-300"
                           : "hidden group-hover:block opacity-0 group-hover:opacity-100 group-hover:animate-in group-hover:fade-in group-hover:slide-in-from-top-2"
@@ -1871,15 +2146,36 @@ export default function ClientProposalPage() {
           </div>
 
           {/* Right Column: Grand Total & Digital Acceptance */}
-          <div className="lg:col-span-5 rounded-2xl border border-[#D4AF37]/40 bg-[#151519] p-6 space-y-5 flex flex-col justify-between">
+          <div className="proposal-print-card lg:col-span-5 rounded-2xl border border-[#D4AF37]/40 bg-[#151519] p-6 space-y-5 flex flex-col justify-between">
             <div className="space-y-4">
-              <div>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D4AF37] block">
-                  Section 04 · Online Approval
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D4AF37] block">
+                    Section 04 · Online Approval
+                  </span>
+                  <h3 className="font-display text-xl text-[#F5F2EB]">
+                    Proposal Summary &amp; Digital Sign-Off
+                  </h3>
+                </div>
+                <span
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase ${
+                    overallPaymentStatus === "FULL"
+                      ? "payment-status-badge-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                      : overallPaymentStatus === "PARTIAL"
+                      ? "payment-status-badge-partial bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                      : "payment-status-badge-unpaid bg-white/10 text-[#A39E93] border border-white/15"
+                  }`}
+                >
+                  <CreditCard className="w-3 h-3" />
+                  <span>
+                    Payment Status:{" "}
+                    {overallPaymentStatus === "FULL"
+                      ? "Full Payment"
+                      : overallPaymentStatus === "PARTIAL"
+                      ? `Partial (${paidPercentage}%)`
+                      : "Unpaid"}
+                  </span>
                 </span>
-                <h3 className="font-display text-xl text-[#F5F2EB]">
-                  Proposal Summary &amp; Digital Sign-Off
-                </h3>
               </div>
 
               <div className="space-y-2 text-xs border-b border-white/10 pb-4">
@@ -1914,8 +2210,18 @@ export default function ClientProposalPage() {
                   </span>
                 </div>
                 {paidAmount > 0 && (
-                  <div className="flex justify-between text-emerald-400 pt-1">
-                    <span>Paid / Advance Received</span>
+                  <div
+                    className={`flex justify-between pt-1 font-semibold ${
+                      overallPaymentStatus === "FULL"
+                        ? "text-emerald-400"
+                        : "text-amber-300"
+                    }`}
+                  >
+                    <span>
+                      {overallPaymentStatus === "FULL"
+                        ? "Full Payment Received (100%)"
+                        : `Partial Payment Received (${paidPercentage}%)`}
+                    </span>
                     <span className="font-mono">{formatPKR(paidAmount)}</span>
                   </div>
                 )}
@@ -1937,7 +2243,7 @@ export default function ClientProposalPage() {
                     <button
                       type="button"
                       onClick={() => setShowApprovalHistory((prev) => !prev)}
-                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#D4AF37] hover:underline cursor-pointer"
+                      className="no-print inline-flex items-center gap-1 text-[11px] font-semibold text-[#D4AF37] hover:underline cursor-pointer"
                     >
                       <History className="w-3 h-3" />
                       <span>{showApprovalHistory ? "Hide" : "View"} Approval History</span>
@@ -1948,6 +2254,17 @@ export default function ClientProposalPage() {
                     Your event dates and production crew tiers are locked in our studio
                     schedule.
                   </p>
+                  {adminEmailNotification?.sent && (
+                    <div className="rounded-lg border border-emerald-500/30 bg-[#0D0D0F]/70 px-3 py-2 text-[11px] text-emerald-200 flex items-center gap-2">
+                      <Mail className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                      <span>
+                        Admin email notification dispatched to{" "}
+                        <strong className="text-[#D4AF37]">
+                          {adminEmailNotification.recipient}
+                        </strong>
+                      </span>
+                    </div>
+                  )}
                   {event.approvedAt && (
                     <div className="text-[11px] font-mono text-emerald-300/90 pt-1 border-t border-emerald-500/20">
                       Accepted on {formatDateTimeStamp(event.approvedAt)}
@@ -1955,7 +2272,7 @@ export default function ClientProposalPage() {
                   )}
                 </div>
               ) : (
-                <form onSubmit={handleOpenConfirmApprovalModal} className="space-y-3">
+                <form onSubmit={handleOpenConfirmApprovalModal} className="no-print space-y-3">
                   <div>
                     <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#A39E93] mb-1">
                       Digital Signature (Your Full Name) *
@@ -2058,6 +2375,21 @@ export default function ClientProposalPage() {
             </div>
 
             <div className="p-6 space-y-4 text-xs">
+              {adminEmailNotification?.sent && (
+                <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 py-2.5 flex items-center gap-2.5 text-emerald-200">
+                  <Mail className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <div className="font-bold text-emerald-300">
+                      Studio Admin Email Notification Dispatched Immediately
+                    </div>
+                    <div className="text-[11px] text-emerald-200/85">
+                      Sent to <strong>{adminEmailNotification.recipient}</strong> ·{" "}
+                      {formatDateTimeStamp(adminEmailNotification.timestamp)}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Summary of Terms & Investment Being Approved */}
               <div className="rounded-xl border border-white/10 bg-[#0D0D0F] p-4 space-y-2">
                 <div className="flex justify-between">

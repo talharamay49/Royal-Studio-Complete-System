@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { ROYAL_BLUR_DATA_URL } from "@/lib/blur-placeholder";
+import { resolveAboutImageSrc } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 export type ThumbnailAspectRatio = "square" | "tall" | "wide" | "portrait" | "video";
@@ -54,7 +55,8 @@ export default function OptimizedThumbnail({
   children,
 }: OptimizedThumbnailProps) {
   const [hasError, setHasError] = useState(false);
-  const resolvedSrc = hasError ? "/portfolio/bridal-03-outdoor-tree.jpg" : src;
+  const sanitizedSrc = resolveAboutImageSrc(src, "/portfolio/bridal-03-outdoor-tree.jpg");
+  const resolvedSrc = hasError ? "/portfolio/bridal-03-outdoor-tree.jpg" : sanitizedSrc;
   const isRawImg =
     resolvedSrc.startsWith("data:") ||
     (/^https?:\/\//i.test(resolvedSrc) &&
@@ -79,6 +81,7 @@ export default function OptimizedThumbnail({
           alt={alt}
           loading={priority ? "eager" : "lazy"}
           referrerPolicy="no-referrer"
+          onError={() => setHasError(true)}
           className={cn(
             "h-full w-full object-cover transition-transform duration-700",
             FOCAL_CLASS_MAP[focalPoint],

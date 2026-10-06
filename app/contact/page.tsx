@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     url: `${siteConfig.url}/contact`,
     images: [
       {
-        url: "/portfolio/walima-01-couple-portrait.jpg",
+        url: "/portfolio/walima-01-reception-hall.jpg",
         width: 1200,
         height: 800,
         alt: "Contact Royal Studio — Luxury Wedding Photography & Filmmaking",
@@ -39,7 +39,7 @@ export const metadata: Metadata = {
     title: "Contact Royal Studio — Event & Wedding Booking",
     description:
       "Check availability for your wedding date and reserve your luxury photography & filmmaking package with Royal Studio.",
-    images: ["/portfolio/walima-01-couple-portrait.jpg"],
+    images: ["/portfolio/walima-01-reception-hall.jpg"],
   },
 };
 

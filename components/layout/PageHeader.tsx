@@ -22,8 +22,8 @@ export default function PageHeader({
   return (
     <section
       className={cn(
-        "relative flex min-h-[42vh] sm:min-h-[45vh] items-end pt-24 overflow-hidden",
-        dark ? "bg-primary text-secondary" : "bg-background text-primary",
+        "no-print relative flex min-h-[38vh] sm:min-h-[44vh] items-end pt-24 overflow-hidden",
+        dark ? "bg-[#111111] text-[#f5f2eb]" : "bg-background text-primary",
         className
       )}
     >
@@ -33,10 +33,17 @@ export default function PageHeader({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
         />
       )}
-      <div className="absolute inset-0 bg-[url('/portfolio/mehndi-01-chishtiya-taj-palace.jpg')] bg-cover bg-center opacity-20" />
-      <div className="absolute inset-0 bg-gradient-to-t from-primary via-primary/80 to-primary/40" />
+      <div className="absolute inset-0 bg-[url('/portfolio/mehndi-01-chishtiya-taj-palace.jpg')] bg-cover bg-center opacity-25" />
+      <div
+        className={cn(
+          "absolute inset-0 bg-gradient-to-t",
+          dark
+            ? "from-[#111111] via-[#111111]/80 to-[#111111]/40"
+            : "from-background via-background/80 to-background/40"
+        )}
+      />
 
-      <div className="relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-4 sm:px-6 pb-12 sm:pb-16 md:px-12">
+      <div className="relative z-10 mx-auto w-full max-w-7xl 2xl:max-w-[1600px] px-4 sm:px-6 pb-12 sm:pb-16 md:px-12 lg:px-20">
         <BreadcrumbNav
           items={breadcrumbs}
           variant={dark ? "hero" : "surface"}
@@ -46,7 +53,12 @@ export default function PageHeader({
           {title}
         </h1>
         {description && (
-          <p className="mt-3 sm:mt-4 max-w-2xl text-sm sm:text-base text-secondary/70 md:text-lg leading-relaxed">
+          <p
+            className={cn(
+              "mt-3 sm:mt-4 max-w-2xl text-sm sm:text-base md:text-lg leading-relaxed",
+              dark ? "text-[#f5f2eb]/75" : "text-text-muted"
+            )}
+          >
             {description}
           </p>
         )}

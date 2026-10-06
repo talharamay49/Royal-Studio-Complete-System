@@ -1599,7 +1599,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
       {/* ================= TAB 4: TESTIMONIALS ================= */}
       {activeTab === 'TESTIMONIALS' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-white p-4 rounded-2xl border border-gray-200">
             <div>
               <h3 className="text-sm font-bold text-gray-900">Client Testimonials &amp; Reviews</h3>
               <p className="text-xs text-gray-500">
@@ -1658,7 +1658,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
       {/* ================= TAB 5: BLOG / JOURNAL ================= */}
       {activeTab === 'BLOG' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-white p-4 rounded-2xl border border-gray-200">
             <div>
               <h3 className="text-sm font-bold text-gray-900">Journal &amp; Blog Posts (/blog)</h3>
               <p className="text-xs text-gray-500">
@@ -2026,7 +2026,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
             )}
 
             <div className="sm:col-span-2">
-              <div className="flex items-center justify-between mb-1">
+              <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
                 <label className="block text-xs font-bold text-gray-700">
                   Upload New Image OR Enter Image Path / URL *
                 </label>
@@ -2147,7 +2147,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
         title={editingPackageIndex !== null ? 'Edit Public Website Package' : 'Add Public Website Package'}
       >
         <form onSubmit={handleSavePackage} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">Package Name *</label>
               <input
@@ -2239,7 +2239,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
         title={editingServiceIndex !== null ? 'Edit Public Service' : 'Add Public Service'}
       >
         <form onSubmit={handleSaveService} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">Service Title *</label>
               <input
@@ -2353,7 +2353,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
               className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">Event Type</label>
               <input
@@ -2420,7 +2420,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
               className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs"
             />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">Category</label>
               <input
@@ -2442,7 +2442,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">Cover Image Path or Upload</label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 value={blogForm.image}

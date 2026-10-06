@@ -628,6 +628,31 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     } else {
       if (!db.cms.websiteCustomization) {
         db.cms.websiteCustomization = JSON.parse(JSON.stringify(defaultWebsiteCustomization));
+      } else if (db.cms.websiteCustomization.about) {
+        const abt = db.cms.websiteCustomization.about;
+        let abtMutated = false;
+        if (!abt.mainImage || abt.mainImage === '/portfolio/couple-01-garden-intimate.jpg') {
+          abt.mainImage = '/team/co-founders.webp';
+          abtMutated = true;
+        }
+        if (!abt.secondaryImage || abt.secondaryImage === '/portfolio/bridal-03-outdoor-tree.jpg') {
+          abt.secondaryImage = '/team/team.webp';
+          abtMutated = true;
+        }
+        if (Array.isArray(abt.founders)) {
+          abt.founders.forEach((f: any, idx: number) => {
+            if (!f.image || f.image === '/portfolio/groom-01-classic-sherwani.jpg') {
+              f.image = idx === 1 ? '/team/talha-ramay.webp' : '/team/muhammad-ramzan.webp';
+              abtMutated = true;
+            } else if (f.image === '/portfolio/boys-01-urban-portrait.jpg') {
+              f.image = '/team/talha-ramay.webp';
+              abtMutated = true;
+            }
+          });
+        }
+        if (abtMutated) {
+          dbInstance.save();
+        }
       }
       if (!Array.isArray(db.cms.connectedSocialAccounts) || db.cms.connectedSocialAccounts.length === 0) {
         db.cms.connectedSocialAccounts = JSON.parse(JSON.stringify(defaultConnectedSocialAccounts));

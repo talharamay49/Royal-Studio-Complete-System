@@ -42,6 +42,9 @@ interface MilestoneItem {
   dueDate: string;
   amount: number;
   isPaid: boolean;
+  coveredAmount?: number;
+  remainingAmount?: number;
+  paymentStatus?: "FULL" | "PARTIAL" | "UNPAID";
 }
 
 interface ProposalPrintPreviewModalProps {
@@ -277,7 +280,7 @@ export default function ProposalPrintPreviewModal({
                 <div className="text-[11px] text-slate-600">
                   Issued: {quotation.issueDate} · Valid Until: {quotation.validUntil}
                 </div>
-                <div className="pt-0.5">
+                <div className="pt-0.5 flex flex-wrap sm:justify-end gap-1.5">
                   <span
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                       isApproved
@@ -287,6 +290,23 @@ export default function ProposalPrintPreviewModal({
                   >
                     <CheckCircle2 className="w-3 h-3" />
                     {isApproved ? "Digitally Approved & Confirmed" : event.status}
+                  </span>
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                      paidAmount >= liveGrandTotal && liveGrandTotal > 0
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                        : paidAmount > 0
+                        ? "bg-amber-100 text-amber-900 border border-amber-300"
+                        : "bg-slate-100 text-slate-700 border border-slate-300"
+                    }`}
+                  >
+                    <CreditCard className="w-3 h-3" />
+                    Payment Status:{" "}
+                    {paidAmount >= liveGrandTotal && liveGrandTotal > 0
+                      ? "Full Payment (100%)"
+                      : paidAmount > 0
+                      ? `Partial Payment (${Math.round((paidAmount / Math.max(1, liveGrandTotal)) * 100)}%)`
+                      : "Pending Advance"}
                   </span>
                 </div>
               </div>
@@ -630,28 +650,39 @@ export default function ProposalPrintPreviewModal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {milestones.map((m, idx) => (
-                    <tr key={idx}>
-                      <td className="py-2 px-3">
-                        <div className="font-bold text-slate-900">{m.stage}</div>
-                        <div className="text-[10px] text-slate-500">{m.description}</div>
-                      </td>
-                      <td className="py-2 px-3">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                            m.isPaid
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          {m.isPaid ? "Completed" : `Due: ${m.dueDate}`}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
-                        {formatPKR(m.amount)}
-                      </td>
-                    </tr>
-                  ))}
+                  {milestones.map((m, idx) => {
+                    const statusType =
+                      m.paymentStatus ||
+                      (m.isPaid ? "FULL" : "UNPAID");
+                    return (
+                      <tr key={idx}>
+                        <td className="py-2 px-3">
+                          <div className="font-bold text-slate-900">{m.stage}</div>
+                          <div className="text-[10px] text-slate-500">{m.description}</div>
+                        </td>
+                        <td className="py-2 px-3">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                              statusType === "FULL"
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                : statusType === "PARTIAL"
+                                ? "bg-amber-100 text-amber-900 border border-amber-300"
+                                : "bg-slate-100 text-slate-700 border border-slate-200"
+                            }`}
+                          >
+                            {statusType === "FULL"
+                              ? "Payment Status: Full Payment"
+                              : statusType === "PARTIAL"
+                              ? `Payment Status: Partial (${formatPKR(m.coveredAmount || 0)} paid)`
+                              : `Due: ${m.dueDate}`}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                          {formatPKR(m.amount)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
 

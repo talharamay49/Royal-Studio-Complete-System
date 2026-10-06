@@ -203,10 +203,10 @@ export function getCanonical(path: string) {
 export const PRE_CACHED_SOCIAL_ASSETS: Record<string, string> = {
   default: "/portfolio/bridal-03-outdoor-tree.jpg",
   portfolio: "/portfolio/bridal-03-outdoor-tree.jpg",
-  bridal: "/portfolio/bridal-01-crimson-lehenga.jpg",
-  barat: "/portfolio/barat-01-royal-entry.jpg",
+  bridal: "/portfolio/bridal-01-mirror-portrait.jpg",
+  barat: "/portfolio/barat-01-shehroz-groom-ready.jpg",
   walima: "/portfolio/walima-04-grand-venue.jpg",
-  mehndi: "/portfolio/mehndi-01-vibrant-dance.jpg",
+  mehndi: "/portfolio/mehndi-01-chishtiya-taj-palace.jpg",
   couple: "/portfolio/couple-04-annum-ali-walima.jpg",
   services: "/portfolio/walima-04-grand-venue.jpg",
   pricing: "/portfolio/indoor-01-floral-ceiling-decor.jpg",

@@ -1043,6 +1043,26 @@ export function extractYoutubeId(rawInput?: string): string {
   return str;
 }
 
+export const LEGACY_ABOUT_IMAGE_MAP: Record<string, string> = {
+  "/portfolio/couple-01-garden-intimate.jpg": "/team/co-founders.webp",
+  "/portfolio/groom-01-classic-sherwani.jpg": "/team/muhammad-ramzan.webp",
+  "/portfolio/boys-01-urban-portrait.jpg": "/team/talha-ramay.webp",
+  "/portfolio/bridal-01-crimson-lehenga.jpg": "/portfolio/bridal-01-mirror-portrait.jpg",
+  "/portfolio/walima-01-couple-portrait.jpg": "/portfolio/walima-01-reception-hall.jpg",
+};
+
+export function resolveAboutImageSrc(
+  rawSrc: string | undefined | null,
+  fallbackSrc: string
+): string {
+  const trimmed = (rawSrc || "").trim();
+  if (!trimmed) return fallbackSrc;
+  if (LEGACY_ABOUT_IMAGE_MAP[trimmed]) {
+    return LEGACY_ABOUT_IMAGE_MAP[trimmed];
+  }
+  return trimmed;
+}
+
 export const defaultWebsiteCustomization: WebsiteCustomizationConfig = {
   sectionVisibility: {
     showHero: true,
@@ -1078,7 +1098,7 @@ export const defaultWebsiteCustomization: WebsiteCustomizationConfig = {
     ],
   },
   about: {
-    pageTitle: "About Royal Studio",
+    pageTitle: "Our Story",
     pageDescription:
       "Founded in 2018 by Muhammad Ramzan and Talha Ramay — crafting visual heirlooms across Pakistan.",
     homeLabel: "Our Story",
@@ -1099,8 +1119,8 @@ export const defaultWebsiteCustomization: WebsiteCustomizationConfig = {
       "Dedicated Creative Team",
       "Nationwide Coverage Across Pakistan",
     ],
-    mainImage: "/portfolio/couple-01-garden-intimate.jpg",
-    secondaryImage: "/portfolio/bridal-03-outdoor-tree.jpg",
+    mainImage: "/team/co-founders.webp",
+    secondaryImage: "/team/team.webp",
     badgeValue: "8+",
     badgeLabel: "Years of Excellence",
     foundersLabel: "Leadership",
@@ -1111,13 +1131,13 @@ export const defaultWebsiteCustomization: WebsiteCustomizationConfig = {
       {
         name: "Muhammad Ramzan",
         role: "Co-Founder & Lead Photographer",
-        image: "/portfolio/groom-01-classic-sherwani.jpg",
+        image: "/team/muhammad-ramzan.webp",
         bio: "Master of editorial bridal portraiture, lighting direction, and timeless wedding compositions.",
       },
       {
         name: "Talha Ramay",
         role: "Co-Founder & Creative Director",
-        image: "/portfolio/boys-01-urban-portrait.jpg",
+        image: "/team/talha-ramay.webp",
         bio: "Lead cinematographer and visual storyteller specializing in 4K wedding films and aerial direction.",
       },
     ],

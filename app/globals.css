@@ -229,3 +229,108 @@ html.dark .admin-portal-root textarea {
   color: var(--color-primary) !important;
   border-color: var(--color-border) !important;
 }
+
+/* ============================================================================
+   DEDICATED A4 PRINT STYLESHEET FOR PROPOSAL & STUDIO RECORDS
+   Ensures /proposal/[id] and A4 print previews print cleanly on standard A4
+   paper (210mm x 297mm) with minimal margins and hidden UI elements.
+   ============================================================================ */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  html,
+  body {
+    width: 100% !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    overflow: visible !important;
+    font-size: 10.5pt;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide site navigation, footers, floating widgets, modals, and interactive UI controls */
+  header,
+  nav,
+  footer,
+  .no-print,
+  [data-no-print="true"],
+  .fixed.bottom-4,
+  .fixed.bottom-6 {
+    display: none !important;
+  }
+
+  /* Proposal Page Direct A4 Print Normalization */
+  .proposal-print-page {
+    min-height: auto !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .proposal-print-page .max-w-5xl {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin: 0 !important;
+    gap: 10px !important;
+  }
+
+  .proposal-print-card {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    padding: 12px 14px !important;
+    margin-bottom: 10px !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .proposal-print-page h1,
+  .proposal-print-page h2,
+  .proposal-print-page h3,
+  .proposal-print-page h4,
+  .proposal-print-page strong,
+  .proposal-print-page td,
+  .proposal-print-page th {
+    color: #0f172a !important;
+  }
+
+  .proposal-print-page p,
+  .proposal-print-page span {
+    color: #334155 !important;
+  }
+
+  .proposal-print-page .payment-status-badge-full {
+    background-color: #d1fae5 !important;
+    color: #065f46 !important;
+    border: 1px solid #6ee7b7 !important;
+  }
+
+  .proposal-print-page .payment-status-badge-partial {
+    background-color: #fef3c7 !important;
+    color: #92400e !important;
+    border: 1px solid #fcd34d !important;
+  }
+
+  .proposal-print-page .payment-status-badge-unpaid {
+    background-color: #f1f5f9 !important;
+    color: #334155 !important;
+    border: 1px solid #cbd5e1 !important;
+  }
+
+  /* Prevent awkward splits across A4 page boundaries */
+  tr,
+  table,
+  .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

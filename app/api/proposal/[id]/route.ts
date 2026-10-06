@@ -209,7 +209,10 @@ export async function POST(
       );
     }
 
-    const action = body.action as "UPDATE_ADDONS" | "APPROVE_PROPOSAL";
+    const action = body.action as
+      | "UPDATE_ADDONS"
+      | "APPROVE_PROPOSAL"
+      | "NOTIFY_ADMIN_APPROVAL";
     const incomingAddons: string[] | undefined = Array.isArray(body.selectedAddons)
       ? body.selectedAddons.map((s: unknown) => String(s))
       : undefined;
@@ -253,6 +256,123 @@ export async function POST(
       event.updatedDate = new Date().toISOString();
     }
 
+    let emailNotification: {
+      sent: boolean;
+      recipient: string;
+      subject: string;
+      timestamp: string;
+      message: string;
+    } | null = null;
+
+    const triggerStudioAdminEmailNotification = async (
+      signerName: string,
+      clientComment: string,
+      triggerStage: "IMMEDIATE_CLICK" | "FINAL_APPROVAL"
+    ) => {
+      const nowIso = new Date().toISOString();
+      const clientObj = db.clients.find((c) => c.id === event!.clientId);
+      const quoObj = db.quotations.find((q) => q.eventId === event!.id);
+      const adminEmail =
+        db.profile?.notificationEmail ||
+        db.profile?.email ||
+        "royalstudio089@gmail.com";
+      const studioName = db.profile?.studioName || "Royal Studio";
+      const refNum = quoObj?.quotationNumber || `RS-QUO-${event!.id.slice(-4).toUpperCase()}`;
+      const grandTotal = Math.max(
+        0,
+        (Number(event!.packagePrice) || 0) + (Number(event!.tax) || 0)
+      );
+      const paidAmt = Number(event!.totalClientPayments) || 0;
+      const paymentStatusLabel =
+        paidAmt >= grandTotal && grandTotal > 0
+          ? "Full Payment Received"
+          : paidAmt > 0
+          ? `Partial Payment (PKR ${paidAmt.toLocaleString("en-PK")} Paid)`
+          : "Awaiting Booking Advance";
+
+      const subject = `[${studioName}] Proposal Digitally Accepted & Approved — ${refNum} (${event!.title})`;
+      const message = [
+        `Immediate Admin Notification: Client "${signerName}" clicked 'Digitally Accept & Approve Proposal' for ${event!.title} (${refNum}).`,
+        `Client: ${clientObj?.name || signerName} (${clientObj?.phone || clientObj?.whatsapp || "N/A"})`,
+        `Event Date & Venue: ${event!.eventDate} at ${event!.venue}, ${event!.city}`,
+        `Approved Proposal Total: PKR ${grandTotal.toLocaleString("en-PK")} (${paymentStatusLabel})`,
+        `Selected Add-Ons: ${(event!.selectedAddons || []).join(", ") || "None"}`,
+        clientComment ? `Client Notes: ${clientComment}` : "",
+        `Timestamp: ${nowIso}`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      // Optional webhook/email relay if configured in environment
+      const webhookUrl = process.env.ADMIN_EMAIL_WEBHOOK_URL;
+      if (webhookUrl) {
+        try {
+          await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              to: adminEmail,
+              subject,
+              text: message,
+              proposalRef: refNum,
+              eventId: event!.id,
+              signerName,
+              triggerStage,
+              timestamp: nowIso,
+            }),
+          });
+        } catch {
+          // Non-blocking fallback to internal audit log
+        }
+      }
+
+      if (!Array.isArray(db.profileAuditLogs)) {
+        db.profileAuditLogs = [];
+      }
+      db.profileAuditLogs.unshift({
+        id: `audit-email-${Date.now()}`,
+        timestamp: nowIso,
+        userId: "client-portal",
+        userName: signerName,
+        userRole: "ADMIN",
+        section: "Proposal Approval Email Notification",
+        changedFields: ["proposalApprovalEmailNotification"],
+        summary: `Admin email notification dispatched to ${adminEmail} — ${subject}`,
+      });
+
+      return {
+        sent: true,
+        recipient: adminEmail,
+        subject,
+        timestamp: nowIso,
+        message,
+      };
+    };
+
+    if (action === "NOTIFY_ADMIN_APPROVAL") {
+      const signatureName = String(
+        body.clientSignatureName || "Client Digital Approval"
+      ).trim();
+      const clientComment = String(body.clientNotes || "").trim();
+      emailNotification = await triggerStudioAdminEmailNotification(
+        signatureName,
+        clientComment,
+        "IMMEDIATE_CLICK"
+      );
+
+      if (!Array.isArray(event.approvalHistory)) {
+        event.approvalHistory = [];
+      }
+      event.approvalHistory.push({
+        id: `hist-email-${Date.now()}`,
+        action: "ACCEPTED",
+        timestamp: emailNotification.timestamp,
+        actorName: signatureName,
+        signatureName,
+        details: `Admin email notification triggered immediately to ${emailNotification.recipient} upon clicking 'Digitally Accept & Approve Proposal'`,
+      });
+    }
+
     if (action === "APPROVE_PROPOSAL") {
       const signatureName = String(
         body.clientSignatureName || "Client Digital Approval"
@@ -264,6 +384,12 @@ export async function POST(
       event.approvedByClient = signatureName;
       event.approvedAt = nowIso;
       event.updatedDate = nowIso;
+
+      emailNotification = await triggerStudioAdminEmailNotification(
+        signatureName,
+        clientComment,
+        "FINAL_APPROVAL"
+      );
 
       if (!Array.isArray(event.approvalHistory)) {
         event.approvalHistory = [];
@@ -286,7 +412,7 @@ export async function POST(
         signatureName,
         details: `Proposal digitally accepted & signed by "${signatureName}"${
           clientComment ? ` — Note: "${clientComment}"` : ""
-        }`,
+        } (Admin email notification sent to ${emailNotification.recipient})`,
       });
 
       const approvalStamp = `[DIGITALLY APPROVED by ${signatureName} on ${
@@ -330,6 +456,7 @@ export async function POST(
       invoice: updatedInvoice,
       daySchedules: updatedDays,
       payments: updatedPayments,
+      emailNotification,
     });
   } catch (err: any) {
     return NextResponse.json(

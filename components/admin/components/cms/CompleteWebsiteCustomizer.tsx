@@ -222,7 +222,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
       {/* ================= 1. SECTION VISIBILITY & HOMEPAGE LAYOUT ================= */}
       {activeSubTab === 'VISIBILITY' && (
         <div className="bg-white p-6 rounded-2xl border border-gray-200 space-y-5">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
             <div>
               <h4 className="text-sm font-bold text-gray-900">
                 Homepage Section Visibility &amp; Display Controls
@@ -398,7 +398,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
               <label className="block text-xs font-bold text-gray-700 mb-1">
                 Hero Fallback / Poster Image URL or Upload
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={draft.hero.posterImage}
@@ -407,7 +407,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                   }
                   className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-mono"
                 />
-                <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-amber-400 rounded-lg text-xs font-bold cursor-pointer">
+                <label className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-900 text-amber-400 rounded-lg text-xs font-bold cursor-pointer shrink-0">
                   <Upload className="w-3.5 h-3.5" />
                   <span>Upload Poster</span>
                   <input
@@ -428,7 +428,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
               <label className="block text-xs font-bold text-gray-700 mb-1">
                 Primary CTA Button Text &amp; Link
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="text"
                   value={draft.hero.primaryCtaLabel}
@@ -460,7 +460,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
               <label className="block text-xs font-bold text-gray-700 mb-1">
                 Secondary CTA Button Text &amp; Link
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="text"
                   value={draft.hero.secondaryCtaLabel}
@@ -491,7 +491,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
 
           {/* Floating Hero Stats */}
           <div className="pt-4 border-t border-gray-100 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="inline-flex items-center gap-2 text-xs font-bold text-gray-800 cursor-pointer">
                 <input
                   type="checkbox"
@@ -583,7 +583,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
               <label className="block text-xs font-bold text-gray-700 mb-1">
                 Home About Label &amp; Title
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <input
                   type="text"
                   value={draft.about.homeLabel}
@@ -600,7 +600,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                     setDraft((p) => ({ ...p, about: { ...p.about, homeTitle: e.target.value } }))
                   }
                   placeholder="Timeless Visual Stories Since 2018"
-                  className="col-span-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
+                  className="sm:col-span-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
                 />
               </div>
             </div>
@@ -609,7 +609,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
               <label className="block text-xs font-bold text-gray-700 mb-1">
                 Floating Badge Value &amp; Label
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <input
                   type="text"
                   value={draft.about.badgeValue}
@@ -626,7 +626,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                     setDraft((p) => ({ ...p, about: { ...p.about, badgeLabel: e.target.value } }))
                   }
                   placeholder="Weddings Captured"
-                  className="col-span-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs"
+                  className="sm:col-span-2 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs"
                 />
               </div>
             </div>
@@ -652,7 +652,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
               <label className="block text-xs font-bold text-gray-700 mb-1">
                 Main About Portrait Image
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={draft.about.mainImage}
@@ -661,7 +661,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                   }
                   className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-mono"
                 />
-                <label className="inline-flex items-center gap-1 px-3 py-2 bg-slate-900 text-amber-400 rounded-lg text-xs font-bold cursor-pointer">
+                <label className="inline-flex items-center justify-center gap-1 px-3 py-2 bg-slate-900 text-amber-400 rounded-lg text-xs font-bold cursor-pointer shrink-0">
                   <Upload className="w-3.5 h-3.5" />
                   <span>Upload</span>
                   <input
@@ -682,7 +682,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
               <label className="block text-xs font-bold text-gray-700 mb-1">
                 Secondary Inset Image (/about Page)
               </label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
                   value={draft.about.secondaryImage}
@@ -694,7 +694,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                   }
                   className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-mono"
                 />
-                <label className="inline-flex items-center gap-1 px-3 py-2 bg-slate-900 text-amber-400 rounded-lg text-xs font-bold cursor-pointer">
+                <label className="inline-flex items-center justify-center gap-1 px-3 py-2 bg-slate-900 text-amber-400 rounded-lg text-xs font-bold cursor-pointer shrink-0">
                   <Upload className="w-3.5 h-3.5" />
                   <span>Upload</span>
                   <input
@@ -754,7 +754,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
 
           {/* Founders Editor */}
           <div className="pt-4 border-t border-gray-100 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
                 Founders &amp; Leadership Profiles (/about)
               </h5>
@@ -790,7 +790,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                   key={idx}
                   className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-2.5"
                 >
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <input
                       type="text"
                       value={f.name}
@@ -800,7 +800,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                         setDraft((p) => ({ ...p, about: { ...p.about, founders: next } }));
                       }}
                       placeholder="Founder Name"
-                      className="flex-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold"
+                      className="flex-1 min-w-[140px] px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold"
                     />
                     <input
                       type="text"
@@ -811,7 +811,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                         setDraft((p) => ({ ...p, about: { ...p.about, founders: next } }));
                       }}
                       placeholder="Co-Founder"
-                      className="w-40 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs"
+                      className="w-full sm:w-40 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs"
                     />
                     <button
                       type="button"
@@ -898,7 +898,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                   value={channelInput}
                   onChange={(e) => setChannelInput(e.target.value)}
                   placeholder="https://www.youtube.com/@royalstudio089"
-                  className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-xs font-mono w-64"
+                  className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-xs font-mono w-full sm:w-64"
                 />
                 <button
                   type="button"
@@ -951,7 +951,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
 
             {/* Quick Link by YouTube Video URL Bar */}
             <div className="p-4 bg-slate-950 text-white rounded-2xl border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="inline-flex items-center gap-2 text-xs font-bold text-amber-400">
                   <Link2 className="w-4 h-4" />
                   <span>Quick Link Video from YouTube URL or Video ID</span>
@@ -1359,7 +1359,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
             {/* Featured Showreel Configuration + Live Preview */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start p-4 bg-slate-50 rounded-2xl border border-slate-200">
               <div className="lg:col-span-7 space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-700">
                     <Video className="w-4 h-4" />
                     <span>Featured Showreel Configuration (Homepage Cinema Player)</span>
@@ -1541,8 +1541,8 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                       key={film.id || idx}
                       className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-3"
                     >
-                      <div className="flex gap-3">
-                        <div className="relative w-36 aspect-video rounded-xl overflow-hidden bg-slate-950 shrink-0 border border-gray-300">
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <div className="relative w-full sm:w-36 aspect-video rounded-xl overflow-hidden bg-slate-950 shrink-0 border border-gray-300">
                           <img
                             src={`https://i.ytimg.com/vi/${cleanFilmYtId}/hqdefault.jpg`}
                             alt={film.title}
@@ -1563,7 +1563,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                         </div>
 
                         <div className="flex-1 min-w-0 space-y-2">
-                          <div className="flex items-center justify-between gap-1.5">
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
                             <span className="px-2 py-0.5 rounded bg-slate-900 text-amber-400 text-[10px] font-bold font-mono">
                               Film #{idx + 1}
                             </span>
@@ -1753,7 +1753,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
         <div className="space-y-6">
           {/* Home Services Cards */}
           <div className="bg-white p-6 rounded-2xl border border-gray-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
               <div>
                 <h4 className="text-sm font-bold text-gray-900">
                   Home Services Preview Cards &amp; Portfolio Heading
@@ -1883,7 +1883,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Process Steps */}
             <div className="bg-white p-6 rounded-2xl border border-gray-200 space-y-4">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
                 <h4 className="text-sm font-bold text-gray-900">Wedding Process Timeline Steps</h4>
                 <button
                   type="button"
@@ -1967,7 +1967,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
 
             {/* Statistics Bar */}
             <div className="bg-white p-6 rounded-2xl border border-gray-200 space-y-4">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
                 <h4 className="text-sm font-bold text-gray-900">Statistics Counter Bar</h4>
                 <button
                   type="button"
@@ -2047,7 +2047,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
       {activeSubTab === 'FAQ_CTA' && (
         <div className="space-y-6">
           <div className="bg-white p-6 rounded-2xl border border-gray-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3">
               <div>
                 <h4 className="text-sm font-bold text-gray-900">
                   Frequently Asked Questions (FAQ Accordion)
@@ -2278,7 +2278,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
 
           {/* Navigation Links Manager */}
           <div className="pt-4 border-t border-gray-100 space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
                 Navigation Bar &amp; Quick Links
               </h5>
@@ -2459,7 +2459,7 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
         }
       >
         <div className="space-y-4">
-          <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-xs">
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 font-bold text-red-900">
               <Youtube className="w-4 h-4 text-red-600" />
               <span>

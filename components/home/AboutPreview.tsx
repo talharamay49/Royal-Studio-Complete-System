@@ -1,9 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Check } from "lucide-react";
-import { aboutHighlights, siteConfig } from "@/lib/data";
+import { aboutHighlights, siteConfig, resolveAboutImageSrc } from "@/lib/data";
 import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import { ROYAL_BLUR_DATA_URL } from "@/lib/blur-placeholder";
 import SectionHeading from "@/components/shared/SectionHeading";
@@ -14,6 +15,7 @@ export default function AboutPreview() {
   const { websiteCustomization } = usePublicWebsiteCMS();
   const vis = websiteCustomization?.sectionVisibility;
   const aboutCfg = websiteCustomization?.about;
+  const [imgError, setImgError] = useState(false);
 
   if (vis && vis.showAboutPreview === false) {
     return null;
@@ -28,7 +30,9 @@ export default function AboutPreview() {
     aboutCfg?.highlights && aboutCfg.highlights.length > 0
       ? aboutCfg.highlights
       : aboutHighlights;
-  const mainImage = aboutCfg?.mainImage || "/team/co-founders.webp";
+  const mainImage = imgError
+    ? "/team/co-founders.webp"
+    : resolveAboutImageSrc(aboutCfg?.mainImage, "/team/co-founders.webp");
   const badgeValue = aboutCfg?.badgeValue || "3000+";
   const badgeLabel = aboutCfg?.badgeLabel || "Weddings Captured";
   const ctaLabel = aboutCfg?.homeCtaLabel || "Our Story";
@@ -69,7 +73,8 @@ export default function AboutPreview() {
                     src={mainImage}
                     alt="Royal Studio founders and team"
                     referrerPolicy="no-referrer"
-                    className="h-full w-full object-cover"
+                    onError={() => setImgError(true)}
+                    className="h-full w-full object-cover object-top"
                   />
                 ) : (
                   <Image
@@ -79,7 +84,8 @@ export default function AboutPreview() {
                     placeholder="blur"
                     blurDataURL={ROYAL_BLUR_DATA_URL}
                     referrerPolicy="no-referrer"
-                    className="object-cover"
+                    onError={() => setImgError(true)}
+                    className="object-cover object-top"
                     sizes="(max-width: 1024px) 100vw, 50vw"
                   />
                 )}

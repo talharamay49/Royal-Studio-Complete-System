@@ -1277,7 +1277,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
                 {/* Extra Video / YouTube Actions: Link to Wedding Films or Set as Showreel */}
                 {video && (
-                  <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-gray-200/70">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 border-t border-gray-200/70">
                     <button
                       type="button"
                       disabled={isSaving}
@@ -1323,7 +1323,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
         }
       >
         <form onSubmit={handleSaveAccount} className="space-y-4">
-          <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-200">
             <div>
               <div className="text-xs font-bold text-slate-900">Profile Connection Status</div>
               <div className="text-[11px] text-gray-500">
@@ -1491,7 +1491,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
             <label className="block text-xs font-bold text-gray-700 mb-1">
               Social Post or YouTube Video URL
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 value={newPostForm.permalink}
@@ -1572,7 +1572,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
             <label className="block text-xs font-bold text-gray-700 mb-1">
               Thumbnail / Photo URL or Upload Image *
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 required
@@ -1602,7 +1602,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">Category</label>
               <select

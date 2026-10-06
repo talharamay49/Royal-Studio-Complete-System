@@ -1213,15 +1213,15 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
     <div className="space-y-6">
       {/* Top Breadcrumb & Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start sm:items-center gap-3">
           <button
             onClick={() => navigate('/events')}
-            className="p-2 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors"
+            className="p-2 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors shrink-0"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-bold text-gray-900">{event.title}</h2>
               <StatusBadge status={event.status} />
               <select
@@ -1235,7 +1235,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
                     addToast(err.message || 'Failed to update status', 'error');
                   }
                 }}
-                className="text-xs font-semibold px-2 py-1 rounded-lg border border-gray-300 bg-white text-gray-800 hover:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs cursor-pointer ml-1"
+                className="text-xs font-semibold px-2 py-1 rounded-lg border border-gray-300 bg-white text-gray-800 hover:border-amber-400 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-2xs cursor-pointer"
                 title="Quick Change Event Status"
               >
                 <option value="Inquiry">Inquiry</option>
@@ -1249,7 +1249,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
                 <option value="Cancelled">Cancelled</option>
               </select>
             </div>
-            <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+            <div className="text-xs text-gray-500 flex flex-wrap items-center gap-2 mt-0.5">
               <span>{formatDate(event.eventDate)}</span>
               <span>•</span>
               <span>{event.venue}</span>
@@ -1376,9 +1376,9 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
       {(detectedConflicts.crewConflicts.length > 0 ||
         detectedConflicts.gearConflicts.length > 0) && (
         <div className="p-4 rounded-xl bg-rose-50 border-2 border-rose-300 shadow-xs space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-rose-600 text-white">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2.5">
+              <div className="p-2 rounded-lg bg-rose-600 text-white shrink-0">
                 <AlertTriangle className="w-4 h-4" />
               </div>
               <div>
@@ -1504,7 +1504,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
             <div className="space-y-1">
               <div className="text-xs font-bold uppercase text-gray-400">Client Information</div>
               <div className="text-base font-bold text-gray-900">{client?.name}</div>
-              <div className="text-xs text-gray-600 flex items-center gap-3">
+              <div className="text-xs text-gray-600 flex flex-wrap items-center gap-3">
                 <span className="flex items-center gap-1">
                   <Phone className="w-3.5 h-3.5 text-gray-400" /> {client?.phone}
                 </span>
@@ -1913,14 +1913,14 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
           {/* TAB 2: CREW PANEL */}
           {activeTab === 'crew' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Assigned Production Crew</h3>
                   <p className="text-xs text-gray-500">
                     Lead photographers, cinematographers, drone pilots, and lighting techs
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={handleAutoAssign}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-slate-950 rounded-lg text-xs font-bold hover:bg-amber-400 transition-colors cursor-pointer shadow-xs"
@@ -1939,8 +1939,8 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-hidden">
-                <table className="w-full text-left text-xs">
+              <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[520px]">
                   <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider border-b border-gray-100">
                     <tr>
                       <th className="py-2.5 px-3">Team Member</th>
@@ -1994,7 +1994,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
           {/* TAB 3: EQUIPMENT PANEL */}
           {activeTab === 'equipment' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Assigned Equipment & Cameras</h3>
                   <p className="text-xs text-gray-500">
@@ -2010,8 +2010,8 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
                 </button>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-hidden">
-                <table className="w-full text-left text-xs">
+              <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[520px]">
                   <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider border-b border-gray-100">
                     <tr>
                       <th className="py-2.5 px-3">Equipment</th>
@@ -2067,7 +2067,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
           {/* TAB 4: EXPENSES PANEL */}
           {activeTab === 'expenses' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Event Field Expenses</h3>
                   <p className="text-xs text-gray-500">
@@ -2083,8 +2083,8 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
                 </button>
               </div>
 
-              <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-hidden">
-                <table className="w-full text-left text-xs">
+              <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[480px]">
                   <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider border-b border-gray-100">
                     <tr>
                       <th className="py-2.5 px-3">Category</th>
@@ -2128,7 +2128,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
           {/* TAB 5: TASKS PANEL */}
           {activeTab === 'tasks' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Post-Production Pipeline</h3>
                   <p className="text-xs text-gray-500">
@@ -2192,12 +2192,12 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
           {/* TAB 6: BILLING & PAYMENTS */}
           {activeTab === 'billing' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-bold text-gray-900">Client Payments & Invoices</h3>
                   <p className="text-xs text-gray-500">Verified transaction receipts and invoice generation</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setPreviewDoc('QUOTATION')}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-bold text-blue-900 hover:bg-blue-100 shadow-xs cursor-pointer"
@@ -2231,7 +2231,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
 
               {/* 3-Stage Payment Milestone Schedule & WhatsApp Reminders */}
               <div className="p-4 bg-white rounded-xl border border-gray-200 shadow-xs space-y-3">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900">
                       Installment & Payment Milestone Schedule (30% / 60% / 10%)
@@ -2316,8 +2316,8 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
               </div>
 
               {/* Payments List */}
-              <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-hidden">
-                <table className="w-full text-left text-xs">
+              <div className="bg-white rounded-xl border border-gray-100 shadow-xs overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[480px]">
                   <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider border-b border-gray-100">
                     <tr>
                       <th className="py-2.5 px-3">Receipt / Ref</th>
@@ -2530,7 +2530,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
         maxWidth="2xl"
       >
         <form onSubmit={handleAddDay} className="space-y-3">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Day Number</label>
               <input
@@ -2569,7 +2569,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
           {/* Visual Per-Day Service & Tier Slot Builder */}
           {renderServiceSlotEditor('ADD')}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Date</label>
               <input
@@ -2682,7 +2682,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
         maxWidth="2xl"
       >
         <form onSubmit={handleUpdateDay} className="space-y-3">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Day Number</label>
               <input
@@ -2721,7 +2721,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
           {/* Visual Per-Day Service & Tier Slot Builder */}
           {renderServiceSlotEditor('EDIT')}
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Date</label>
               <input
@@ -2859,7 +2859,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Role</label>
               <select
@@ -2937,7 +2937,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Quantity</label>
               <input
@@ -2987,7 +2987,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
         title="Record Event Field Expense"
       >
         <form onSubmit={handleAddExpense} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Expense Category</label>
               <select
@@ -3066,7 +3066,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Assignee</label>
               <select
@@ -3143,7 +3143,7 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
         title="Record Client Payment / Advance Deposit"
       >
         <form onSubmit={handleAddPayment} className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">Amount (PKR) *</label>
               <input
