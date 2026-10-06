@@ -29,8 +29,12 @@ function sanitizeStr(val: unknown, maxLen = 400): string {
 export async function GET() {
   const db = await dbInstance.ensureHydrated();
   const savedConfig = (db.cms as any)?.chatbotConfig;
+  const savedAdminCopilot = (db.cms as any)?.adminCopilotConfig;
   const config = sanitizeChatbotConfig(savedConfig || defaultChatbotConfig);
-  return NextResponse.json({ chatbotConfig: config });
+  return NextResponse.json({
+    chatbotConfig: config,
+    adminCopilotConfig: savedAdminCopilot || null,
+  });
 }
 
 export async function PUT(req: Request) {
@@ -61,11 +65,15 @@ export async function PUT(req: Request) {
     };
   }
   (db.cms as any).chatbotConfig = cleanConfig;
+  if (body.adminCopilotConfig) {
+    (db.cms as any).adminCopilotConfig = body.adminCopilotConfig;
+  }
   await dbInstance.save();
 
   return NextResponse.json({
     success: true,
     chatbotConfig: cleanConfig,
+    adminCopilotConfig: (db.cms as any).adminCopilotConfig || null,
   });
 }
 
@@ -81,6 +89,11 @@ export async function POST(req: Request) {
 
     if (action === "GENERATE_REPLY") {
       const userMessage = sanitizeStr(body.message, 800);
+      const preferredLang: "AUTO" | "EN" | "ROMAN_URDU" =
+        body.preferredLang === "EN" || body.preferredLang === "ROMAN_URDU"
+          ? body.preferredLang
+          : "AUTO";
+
       const draft: ChatbotInquiryDraft = {
         eventTypeId: body.draft?.eventTypeId,
         eventTypeLabel: body.draft?.eventTypeLabel,
@@ -96,7 +109,12 @@ export async function POST(req: Request) {
         clientPhone: body.draft?.clientPhone,
       };
 
-      const localMatch = matchKnowledgeBaseAndRespond(userMessage, storedConfig, draft);
+      const localMatch = matchKnowledgeBaseAndRespond(
+        userMessage,
+        storedConfig,
+        draft,
+        preferredLang
+      );
       const mergedDraft: ChatbotInquiryDraft = {
         ...draft,
         ...(localMatch.extractedDraftUpdates || {}),
@@ -121,6 +139,11 @@ export async function POST(req: Request) {
             )
             .join("\n");
 
+          const langDirective =
+            localMatch.detectedLanguage === "ROMAN_URDU"
+              ? "IMPORTANT LANGUAGE RULE: Reply in natural, polite Roman Urdu (using English alphabet, e.g., 'Ji bilkul, hamara Signature Package...')."
+              : "IMPORTANT LANGUAGE RULE: Reply in refined, warm Professional English.";
+
           const systemPrompt = [
             storedConfig.systemInstructions,
             "\nCRITICAL STUDIO RULES TO FOLLOW:",
@@ -129,12 +152,13 @@ export async function POST(req: Request) {
             kbText,
             `\nLIVE CLIENT ESTIMATE CONTEXT: Event=${estimate.eventTypeLabel}, City=${estimate.city}, Coverage=${estimate.coverageTierLabel}, Add-ons=${
               estimate.selectedAddons.map((a) => a.label).join(", ") || "None"
-            }, Estimated Total=PKR ${estimate.estimatedTotalPKR.toLocaleString()}, 50% Deposit=PKR ${estimate.depositAmountPKR.toLocaleString()}.`,
-            "\nKeep your response concise (2 to 4 sentences), warm, editorial, and accurate to Royal Studio's PKR rates.",
+            }, Estimated Total=PKR ${estimate.estimatedTotalPKR.toLocaleString()}, ${estimate.depositPercent}% Deposit=PKR ${estimate.depositAmountPKR.toLocaleString()}.`,
+            langDirective,
+            "\nKeep your response concise (2 to 3 sentences), warm, editorial, and accurate to Royal Studio's PKR rates.",
           ].join("\n");
 
           const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model: "gemini-3.8-flash",
             contents: userMessage,
             config: {
               systemInstruction: systemPrompt,
@@ -148,6 +172,7 @@ export async function POST(req: Request) {
               matchedKnowledgeTitle: localMatch.matchedEntry?.title || "AI Trained Concierge",
               extractedDraftUpdates: localMatch.extractedDraftUpdates,
               estimate,
+              detectedLanguage: localMatch.detectedLanguage,
               engineUsed: "HYBRID_GEMINI_FREE",
             });
           }
@@ -161,6 +186,7 @@ export async function POST(req: Request) {
         matchedKnowledgeTitle: localMatch.matchedEntry?.title,
         extractedDraftUpdates: localMatch.extractedDraftUpdates,
         estimate,
+        detectedLanguage: localMatch.detectedLanguage,
         engineUsed: "LOCAL_ENGINE",
       });
     }

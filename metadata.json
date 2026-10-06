@@ -1,5 +1,7 @@
 {
   "name": "Royal Studio",
   "description": "Luxury Wedding Photography & Cinematic Filmmaking in Pakistan",
-  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"],
+  "requestFramePermissions": ["microphone"]
 }

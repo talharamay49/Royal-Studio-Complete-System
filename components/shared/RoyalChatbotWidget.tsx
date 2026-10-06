@@ -22,18 +22,32 @@ import {
   ShieldCheck,
   Calculator,
   Bot,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Globe,
+  Move,
 } from "lucide-react";
 import {
   defaultChatbotConfig,
   loadChatbotConfigFromLocal,
   calculateChatbotEstimate,
   matchKnowledgeBaseAndRespond,
+  speakBotText,
+  stopBotSpeech,
   CHATBOT_SYNC_CHANNEL,
   type ChatbotConfig,
   type ChatbotInquiryDraft,
   type ChatbotMessage,
 } from "@/lib/chatbot/chatbotEngine";
 import { usePublicStudioProfile } from "@/components/shared/StudioProfileContext";
+
+const CHATBOT_POS_STORAGE_KEY = "royal_chatbot_floating_pos_v2";
+
+function clampVal(val: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, val));
+}
 
 export default function RoyalChatbotWidget() {
   const pathname = usePathname();
@@ -44,6 +58,132 @@ export default function RoyalChatbotWidget() {
   const [activeStep, setActiveStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [preferredLang, setPreferredLang] = useState<"AUTO" | "EN" | "ROMAN_URDU">("AUTO");
+  const [voiceTtsEnabled, setVoiceTtsEnabled] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [pos, setPos] = useState<{ right: number; bottom: number }>({
+    right: 16,
+    bottom: 16,
+  });
+  const [viewport, setViewport] = useState<{ width: number; height: number }>({
+    width: 1200,
+    height: 800,
+  });
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const dragStateRef = useRef<{
+    active: boolean;
+    moved: boolean;
+    startX: number;
+    startY: number;
+    startRight: number;
+    startBottom: number;
+  }>({
+    active: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    startRight: 16,
+    startBottom: 16,
+  });
+  const recognitionRef = useRef<any>(null);
+
+  const clampPositionToViewport = useCallback((rawRight: number, rawBottom: number) => {
+    if (typeof window === "undefined") return { right: 16, bottom: 16 };
+    const btnW = buttonRef.current?.offsetWidth || 44;
+    const btnH = buttonRef.current?.offsetHeight || 44;
+    const margin = 12;
+    const topSafeMargin = 72;
+    const maxRight = Math.max(margin, window.innerWidth - btnW - margin);
+    const maxBottom = Math.max(margin, window.innerHeight - btnH - topSafeMargin);
+    return {
+      right: clampVal(rawRight, margin, maxRight),
+      bottom: clampVal(rawBottom, margin, maxBottom),
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setViewport({ width: window.innerWidth, height: window.innerHeight });
+    try {
+      // Remove legacy unconstrained offset key if present
+      window.localStorage.removeItem("royal_chatbot_floating_pos_v1");
+      const saved = window.localStorage.getItem(CHATBOT_POS_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.right === "number" && typeof parsed?.bottom === "number") {
+          setPos(clampPositionToViewport(parsed.right, parsed.bottom));
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    const handleResize = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+      setPos((prev) => clampPositionToViewport(prev.right, prev.bottom));
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [clampPositionToViewport]);
+
+  const handleResetPosition = () => {
+    const def = { right: 16, bottom: 16 };
+    setPos(def);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(CHATBOT_POS_STORAGE_KEY);
+      } catch {
+        // Ignore
+      }
+    }
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragStateRef.current = {
+      active: true,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      startRight: pos.right,
+      startBottom: pos.bottom,
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    if (!dragStateRef.current.active) return;
+    const dx = e.clientX - dragStateRef.current.startX;
+    const dy = e.clientY - dragStateRef.current.startY;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      dragStateRef.current.moved = true;
+    }
+    if (dragStateRef.current.moved) {
+      const next = clampPositionToViewport(
+        dragStateRef.current.startRight - dx,
+        dragStateRef.current.startBottom - dy
+      );
+      setPos(next);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLElement>) => {
+    if (!dragStateRef.current.active) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+    const wasMoved = dragStateRef.current.moved;
+    dragStateRef.current.active = false;
+    if (wasMoved && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(CHATBOT_POS_STORAGE_KEY, JSON.stringify(pos));
+      } catch {
+        // Ignore
+      }
+    }
+  };
 
   // Inquiry draft state for the 4-step decision tree + auto-calculator
   const [draft, setDraft] = useState<ChatbotInquiryDraft>(() => ({
@@ -423,8 +563,8 @@ export default function RoyalChatbotWidget() {
     appendMessages(userMsg);
     setIsTyping(true);
 
-    // 1. Instant local pattern-matching & Knowledge Base lookup
-    const localResult = matchKnowledgeBaseAndRespond(query, config, draft);
+    // 1. Instant local pattern-matching & Knowledge Base lookup (supports English, Roman Urdu, Urdu script)
+    const localResult = matchKnowledgeBaseAndRespond(query, config, draft, preferredLang);
     if (localResult.extractedDraftUpdates) {
       setDraft((prev) => ({ ...prev, ...localResult.extractedDraftUpdates }));
     }
@@ -438,17 +578,19 @@ export default function RoyalChatbotWidget() {
           body: JSON.stringify({
             action: "GENERATE_REPLY",
             message: query,
+            preferredLang,
             draft: { ...draft, ...(localResult.extractedDraftUpdates || {}) },
             configOverride: config,
           }),
         });
         if (res.ok) {
           const data = await res.json();
+          const finalReply = data.reply || localResult.reply;
           setIsTyping(false);
           appendMessages({
             id: `bot-r-${Date.now()}`,
             sender: "bot",
-            text: data.reply || localResult.reply,
+            text: finalReply,
             timestamp: new Date().toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
@@ -461,6 +603,9 @@ export default function RoyalChatbotWidget() {
               query.toLowerCase().includes("quote") ||
               query.toLowerCase().includes("package"),
           });
+          if (voiceTtsEnabled) {
+            speakBotText(finalReply);
+          }
           return;
         }
       } catch {
@@ -485,61 +630,202 @@ export default function RoyalChatbotWidget() {
           query.toLowerCase().includes("quote") ||
           query.toLowerCase().includes("package"),
       });
+      if (voiceTtsEnabled) {
+        speakBotText(localResult.reply);
+      }
     }, 280);
+  };
+
+  const toggleVoiceInput = () => {
+    if (typeof window === "undefined") return;
+    if (isListening && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // Ignore
+      }
+      setIsListening(false);
+      return;
+    }
+
+    const SpeechRec =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRec) {
+      appendMessages({
+        id: `bot-voice-err-${Date.now()}`,
+        sender: "bot",
+        text: "Voice input is supported in Chrome/Edge/Safari browsers. You can still type in English or Roman Urdu below!",
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      });
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRec();
+      recognition.lang = preferredLang === "ROMAN_URDU" ? "ur-PK" : "en-US";
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+      recognition.onerror = () => setIsListening(false);
+      recognition.onresult = (event: any) => {
+        const transcript = event.results?.[0]?.[0]?.transcript;
+        if (transcript && transcript.trim()) {
+          setInputText(transcript.trim());
+          void handleSendText(transcript.trim());
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      setIsListening(false);
+    }
   };
 
   if (pathname?.startsWith("/admin") || !config.enabled) {
     return null;
   }
 
+  const isMobileViewport = viewport.width < 640;
+  const btnHeight = buttonRef.current?.offsetHeight || (isMobileViewport ? 44 : 54);
+  const panelWidth = isMobileViewport
+    ? Math.max(280, viewport.width - 24)
+    : Math.min(420, viewport.width - 24);
+  const panelRight = isMobileViewport
+    ? 12
+    : clampVal(pos.right, 12, Math.max(12, viewport.width - panelWidth - 12));
+  const minPanelHeight = Math.min(480, Math.max(300, viewport.height - 96));
+  const rawPanelBottom = pos.bottom + btnHeight + 10;
+  const maxPanelBottom = Math.max(12, viewport.height - minPanelHeight - 16);
+  const panelBottom = clampVal(rawPanelBottom, 12, maxPanelBottom);
+  const panelMaxHeight = Math.max(
+    280,
+    Math.min(640, viewport.height - panelBottom - 16)
+  );
+
   return (
-    <div className="no-print fixed bottom-5 right-5 z-50 flex flex-col items-end">
-      {/* Chat Window Modal / Panel */}
+    <>
+      {/* Viewport-Clamped Chat Window Modal / Panel (never overflows screen) */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 18, scale: 0.96 }}
+            initial={{ opacity: 0, y: 14, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 18, scale: 0.96 }}
+            exit={{ opacity: 0, y: 14, scale: 0.96 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="mb-3 w-[calc(100vw-2rem)] sm:w-[420px] max-h-[82vh] flex flex-col rounded-2xl border border-[#C9A76A]/35 bg-[#111113]/95 backdrop-blur-xl text-[#F5F2EB] shadow-[0_24px_70px_rgba(0,0,0,0.75)] overflow-hidden"
+            style={{
+              right: `${panelRight}px`,
+              bottom: `${panelBottom}px`,
+              width: `${panelWidth}px`,
+              maxHeight: `${panelMaxHeight}px`,
+            }}
+            className="no-print fixed z-50 flex flex-col rounded-2xl border border-[#C9A76A]/35 bg-[#111113]/95 backdrop-blur-xl text-[#F5F2EB] shadow-[0_24px_70px_rgba(0,0,0,0.75)] overflow-hidden select-text"
           >
-            {/* Luxury Charcoal & Brass Header */}
-            <div className="px-4 py-3.5 bg-gradient-to-r from-[#16161A] via-[#1C1A17] to-[#16161A] border-b border-[#C9A76A]/25 flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#C9A76A]/15 border border-[#C9A76A]/40 text-[#C9A76A]">
-                  <Bot className="w-5 h-5" />
-                  <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3">
+            {/* Luxury Charcoal & Brass Header (Also acts as drag handle) */}
+            <div
+              onPointerDown={(e) => {
+                if ((e.target as HTMLElement).closest("button")) return;
+                handlePointerDown(e);
+              }}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              style={{ touchAction: "none" }}
+              className="px-3.5 py-3 bg-gradient-to-r from-[#16161A] via-[#1C1A17] to-[#16161A] border-b border-[#C9A76A]/25 flex items-center justify-between gap-2 shrink-0 cursor-grab active:cursor-grabbing select-none"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#C9A76A]/15 border border-[#C9A76A]/40 text-[#C9A76A]">
+                  <Bot className="w-4 h-4" />
+                  <span className="absolute -bottom-0.5 -right-0.5 flex h-2.5 w-2.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border-2 border-[#111113]" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border-2 border-[#111113]" />
                   </span>
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <h3 className="font-display text-base font-semibold tracking-wide text-[#F5F2EB] truncate">
+                    <h3 className="font-display text-sm sm:text-base font-semibold tracking-wide text-[#F5F2EB] truncate">
                       {config.botName}
                     </h3>
                   </div>
-                  <p className="text-[11px] text-[#C9A76A] font-medium truncate">
-                    {config.statusLabel}
+                  <p className="text-[10px] text-[#C9A76A] font-medium truncate">
+                    {config.statusLabel} · EN / Roman Urdu
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
+                {/* Language Switcher: Auto / EN / Roman Urdu */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPreferredLang((prev) =>
+                      prev === "AUTO" ? "ROMAN_URDU" : prev === "ROMAN_URDU" ? "EN" : "AUTO"
+                    )
+                  }
+                  title="Switch Reply Language (Auto / Roman Urdu / English)"
+                  className="px-2 py-1 rounded-lg border border-white/15 bg-white/5 hover:border-[#C9A76A] text-[10px] font-semibold text-[#C9A76A] flex items-center gap-1 cursor-pointer"
+                >
+                  <Globe className="w-3 h-3" />
+                  <span>
+                    {preferredLang === "AUTO"
+                      ? "Auto"
+                      : preferredLang === "ROMAN_URDU"
+                      ? "Roman Urdu"
+                      : "EN"}
+                  </span>
+                </button>
+
+                {/* Voice Synthesis (TTS) Speaker Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = !voiceTtsEnabled;
+                    setVoiceTtsEnabled(next);
+                    if (!next) stopBotSpeech();
+                  }}
+                  title={voiceTtsEnabled ? "Mute Voice Responses" : "Enable Voice (TTS) Responses"}
+                  className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                    voiceTtsEnabled
+                      ? "border-[#C9A76A] bg-[#C9A76A]/20 text-[#C9A76A]"
+                      : "border-transparent text-[#9E988E] hover:text-[#F5F2EB] hover:bg-white/10"
+                  }`}
+                >
+                  {voiceTtsEnabled ? (
+                    <Volume2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <VolumeX className="w-3.5 h-3.5" />
+                  )}
+                </button>
+
+                {(pos.right !== 16 || pos.bottom !== 16) && (
+                  <button
+                    type="button"
+                    onClick={handleResetPosition}
+                    title="Reset floating button position"
+                    className="p-1.5 rounded-lg text-[#9E988E] hover:text-[#F5F2EB] hover:bg-white/10 transition-colors cursor-pointer"
+                  >
+                    <Move className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={handleResetChat}
                   title="Restart Package Planner"
-                  className="p-2 rounded-lg text-[#9E988E] hover:text-[#F5F2EB] hover:bg-white/10 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-[#9E988E] hover:text-[#F5F2EB] hover:bg-white/10 transition-colors cursor-pointer"
                 >
-                  <RotateCcw className="w-4 h-4" />
+                  <RotateCcw className="w-3.5 h-3.5" />
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    stopBotSpeech();
+                    setIsOpen(false);
+                  }}
                   aria-label="Close Royal Assistant"
-                  className="p-2 rounded-lg text-[#9E988E] hover:text-[#F5F2EB] hover:bg-white/10 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-[#9E988E] hover:text-[#F5F2EB] hover:bg-white/10 transition-colors cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1015,10 +1301,11 @@ export default function RoyalChatbotWidget() {
               )}
             </div>
 
-            {/* Quick Knowledge Base Topic Buttons */}
+            {/* Quick Knowledge Base Topic Buttons (English & Roman Urdu) */}
             <div className="px-3.5 py-2 bg-[#141418] border-t border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
               {[
                 { label: "Packages & Rates", q: "What are your wedding packages and base rates?" },
+                { label: "Shadi Package (Roman Urdu)", q: "Shadi package ki price aur multi-day discount kya hai?" },
                 { label: "Drone & Albums", q: "What are your rates for Drone coverage and Luxury Albums?" },
                 { label: "85mm Outdoor Setup", q: "What camera and 85mm portrait lens setup do you use for outdoor events?" },
                 { label: "Deposit & Delivery", q: "What is your booking deposit percentage and delivery timeline?" },
@@ -1034,20 +1321,37 @@ export default function RoyalChatbotWidget() {
               ))}
             </div>
 
-            {/* Free-Text Input Bar */}
+            {/* Free-Text & Voice Input Bar */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 void handleSendText();
               }}
-              className="p-3 bg-[#111113] border-t border-white/10 flex items-center gap-2 shrink-0"
+              className="p-2.5 sm:p-3 bg-[#111113] border-t border-white/10 flex items-center gap-2 shrink-0"
             >
+              <button
+                type="button"
+                onClick={toggleVoiceInput}
+                title={isListening ? "Stop voice input" : "Speak in English or Roman Urdu"}
+                aria-label="Voice Microphone Input"
+                className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                  isListening
+                    ? "bg-rose-500/20 border-rose-500 text-rose-400 animate-pulse"
+                    : "bg-[#1A1A1F] border-white/15 text-[#C9A76A] hover:border-[#C9A76A]"
+                }`}
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              </button>
               <input
                 type="text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Ask about packages, drone, dates, or type a question..."
-                className="flex-1 bg-[#1A1A1F] border border-white/15 rounded-xl px-3.5 py-2 text-xs text-[#F5F2EB] placeholder:text-[#9E988E] focus:outline-none focus:border-[#C9A76A]"
+                placeholder={
+                  isListening
+                    ? "Listening... Speak in English or Roman Urdu"
+                    : "Ask in English or Roman Urdu (e.g. Shadi package price)..."
+                }
+                className="flex-1 bg-[#1A1A1F] border border-white/15 rounded-xl px-3 py-2 text-xs text-[#F5F2EB] placeholder:text-[#9E988E] focus:outline-none focus:border-[#C9A76A]"
               />
               <button
                 type="submit"
@@ -1062,38 +1366,55 @@ export default function RoyalChatbotWidget() {
         )}
       </AnimatePresence>
 
-      {/* Floating Chat Trigger Button in Bottom-Right Corner */}
-      <motion.button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        whileHover={{ scale: 1.03 }}
-        whileTap={{ scale: 0.97 }}
-        aria-label={isOpen ? "Close Royal Assistant Chatbot" : "Open Royal Assistant Chatbot"}
-        className="group relative flex items-center gap-3 rounded-2xl border border-[#C9A76A]/45 bg-[#111113]/95 backdrop-blur-xl px-4 py-3 text-left text-[#F5F2EB] shadow-[0_14px_40px_rgba(0,0,0,0.65)] hover:border-[#C9A76A] transition-all cursor-pointer"
+      {/* Compact on Mobile, Viewport-Clamped Moveable Floating Chat Trigger Button */}
+      <div
+        style={{
+          right: `${pos.right}px`,
+          bottom: `${pos.bottom}px`,
+          touchAction: "none",
+        }}
+        className="no-print fixed z-50 select-none"
       >
-        <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#C9A76A] to-[#9E7B3E] text-[#111113] shadow-inner shrink-0">
-          {isOpen ? (
-            <X className="w-5 h-5" />
-          ) : (
-            <MessageSquare className="w-5 h-5" />
-          )}
-          <span className="absolute -top-1 -right-1 flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border-2 border-[#111113]" />
-          </span>
-        </div>
-
-        <div className="pr-1">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-semibold tracking-wide text-[#C9A76A]">
-              {config.statusLabel}
+        <button
+          ref={buttonRef}
+          type="button"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onClick={() => {
+            if (dragStateRef.current.moved) return;
+            setIsOpen((prev) => !prev);
+          }}
+          title="Royal Assistant AI — Drag to move within screen"
+          aria-label={isOpen ? "Close Royal Assistant Chatbot" : "Open Royal Assistant Chatbot"}
+          className="group relative flex h-10 w-10 sm:h-auto sm:w-auto items-center justify-center sm:gap-2.5 rounded-full sm:rounded-2xl border border-[#C9A76A]/50 bg-[#111113]/95 backdrop-blur-xl p-0 sm:px-3.5 sm:py-2.5 text-left text-[#F5F2EB] shadow-[0_12px_32px_rgba(0,0,0,0.65)] hover:border-[#C9A76A] transition-colors cursor-grab active:cursor-grabbing"
+        >
+          <div className="relative flex h-7 w-7 sm:h-9 sm:w-9 items-center justify-center rounded-full sm:rounded-xl bg-gradient-to-br from-[#C9A76A] to-[#9E7B3E] text-[#111113] shadow-inner shrink-0">
+            {isOpen ? (
+              <X className="w-3.5 h-3.5 sm:w-[18px] sm:h-[18px]" />
+            ) : (
+              <MessageSquare className="w-3.5 h-3.5 sm:w-[18px] sm:h-[18px]" />
+            )}
+            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500 border-2 border-[#111113]" />
             </span>
           </div>
-          <div className="font-display text-sm font-semibold text-[#F5F2EB]">
-            Plan Wedding & Instant Quote
+
+          <div className="hidden sm:block pr-1">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-semibold tracking-wide text-[#C9A76A]">
+                {config.statusLabel}
+              </span>
+            </div>
+            <div className="font-display text-xs font-semibold text-[#F5F2EB] flex items-center gap-1.5">
+              <span>Plan Wedding &amp; Quote</span>
+              <Move className="w-3 h-3 text-[#9E988E] opacity-70 group-hover:opacity-100 transition-opacity" />
+            </div>
           </div>
-        </div>
-      </motion.button>
-    </div>
+        </button>
+      </div>
+    </>
   );
 }

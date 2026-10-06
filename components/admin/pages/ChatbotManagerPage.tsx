@@ -22,6 +22,11 @@ import {
   ShieldCheck,
   Zap,
   Camera,
+  Shield,
+  Mic,
+  Volume2,
+  Globe,
+  AlertTriangle,
 } from "lucide-react";
 import { apiRequest } from "../services/api";
 import { useStudioData } from "../context/StudioDataContext";
@@ -32,10 +37,15 @@ import {
   sanitizeChatbotConfig,
   calculateChatbotEstimate,
   matchKnowledgeBaseAndRespond,
+  defaultAdminCopilotConfig,
+  loadAdminCopilotConfig,
+  saveAdminCopilotConfig,
+  sanitizeAdminCopilotConfig,
   type ChatbotConfig,
   type ChatbotKnowledgeEntry,
   type ChatbotKnowledgeCategory,
   type ChatbotPersonaTone,
+  type AdminCopilotConfig,
 } from "@/lib/chatbot/chatbotEngine";
 
 interface ChatbotManagerPageProps {
@@ -46,7 +56,8 @@ type ManagerSubTab =
   | "PERSONA"
   | "KNOWLEDGE_BASE"
   | "DECISION_TREE"
-  | "LEAD_HANDSHAKE";
+  | "LEAD_HANDSHAKE"
+  | "AI_SECURITY_SCOPES";
 
 const PERSONA_PRESETS: Record<
   Exclude<ChatbotPersonaTone, "Custom">,
@@ -81,6 +92,9 @@ const PERSONA_PRESETS: Record<
 export const ChatbotManagerPage: React.FC<ChatbotManagerPageProps> = ({ navigate }) => {
   const { addToast, events, refreshAll } = useStudioData();
   const [config, setConfig] = useState<ChatbotConfig>(defaultChatbotConfig);
+  const [adminCopilot, setAdminCopilot] = useState<AdminCopilotConfig>(
+    defaultAdminCopilotConfig
+  );
   const [activeSubTab, setActiveSubTab] = useState<ManagerSubTab>("PERSONA");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -135,6 +149,7 @@ export const ChatbotManagerPage: React.FC<ChatbotManagerPageProps> = ({ navigate
   useEffect(() => {
     const local = loadChatbotConfigFromLocal();
     setConfig(local);
+    setAdminCopilot(loadAdminCopilotConfig());
 
     fetch("/api/chatbot", { credentials: "include" })
       .then((res) => (res.ok ? res.json() : null))
@@ -144,26 +159,42 @@ export const ChatbotManagerPage: React.FC<ChatbotManagerPageProps> = ({ navigate
           setConfig(clean);
           saveChatbotConfigToLocal(clean);
         }
+        if (data?.adminCopilotConfig) {
+          const cleanCop = sanitizeAdminCopilotConfig(data.adminCopilotConfig);
+          setAdminCopilot(cleanCop);
+          saveAdminCopilotConfig(cleanCop);
+        }
       })
       .catch(() => {});
   }, []);
 
-  const handleSaveConfig = async (nextConfigOverride?: ChatbotConfig) => {
+  const handleSaveConfig = async (
+    nextConfigOverride?: ChatbotConfig,
+    nextCopilotOverride?: AdminCopilotConfig
+  ) => {
     const toSave = sanitizeChatbotConfig(nextConfigOverride || config);
+    const copilotToSave = sanitizeAdminCopilotConfig(
+      nextCopilotOverride || adminCopilot
+    );
     setIsSaving(true);
     try {
-      // 1. Save immediately to localStorage + BroadcastChannel for instant client portfolio sync
+      // 1. Save immediately to localStorage + BroadcastChannel for instant client portfolio & Admin Copilot sync
       saveChatbotConfigToLocal(toSave);
+      saveAdminCopilotConfig(copilotToSave);
 
       // 2. Persist to server database (/api/chatbot)
       await apiRequest("/chatbot", {
         method: "PUT",
-        body: JSON.stringify({ chatbotConfig: toSave }),
+        body: JSON.stringify({
+          chatbotConfig: toSave,
+          adminCopilotConfig: copilotToSave,
+        }),
       });
 
       setConfig(toSave);
+      setAdminCopilot(copilotToSave);
       addToast(
-        "Chatbot configuration, training data & decision tree synced to live portfolio!",
+        "Chatbot configuration, training data & AI Copilot security scopes synced!",
         "success"
       );
     } catch (err: any) {
@@ -397,6 +428,11 @@ export const ChatbotManagerPage: React.FC<ChatbotManagerPageProps> = ({ navigate
             id: "LEAD_HANDSHAKE" as ManagerSubTab,
             label: `4. Lead Handshake & Engine (${chatbotCrmLeads.length})`,
             icon: UserCheck,
+          },
+          {
+            id: "AI_SECURITY_SCOPES" as ManagerSubTab,
+            label: "5. AI Security & Scope Settings (Admin Voice Copilot)",
+            icon: Shield,
           },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -1633,6 +1669,309 @@ export const ChatbotManagerPage: React.FC<ChatbotManagerPageProps> = ({ navigate
                     </table>
                   </div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* ================= TAB 5: AI SECURITY & SCOPE SETTINGS (ADMIN COPILOT GOVERNANCE) ================= */}
+          {activeSubTab === "AI_SECURITY_SCOPES" && (
+            <div className="space-y-6">
+              {/* System Access Scopes Card */}
+              <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 space-y-5 shadow-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-4">
+                  <div>
+                    <h2 className="text-base font-bold text-gray-900 flex items-center gap-2">
+                      <Shield className="w-4 h-4 text-amber-500" />
+                      <span>Admin AI Copilot — System Access Scopes (RBAC)</span>
+                    </h2>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      Grant or deny permission for the Admin-Side Executive Voice &amp; Text AI
+                      Copilot to make direct system edits across CRM leads, pricing, and portfolio.
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 text-amber-400 text-xs font-bold cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={adminCopilot.enabled}
+                      onChange={(e) => {
+                        const next = { ...adminCopilot, enabled: e.target.checked };
+                        setAdminCopilot(next);
+                        void handleSaveConfig(config, next);
+                      }}
+                      className="rounded accent-amber-500 w-4 h-4"
+                    />
+                    <span>Copilot Micro-Bar Enabled</span>
+                  </label>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {[
+                    {
+                      key: "allowPricingModifications" as const,
+                      title: "Allow Pricing Modifications",
+                      desc: "Permits voice/text commands to update package base rates (e.g., 'Change Signature Wedding Package to 180,000 PKR').",
+                    },
+                    {
+                      key: "allowDataDeletion" as const,
+                      title: "Allow Data Deletion",
+                      desc: "Permits AI Copilot to delete CRM records, portfolio items, or purge logs. Recommended: OFF.",
+                    },
+                    {
+                      key: "allowLeadStatusChanges" as const,
+                      title: "Allow Lead Status Changes",
+                      desc: "Permits commands like 'Mark Lead #104 status as Booked' to update event lifecycle states.",
+                    },
+                    {
+                      key: "allowNewLeadCreation" as const,
+                      title: "Allow New Lead Creation",
+                      desc: "Permits commands like 'New lead add karo Name: Hamza, Date: 12 November, Budget: 250k'.",
+                    },
+                    {
+                      key: "allowPortfolioEdits" as const,
+                      title: "Allow Portfolio & CMS Edits",
+                      desc: "Permits toggling featured status for homepage cinematic videos and portfolio items.",
+                    },
+                    {
+                      key: "allowOperationalTimingsEdits" as const,
+                      title: "Allow Studio Timings Updates",
+                      desc: "Permits updating Sunday & studio operational hours via voice or text commands.",
+                    },
+                  ].map((scopeItem) => {
+                    const isOn = adminCopilot.scopes[scopeItem.key];
+                    return (
+                      <label
+                        key={scopeItem.key}
+                        className={`flex items-start justify-between gap-3 p-4 rounded-xl border transition-all cursor-pointer ${
+                          isOn
+                            ? "border-emerald-300 bg-emerald-50/40"
+                            : "border-gray-200 bg-gray-50/60"
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-gray-900">
+                              {scopeItem.title}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                isOn
+                                  ? "bg-emerald-500/20 text-emerald-800"
+                                  : "bg-rose-500/15 text-rose-700"
+                              }`}
+                            >
+                              {isOn ? "ON" : "OFF"}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 leading-relaxed">
+                            {scopeItem.desc}
+                          </p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={isOn}
+                          onChange={(e) => {
+                            const next = {
+                              ...adminCopilot,
+                              scopes: {
+                                ...adminCopilot.scopes,
+                                [scopeItem.key]: e.target.checked,
+                              },
+                            };
+                            setAdminCopilot(next);
+                            saveAdminCopilotConfig(next);
+                          }}
+                          className="mt-1 rounded accent-amber-500 w-4 h-4 shrink-0"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Confirmation Guardrails & Custom System Instructions */}
+              <div className="bg-white rounded-2xl border border-gray-200 p-5 sm:p-6 space-y-5 shadow-xs">
+                <div className="border-b border-gray-100 pb-3">
+                  <h3 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    <span>Confirmation Guardrails &amp; Custom AI Rules</span>
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Require explicit visual popup confirmation before the AI executes sensitive or
+                    destructive operations, and configure voice/language behavior.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <label className="flex items-start justify-between gap-3 p-4 rounded-xl border border-amber-200 bg-amber-50/40 cursor-pointer">
+                    <div>
+                      <div className="text-xs font-bold text-gray-900">
+                        Confirmation Popup for Destructive Actions
+                      </div>
+                      <p className="text-[11px] text-gray-600 mt-0.5">
+                        Requires explicit visual popup approval before deleting leads, events, or
+                        portfolio items.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={adminCopilot.guardrails.requireConfirmationForDestructive}
+                      onChange={(e) => {
+                        const next = {
+                          ...adminCopilot,
+                          guardrails: {
+                            ...adminCopilot.guardrails,
+                            requireConfirmationForDestructive: e.target.checked,
+                          },
+                        };
+                        setAdminCopilot(next);
+                        saveAdminCopilotConfig(next);
+                      }}
+                      className="mt-1 rounded accent-amber-500 w-4 h-4 shrink-0"
+                    />
+                  </label>
+
+                  <label className="flex items-start justify-between gap-3 p-4 rounded-xl border border-gray-200 bg-gray-50/60 cursor-pointer">
+                    <div>
+                      <div className="text-xs font-bold text-gray-900">
+                        Confirmation Popup Before Modifying Package Rates
+                      </div>
+                      <p className="text-[11px] text-gray-600 mt-0.5">
+                        Requires visual confirmation dialog before the AI Copilot changes any
+                        package base price.
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={adminCopilot.guardrails.requireConfirmationForPricing}
+                      onChange={(e) => {
+                        const next = {
+                          ...adminCopilot,
+                          guardrails: {
+                            ...adminCopilot.guardrails,
+                            requireConfirmationForPricing: e.target.checked,
+                          },
+                        };
+                        setAdminCopilot(next);
+                        saveAdminCopilotConfig(next);
+                      }}
+                      className="mt-1 rounded accent-amber-500 w-4 h-4 shrink-0"
+                    />
+                  </label>
+                </div>
+
+                {/* Language & Voice Synthesis Settings */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Preferred Output Language
+                    </label>
+                    <select
+                      value={adminCopilot.preferredOutputLanguage}
+                      onChange={(e) => {
+                        const next = {
+                          ...adminCopilot,
+                          preferredOutputLanguage: e.target.value as any,
+                        };
+                        setAdminCopilot(next);
+                        saveAdminCopilotConfig(next);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-300 text-xs font-semibold text-gray-900"
+                    >
+                      <option value="AUTO">Auto-Detect (English &amp; Roman Urdu)</option>
+                      <option value="EN">Always Professional English</option>
+                      <option value="ROMAN_URDU">Always Natural Roman Urdu</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Voice Mic Recognition Locale
+                    </label>
+                    <select
+                      value={adminCopilot.voiceRecognitionLang}
+                      onChange={(e) => {
+                        const next = {
+                          ...adminCopilot,
+                          voiceRecognitionLang: e.target.value as "en-US" | "ur-PK",
+                        };
+                        setAdminCopilot(next);
+                        saveAdminCopilotConfig(next);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-300 text-xs font-semibold text-gray-900"
+                    >
+                      <option value="en-US">English &amp; Roman Urdu (en-US)</option>
+                      <option value="ur-PK">Pakistan Urdu &amp; English (ur-PK)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Real-Time Voice Synthesis (TTS)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = {
+                          ...adminCopilot,
+                          voiceResponseEnabled: !adminCopilot.voiceResponseEnabled,
+                        };
+                        setAdminCopilot(next);
+                        saveAdminCopilotConfig(next);
+                      }}
+                      className={`w-full px-3 py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 cursor-pointer ${
+                        adminCopilot.voiceResponseEnabled
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                          : "border-gray-300 bg-gray-100 text-gray-600"
+                      }`}
+                    >
+                      <Volume2 className="w-4 h-4" />
+                      <span>
+                        {adminCopilot.voiceResponseEnabled
+                          ? "Voice Output Active (Hands-Free)"
+                          : "Voice Output Muted"}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Custom System Instructions for Admin Copilot */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                    Custom System Instructions &amp; Strict Operational Rules
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={adminCopilot.customSystemInstructions}
+                    onChange={(e) => {
+                      const next = {
+                        ...adminCopilot,
+                        customSystemInstructions: e.target.value,
+                      };
+                      setAdminCopilot(next);
+                      saveAdminCopilotConfig(next);
+                    }}
+                    placeholder="e.g., Always ask for confirmation before modifying package rates. Keep voice responses under 2 sentences."
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-300 text-xs text-gray-900 font-mono leading-relaxed focus:outline-none focus:border-amber-500"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Tip: Include{" "}
+                    <code className="px-1 py-0.5 rounded bg-gray-100 text-gray-800">
+                      Always ask for confirmation before modifying package rates
+                    </code>{" "}
+                    to automatically trigger the visual confirmation guardrail on rate edits.
+                  </p>
+                </div>
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveConfig(config, adminCopilot)}
+                    className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-amber-400 text-xs font-bold inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Save className="w-4 h-4" />
+                    <span>Save AI Security &amp; Scope Settings</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

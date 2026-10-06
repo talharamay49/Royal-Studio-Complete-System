@@ -123,10 +123,10 @@ export default function ProposalQrShareModal({
             </div>
             <div>
               <h3 className="text-sm font-bold text-[#F5F2EB]">
-                Send Digital Proposal (Link &amp; QR Code)
+                Quick-Share Proposal QR &amp; Direct Link
               </h3>
               <p className="text-[11px] text-[#A39E93]">
-                Customer can scan or click to review details &amp; digitally accept
+                Scan with a smartphone camera to share with family members or co-decision-makers
               </p>
             </div>
           </div>

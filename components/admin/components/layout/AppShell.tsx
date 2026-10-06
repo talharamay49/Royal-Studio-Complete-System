@@ -4,6 +4,7 @@ import { Topbar } from './Topbar';
 import { Footer } from './Footer';
 import { ToastContainer } from '../common/ToastContainer';
 import { EventQrModal } from '../common/EventQrModal';
+import { AdminCopilotWidget } from '../copilot/AdminCopilotWidget';
 import { useAuth } from '../../context/AuthContext';
 import { useStudioData } from '../../context/StudioDataContext';
 import { Event } from '../../types';
@@ -154,6 +155,13 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPath, navigate, child
       </div>
 
       <ToastContainer />
+
+      {/* Admin-Side Executive AI Voice & Text Copilot Floating Micro-Bar */}
+      {isAdmin && (
+        <AdminCopilotWidget
+          onOpenSecuritySettings={() => navigate('/chatbot-manager')}
+        />
+      )}
 
       {/* Mobile Scanned QR Assignment Modal */}
       <EventQrModal

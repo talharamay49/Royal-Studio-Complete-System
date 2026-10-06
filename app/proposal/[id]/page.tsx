@@ -807,7 +807,7 @@ export default function ClientProposalPage() {
       <div className="max-w-5xl mx-auto space-y-8">
         {/* Top Action Navigation */}
         <div className="no-print flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <Link
               href="/contact"
               className="inline-flex items-center gap-1.5 text-xs text-[#A39E93] hover:text-[#D4AF37] transition-colors"
@@ -822,6 +822,15 @@ export default function ClientProposalPage() {
                 {quotation.quotationNumber}
               </strong>
             </span>
+            <button
+              type="button"
+              onClick={() => setIsQrModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D4AF37]/60 bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] text-xs font-bold transition-all shadow-xs cursor-pointer"
+              title="Quick-Share QR code with family members or co-decision-makers"
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>Quick-Share QR</span>
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
@@ -1025,25 +1034,25 @@ export default function ClientProposalPage() {
           {/* Visual Lifecycle Progress Timeline (Pending -> Approved -> Confirmed) */}
           <div className="pt-5 border-t border-white/10 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#D4AF37]">
                   Event &amp; Proposal Lifecycle
                 </span>
                 <span className="text-white/20">·</span>
                 <span
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold animate-pulse ${
                     lifecycleStage === "CONFIRMED"
-                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.22)]"
                       : lifecycleStage === "APPROVED"
-                      ? "bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/40"
-                      : "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                      ? "bg-[#D4AF37]/20 text-[#D4AF37] border border-[#D4AF37]/45 shadow-[0_0_12px_rgba(212,175,55,0.22)]"
+                      : "bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.22)]"
                   }`}
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
                       lifecycleStage === "CONFIRMED"
-                        ? "bg-emerald-400"
-                        : "bg-[#D4AF37] animate-pulse"
+                        ? "bg-emerald-400 animate-ping"
+                        : "bg-[#D4AF37] animate-ping"
                     }`}
                   />
                   <span>
@@ -1068,6 +1077,17 @@ export default function ClientProposalPage() {
                   </strong>{" "}
                   of 3 ({lifecycleProgressPercent}% Complete)
                 </div>
+
+                {/* Quick-Share QR Button for Family Members & Co-Decision-Makers */}
+                <button
+                  type="button"
+                  onClick={() => setIsQrModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#D4AF37]/60 bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[11px] font-bold text-[#D4AF37] transition-all shadow-xs cursor-pointer"
+                  title="Display Proposal QR Code to share with family members or co-decision-makers via smartphone camera"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-[#D4AF37]" />
+                  <span>Quick-Share QR</span>
+                </button>
 
                 {/* Persistent 'Approval History' Toggle Button */}
                 <button
@@ -1106,15 +1126,6 @@ export default function ClientProposalPage() {
                 >
                   <Download className="w-3.5 h-3.5 text-[#D4AF37]" />
                   <span>Export Audit PDF</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsQrModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:border-[#D4AF37] text-[11px] font-semibold text-[#F5F2EB] transition-colors cursor-pointer"
-                >
-                  <QrCode className="w-3.5 h-3.5 text-[#D4AF37]" />
-                  <span>QR Code</span>
                 </button>
               </div>
             </div>
@@ -1490,7 +1501,7 @@ export default function ClientProposalPage() {
                         : "border-white/10 bg-[#0D0D0F]/60"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-2">
                         <div
                           className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
@@ -1508,12 +1519,15 @@ export default function ClientProposalPage() {
                         </span>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                           isCurrent
-                            ? "bg-[#D4AF37] text-[#111111]"
+                            ? "bg-[#D4AF37] text-[#111111] animate-pulse shadow-[0_0_10px_rgba(212,175,55,0.4)]"
                             : "bg-emerald-500/20 text-emerald-300"
                         }`}
                       >
+                        {isCurrent && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#111111] animate-ping" />
+                        )}
                         {isCurrent ? "Current" : "Completed"}
                       </span>
                     </div>
@@ -1542,7 +1556,7 @@ export default function ClientProposalPage() {
                         : "border-white/10 bg-[#0D0D0F]/60 opacity-75"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-2">
                         <div
                           className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
@@ -1560,14 +1574,17 @@ export default function ClientProposalPage() {
                         </span>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                           isCurrent
-                            ? "bg-[#D4AF37] text-[#111111]"
+                            ? "bg-[#D4AF37] text-[#111111] animate-pulse shadow-[0_0_10px_rgba(212,175,55,0.4)]"
                             : isCompleted
                             ? "bg-emerald-500/20 text-emerald-300"
                             : "bg-white/10 text-[#A39E93]"
                         }`}
                       >
+                        {isCurrent && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#111111] animate-ping" />
+                        )}
                         {isCurrent
                           ? "Current"
                           : isCompleted
@@ -1598,7 +1615,7 @@ export default function ClientProposalPage() {
                         : "border-white/10 bg-[#0D0D0F]/60 opacity-75"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                       <div className="flex items-center gap-2">
                         <div
                           className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
@@ -1614,12 +1631,15 @@ export default function ClientProposalPage() {
                         </span>
                       </div>
                       <span
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
                           isCurrent
-                            ? "bg-emerald-400 text-slate-950"
+                            ? "bg-emerald-400 text-slate-950 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.45)]"
                             : "bg-white/10 text-[#A39E93]"
                         }`}
                       >
+                        {isCurrent && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-ping" />
+                        )}
                         {isCurrent ? "Confirmed" : "Upcoming"}
                       </span>
                     </div>

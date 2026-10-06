@@ -515,16 +515,20 @@ export function calculateChatbotEstimate(
 export function matchKnowledgeBaseAndRespond(
   userQuery: string,
   config: ChatbotConfig,
-  draft: ChatbotInquiryDraft
+  draft: ChatbotInquiryDraft,
+  preferredLang: "AUTO" | "EN" | "ROMAN_URDU" = "AUTO"
 ): {
   reply: string;
   matchedEntry?: ChatbotKnowledgeEntry;
   extractedDraftUpdates?: Partial<ChatbotInquiryDraft>;
+  detectedLanguage: "EN" | "ROMAN_URDU";
 } {
   const q = userQuery.toLowerCase().trim();
+  const detectedLang =
+    preferredLang === "AUTO" ? detectLanguageMode(userQuery) : preferredLang;
   const extracted: Partial<ChatbotInquiryDraft> = {};
 
-  // 1. Check if user mentioned an event type in free text
+  // 1. Check if user mentioned an event type in free text (English, Roman Urdu, or Urdu script)
   for (const evt of config.decisionTree.eventTypes) {
     const firstWord = evt.label.split(/[\s(]/)[0].toLowerCase();
     if (firstWord && q.includes(firstWord)) {
@@ -534,7 +538,12 @@ export function matchKnowledgeBaseAndRespond(
     }
   }
   if (!extracted.eventTypeId) {
-    if (q.includes("barat") || q.includes("baraat")) {
+    if (
+      q.includes("barat") ||
+      q.includes("baraat") ||
+      q.includes("برات") ||
+      q.includes("بارات")
+    ) {
       const baratOpt = config.decisionTree.eventTypes.find((e) =>
         e.label.toLowerCase().includes("bara")
       );
@@ -542,7 +551,27 @@ export function matchKnowledgeBaseAndRespond(
         extracted.eventTypeId = baratOpt.id;
         extracted.eventTypeLabel = baratOpt.label;
       }
-    } else if (q.includes("mehndi") || q.includes("full wedding") || q.includes("multi")) {
+    } else if (
+      q.includes("walima") ||
+      q.includes("valima") ||
+      q.includes("ولیمہ")
+    ) {
+      const walimaOpt = config.decisionTree.eventTypes.find((e) =>
+        e.label.toLowerCase().includes("walima")
+      );
+      if (walimaOpt) {
+        extracted.eventTypeId = walimaOpt.id;
+        extracted.eventTypeLabel = walimaOpt.label;
+      }
+    } else if (
+      q.includes("mehndi") ||
+      q.includes("full wedding") ||
+      q.includes("multi") ||
+      q.includes("shadi") ||
+      q.includes("shaadi") ||
+      q.includes("شادی") ||
+      q.includes("مہندی")
+    ) {
       const wedOpt = config.decisionTree.eventTypes.find((e) => e.isMultiDay);
       if (wedOpt) {
         extracted.eventTypeId = wedOpt.id;
@@ -568,11 +597,32 @@ export function matchKnowledgeBaseAndRespond(
     }
   }
 
+  // Normalize Urdu/Roman Urdu synonyms for better Knowledge Base matching
+  const normalizedQuery = [
+    q,
+    q.includes("shadi") || q.includes("shaadi") || q.includes("شادی")
+      ? "wedding package price"
+      : "",
+    q.includes("qeemat") ||
+    q.includes("kimat") ||
+    q.includes("kharcha") ||
+    q.includes("kitna") ||
+    q.includes("kitni") ||
+    q.includes("قیمت")
+      ? "price rate package"
+      : "",
+    q.includes("drone") || q.includes("ڈرون") ? "drone aerial" : "",
+    q.includes("album") || q.includes("البم") ? "album" : "",
+    q.includes("advance") || q.includes("biana") || q.includes("bayana")
+      ? "deposit booking"
+      : "",
+  ].join(" ");
+
   // 3. Score Knowledge Base entries
   let bestEntry: ChatbotKnowledgeEntry | undefined;
   let bestScore = 0;
 
-  const queryTokens = q
+  const queryTokens = normalizedQuery
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((w) => w.length > 2);
@@ -585,7 +635,7 @@ export function matchKnowledgeBaseAndRespond(
     for (const kw of item.keywords) {
       const kwLower = kw.toLowerCase().trim();
       if (!kwLower) continue;
-      if (q.includes(kwLower)) {
+      if (normalizedQuery.includes(kwLower)) {
         score += 5;
       }
     }
@@ -606,47 +656,83 @@ export function matchKnowledgeBaseAndRespond(
   const extraRuleTips: string[] = [];
 
   if (
-    (q.includes("outdoor") ||
-      q.includes("portrait") ||
-      q.includes("bridal") ||
-      q.includes("pre-wedding") ||
-      q.includes("lens") ||
-      q.includes("day")) &&
+    (normalizedQuery.includes("outdoor") ||
+      normalizedQuery.includes("portrait") ||
+      normalizedQuery.includes("bridal") ||
+      normalizedQuery.includes("pre-wedding") ||
+      normalizedQuery.includes("lens") ||
+      normalizedQuery.includes("day")) &&
     rulesLower.includes("85mm")
   ) {
     extraRuleTips.push(
-      "Studio Recommendation: For outdoor and bridal sessions, our creative directors pair the Sony A7R V with the 85mm f/1.4 GM prime lens and Profoto modifiers for creamy editorial depth."
+      detectedLang === "ROMAN_URDU"
+        ? "Studio Tip: Outdoor aur bridal shoots ke liye hum Sony A7R V ke sath 85mm f/1.4 GM portrait lens aur Profoto lighting use karte hain."
+        : "Studio Recommendation: For outdoor and bridal sessions, our creative directors pair the Sony A7R V with the 85mm f/1.4 GM prime lens and Profoto modifiers for creamy editorial depth."
     );
   }
 
   if (
-    (q.includes("discount") ||
-      q.includes("multi") ||
-      q.includes("wedding") ||
-      q.includes("package") ||
-      q.includes("price") ||
-      q.includes("rate")) &&
+    (normalizedQuery.includes("discount") ||
+      normalizedQuery.includes("multi") ||
+      normalizedQuery.includes("wedding") ||
+      normalizedQuery.includes("package") ||
+      normalizedQuery.includes("price") ||
+      normalizedQuery.includes("rate")) &&
     rulesLower.includes("discount")
   ) {
     extraRuleTips.push(
-      `Multi-Day Privilege: Booking a multi-day celebration (Mehndi, Baraat & Walima) automatically qualifies for our ${config.decisionTree.multiDayDiscountPercent}% Royal Multi-Day Discount.`
+      detectedLang === "ROMAN_URDU"
+        ? `Multi-Day Offer: Complete wedding (Mehndi, Baraat & Walima) book karne par ${config.decisionTree.multiDayDiscountPercent}% Royal Multi-Day Discount milta hai.`
+        : `Multi-Day Privilege: Booking a multi-day celebration (Mehndi, Baraat & Walima) automatically qualifies for our ${config.decisionTree.multiDayDiscountPercent}% Royal Multi-Day Discount.`
     );
   }
 
+  const currentEst = calculateChatbotEstimate(config, {
+    ...draft,
+    ...extracted,
+  });
+
   if (bestEntry && bestScore >= 3) {
+    if (detectedLang === "ROMAN_URDU") {
+      const romanIntro = bestEntry.ratePKR
+        ? `Ji bilkul! Royal Studio mein **${bestEntry.title}** ka rate **PKR ${bestEntry.ratePKR.toLocaleString()}** hai. `
+        : `Ji bilkul! **${bestEntry.title}** ki details yeh hain: `;
+      const suffix =
+        extraRuleTips.length > 0
+          ? `\n\n${extraRuleTips.join(" ")}`
+          : `\n\nAap ki current selection (${currentEst.eventTypeLabel}, ${currentEst.city}) ka total estimate **PKR ${currentEst.estimatedTotalPKR.toLocaleString()}** banta hai.`;
+      return {
+        reply: `${romanIntro}${bestEntry.content}${suffix}`,
+        matchedEntry: bestEntry,
+        extractedDraftUpdates: Object.keys(extracted).length > 0 ? extracted : undefined,
+        detectedLanguage: detectedLang,
+      };
+    }
+
     const suffix = extraRuleTips.length > 0 ? `\n\n${extraRuleTips.join(" ")}` : "";
     return {
       reply: `${bestEntry.content}${suffix}`,
       matchedEntry: bestEntry,
       extractedDraftUpdates: Object.keys(extracted).length > 0 ? extracted : undefined,
+      detectedLanguage: detectedLang,
     };
   }
 
   // Fallback intelligent response synthesized from Estimate + Knowledge Base + Persona
-  const currentEst = calculateChatbotEstimate(config, {
-    ...draft,
-    ...extracted,
-  });
+  if (detectedLang === "ROMAN_URDU") {
+    const romanFallback = [
+      `Assalam-o-Alaikum! Royal Studio mein khush aamdeed. Aap ki selection (${currentEst.eventTypeLabel} — ${currentEst.city}) ke mutabiq estimated package **PKR ${currentEst.estimatedTotalPKR.toLocaleString()}** se start hota hai (booking confirm karne ke liye ${currentEst.depositPercent}% advance yani **PKR ${currentEst.depositAmountPKR.toLocaleString()}** darkar hai).`,
+      extraRuleTips.length > 0
+        ? extraRuleTips.join(" ")
+        : "Aap neechay diye gaye quick buttons se Event Type, Date, Coverage Hours aur Drone/Album add-ons select kar ke apna instant quote lock kar sakte hain.",
+    ].join("\n\n");
+
+    return {
+      reply: romanFallback,
+      extractedDraftUpdates: Object.keys(extracted).length > 0 ? extracted : undefined,
+      detectedLanguage: detectedLang,
+    };
+  }
 
   const fallbackReply = [
     `Thank you for reaching out to Royal Studio! Based on your preferences (${currentEst.eventTypeLabel} in ${currentEst.city}), our estimated coverage starts around PKR ${currentEst.estimatedTotalPKR.toLocaleString()} (with a ${currentEst.depositPercent}% booking deposit of PKR ${currentEst.depositAmountPKR.toLocaleString()} to lock your dates).`,
@@ -658,5 +744,219 @@ export function matchKnowledgeBaseAndRespond(
   return {
     reply: fallbackReply,
     extractedDraftUpdates: Object.keys(extracted).length > 0 ? extracted : undefined,
+    detectedLanguage: detectedLang,
   };
+}
+
+// ============================================================================
+// MULTILINGUAL DETECTION & WEB SPEECH SYNTHESIS (TTS) HELPERS
+// ============================================================================
+
+const ROMAN_URDU_MARKERS = new Set([
+  "aaj",
+  "kal",
+  "kitni",
+  "kitna",
+  "kitne",
+  "kya",
+  "hai",
+  "hain",
+  "mein",
+  "aur",
+  "karo",
+  "karen",
+  "karein",
+  "kar",
+  "do",
+  "dein",
+  "batao",
+  "batayein",
+  "dikhao",
+  "shadi",
+  "shaadi",
+  "mahine",
+  "maheene",
+  "is",
+  "iss",
+  "ki",
+  "ka",
+  "ke",
+  "ko",
+  "se",
+  "par",
+  "pe",
+  "nai",
+  "nayi",
+  "naya",
+  "barha",
+  "barhaye",
+  "kam",
+  "zyada",
+  "walima",
+  "baraat",
+  "barat",
+  "mehndi",
+  "qeemat",
+  "kharcha",
+  "paisay",
+  "paise",
+  "hazar",
+  "lakh",
+]);
+
+export function detectLanguageMode(text: string): "EN" | "ROMAN_URDU" {
+  if (!text) return "EN";
+  // Check for Standard Urdu / Arabic script characters
+  if (/[\u0600-\u06FF]/.test(text)) {
+    return "ROMAN_URDU";
+  }
+  const tokens = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  let hits = 0;
+  for (const t of tokens) {
+    if (ROMAN_URDU_MARKERS.has(t)) {
+      hits += 1;
+    }
+  }
+  return hits >= 1 ? "ROMAN_URDU" : "EN";
+}
+
+export function speakBotText(
+  text: string,
+  options?: { rate?: number; pitch?: number; lang?: string; onEnd?: () => void }
+): void {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    options?.onEnd?.();
+    return;
+  }
+  try {
+    window.speechSynthesis.cancel();
+    const cleanSpeech = text
+      .replace(/\*\*/g, "")
+      .replace(/[#*_`~>•]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!cleanSpeech) {
+      options?.onEnd?.();
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(cleanSpeech);
+    utterance.rate = options?.rate ?? 1.02;
+    utterance.pitch = options?.pitch ?? 1.0;
+    utterance.lang = options?.lang || "en-US";
+    if (options?.onEnd) {
+      utterance.onend = () => options.onEnd?.();
+      utterance.onerror = () => options.onEnd?.();
+    }
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    options?.onEnd?.();
+  }
+}
+
+export function stopBotSpeech(): void {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+  } catch {
+    // Ignore
+  }
+}
+
+// ============================================================================
+// ADMIN-SIDE EXECUTIVE AI VOICE & TEXT COPILOT GOVERNANCE CONFIGURATION
+// ============================================================================
+
+export interface AdminCopilotConfig {
+  enabled: boolean;
+  copilotName: string;
+  preferredOutputLanguage: "AUTO" | "EN" | "ROMAN_URDU";
+  voiceResponseEnabled: boolean;
+  voiceRecognitionLang: "en-US" | "ur-PK";
+  voiceRate: number;
+  customSystemInstructions: string;
+  scopes: {
+    allowPricingModifications: boolean;
+    allowDataDeletion: boolean;
+    allowLeadStatusChanges: boolean;
+    allowNewLeadCreation: boolean;
+    allowPortfolioEdits: boolean;
+    allowOperationalTimingsEdits: boolean;
+  };
+  guardrails: {
+    requireConfirmationForDestructive: boolean;
+    requireConfirmationForPricing: boolean;
+  };
+  updatedAt?: string;
+}
+
+export const ADMIN_COPILOT_STORAGE_KEY = "royal_studio_admin_copilot_config_v1";
+
+export const defaultAdminCopilotConfig: AdminCopilotConfig = {
+  enabled: true,
+  copilotName: "Royal Executive Copilot",
+  preferredOutputLanguage: "AUTO",
+  voiceResponseEnabled: true,
+  voiceRecognitionLang: "en-US",
+  voiceRate: 1.02,
+  customSystemInstructions:
+    "• Always verify security scope permissions before executing CRM or pricing updates.\n• Keep voice responses concise (under 2 sentences) so administrators can work hands-free while editing photos or films.\n• Reply in natural Roman Urdu when queried in Roman Urdu or Urdu script, and Professional English otherwise.\n• Always ask for confirmation before modifying package rates if the pricing guardrail is active.",
+  scopes: {
+    allowPricingModifications: true,
+    allowDataDeletion: false,
+    allowLeadStatusChanges: true,
+    allowNewLeadCreation: true,
+    allowPortfolioEdits: true,
+    allowOperationalTimingsEdits: true,
+  },
+  guardrails: {
+    requireConfirmationForDestructive: true,
+    requireConfirmationForPricing: false,
+  },
+};
+
+export function sanitizeAdminCopilotConfig(raw: any): AdminCopilotConfig {
+  if (!raw || typeof raw !== "object") return defaultAdminCopilotConfig;
+  return {
+    ...defaultAdminCopilotConfig,
+    ...raw,
+    scopes: {
+      ...defaultAdminCopilotConfig.scopes,
+      ...(raw.scopes || {}),
+    },
+    guardrails: {
+      ...defaultAdminCopilotConfig.guardrails,
+      ...(raw.guardrails || {}),
+    },
+  };
+}
+
+export function loadAdminCopilotConfig(): AdminCopilotConfig {
+  if (typeof window === "undefined") return defaultAdminCopilotConfig;
+  try {
+    const raw = window.localStorage.getItem(ADMIN_COPILOT_STORAGE_KEY);
+    if (!raw) return defaultAdminCopilotConfig;
+    return sanitizeAdminCopilotConfig(JSON.parse(raw));
+  } catch {
+    return defaultAdminCopilotConfig;
+  }
+}
+
+export function saveAdminCopilotConfig(config: AdminCopilotConfig): void {
+  if (typeof window === "undefined") return;
+  try {
+    const clean = sanitizeAdminCopilotConfig({
+      ...config,
+      updatedAt: new Date().toISOString(),
+    });
+    window.localStorage.setItem(ADMIN_COPILOT_STORAGE_KEY, JSON.stringify(clean));
+    window.dispatchEvent(
+      new CustomEvent("royalstudio:admin-copilot-updated", { detail: clean })
+    );
+  } catch {
+    // Ignore
+  }
 }

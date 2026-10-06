@@ -2,10 +2,16 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { MessageCircle, X, ExternalLink, PhoneCall } from "lucide-react";
+import { MessageCircle, X, ExternalLink, PhoneCall, Move, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { siteConfig } from "@/lib/data";
 import { usePublicStudioProfile, usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
+
+const WA_POS_STORAGE_KEY = "royal_whatsapp_floating_pos_v2";
+
+function clamp(val: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, val));
+}
 
 function toWhatsAppUrl(phoneStr: string, studioName: string, lineLabel: string): string {
   const digits = phoneStr.replace(/[^0-9]/g, "");
@@ -15,15 +21,138 @@ function toWhatsAppUrl(phoneStr: string, studioName: string, lineLabel: string):
 }
 
 /**
- * Compact, responsive Floating WhatsApp Button with quick access to send messages
- * to both Primary (0308-4877073) and Secondary (0303-2213806) studio numbers.
+ * Compact, responsive, viewport-clamped moveable Floating WhatsApp Button
+ * that never moves outside the screen on mobile or desktop.
  */
 export default function FloatingWhatsAppButton() {
   const pathname = usePathname();
   const profile = usePublicStudioProfile();
   const { websiteCustomization } = usePublicWebsiteCMS();
   const [isOpen, setIsOpen] = useState(false);
+  // Position from bottom-left in px, strictly clamped inside the viewport
+  const [pos, setPos] = useState<{ left: number; bottom: number }>({
+    left: 16,
+    bottom: 16,
+  });
+  const [viewport, setViewport] = useState<{ width: number; height: number }>({
+    width: 1200,
+    height: 800,
+  });
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const dragStateRef = useRef<{
+    active: boolean;
+    moved: boolean;
+    startX: number;
+    startY: number;
+    startLeft: number;
+    startBottom: number;
+  }>({
+    active: false,
+    moved: false,
+    startX: 0,
+    startY: 0,
+    startLeft: 16,
+    startBottom: 16,
+  });
+
+  const clampPositionToViewport = (rawLeft: number, rawBottom: number) => {
+    if (typeof window === "undefined") return { left: 16, bottom: 16 };
+    const btnW = buttonRef.current?.offsetWidth || 44;
+    const btnH = buttonRef.current?.offsetHeight || 44;
+    const margin = 12;
+    const topSafeMargin = 72;
+    const maxLeft = Math.max(margin, window.innerWidth - btnW - margin);
+    const maxBottom = Math.max(margin, window.innerHeight - btnH - topSafeMargin);
+    return {
+      left: clamp(rawLeft, margin, maxLeft),
+      bottom: clamp(rawBottom, margin, maxBottom),
+    };
+  };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setViewport({ width: window.innerWidth, height: window.innerHeight });
+    try {
+      // Remove legacy unconstrained key if present
+      window.localStorage.removeItem("royal_whatsapp_floating_pos_v1");
+      const saved = window.localStorage.getItem(WA_POS_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed?.left === "number" && typeof parsed?.bottom === "number") {
+          setPos(clampPositionToViewport(parsed.left, parsed.bottom));
+        }
+      }
+    } catch {
+      // Ignore storage read error
+    }
+
+    const handleResize = () => {
+      setViewport({ width: window.innerWidth, height: window.innerHeight });
+      setPos((prev) => clampPositionToViewport(prev.left, prev.bottom));
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const handleResetPosition = () => {
+    const def = { left: 16, bottom: 16 };
+    setPos(def);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(WA_POS_STORAGE_KEY);
+      } catch {
+        // Ignore
+      }
+    }
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragStateRef.current = {
+      active: true,
+      moved: false,
+      startX: e.clientX,
+      startY: e.clientY,
+      startLeft: pos.left,
+      startBottom: pos.bottom,
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragStateRef.current.active) return;
+    const dx = e.clientX - dragStateRef.current.startX;
+    const dy = e.clientY - dragStateRef.current.startY;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      dragStateRef.current.moved = true;
+    }
+    if (dragStateRef.current.moved) {
+      const next = clampPositionToViewport(
+        dragStateRef.current.startLeft + dx,
+        dragStateRef.current.startBottom - dy
+      );
+      setPos(next);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragStateRef.current.active) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+    const wasMoved = dragStateRef.current.moved;
+    dragStateRef.current.active = false;
+    if (wasMoved && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(WA_POS_STORAGE_KEY, JSON.stringify(pos));
+      } catch {
+        // Ignore
+      }
+    }
+  };
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -80,11 +209,19 @@ export default function FloatingWhatsAppButton() {
       : []),
   ];
 
+  const btnHeight = buttonRef.current?.offsetHeight || 44;
+  const popupWidth = Math.min(288, Math.max(240, viewport.width - 24));
+  const popupLeft = clamp(
+    pos.left,
+    12,
+    Math.max(12, viewport.width - popupWidth - 12)
+  );
+  const rawPopupBottom = pos.bottom + btnHeight + 10;
+  const maxPopupBottom = Math.max(12, viewport.height - 210);
+  const popupBottom = clamp(rawPopupBottom, 12, maxPopupBottom);
+
   return (
-    <div
-      ref={containerRef}
-      className="no-print fixed bottom-4 left-4 sm:bottom-6 sm:left-6 2xl:bottom-8 2xl:left-8 z-40"
-    >
+    <div ref={containerRef} className="no-print">
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -92,7 +229,12 @@ export default function FloatingWhatsAppButton() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.18 }}
-            className="absolute bottom-12 sm:bottom-14 left-0 w-64 sm:w-72 overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-premium-lg"
+            style={{
+              left: `${popupLeft}px`,
+              bottom: `${popupBottom}px`,
+              width: `${popupWidth}px`,
+            }}
+            className="fixed z-50 overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-premium-lg select-none"
           >
             <div className="flex items-center justify-between bg-[#25D366] px-3.5 py-2.5 text-white">
               <div className="flex items-center gap-2 min-w-0">
@@ -102,18 +244,30 @@ export default function FloatingWhatsAppButton() {
                     {studioName} WhatsApp
                   </p>
                   <p className="truncate text-[10px] text-white/85">
-                    Choose a studio number to chat
+                    Drag button to move · Tap a line to chat
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                aria-label="Close WhatsApp menu"
-                className="rounded-full p-1 text-white/85 hover:bg-black/15 hover:text-white cursor-pointer"
-              >
-                <X size={14} />
-              </button>
+              <div className="flex items-center gap-1">
+                {(pos.left !== 16 || pos.bottom !== 16) && (
+                  <button
+                    type="button"
+                    onClick={handleResetPosition}
+                    title="Reset button position"
+                    className="rounded-full p-1 text-white/85 hover:bg-black/15 hover:text-white cursor-pointer"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  aria-label="Close WhatsApp menu"
+                  className="rounded-full p-1 text-white/85 hover:bg-black/15 hover:text-white cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
 
             <div className="p-2.5 space-y-2 bg-surface">
@@ -150,25 +304,43 @@ export default function FloatingWhatsAppButton() {
         )}
       </AnimatePresence>
 
-      <button
-        type="button"
-        onClick={() => setIsOpen((prev) => !prev)}
-        aria-expanded={isOpen}
-        aria-label={`Open ${studioName} WhatsApp options`}
-        title={`WhatsApp ${studioName} (${primaryPhone} / ${secondaryPhone})`}
-        className="group flex h-10 w-10 sm:h-auto sm:w-auto items-center justify-center sm:gap-2 rounded-full bg-[#25D366] hover:bg-[#20bd5a] text-white sm:px-4 sm:py-2.5 shadow-lg border border-white/25 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer"
+      <div
+        style={{
+          left: `${pos.left}px`,
+          bottom: `${pos.bottom}px`,
+          touchAction: "none",
+        }}
+        className="fixed z-40 select-none"
       >
-        <span className="relative flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center shrink-0">
-          {isOpen ? (
-            <X className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
-          ) : (
-            <MessageCircle className="h-4 w-4 sm:h-[18px] sm:w-[18px] fill-white/15" />
-          )}
-        </span>
-        <span className="hidden sm:inline-block text-xs font-semibold tracking-wide whitespace-nowrap">
-          WhatsApp
-        </span>
-      </button>
+        <button
+          ref={buttonRef}
+          type="button"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onClick={() => {
+            if (dragStateRef.current.moved) return;
+            setIsOpen((prev) => !prev);
+          }}
+          aria-expanded={isOpen}
+          aria-label={`Open ${studioName} WhatsApp options (Drag to move)`}
+          title={`WhatsApp ${studioName} — Drag to move within screen`}
+          className="group flex h-10 w-10 sm:h-auto sm:w-auto items-center justify-center sm:gap-2 rounded-full bg-[#25D366] hover:bg-[#20bd5a] text-white sm:px-3.5 sm:py-2.5 shadow-lg border border-white/25 transition-colors duration-200 cursor-grab active:cursor-grabbing"
+        >
+          <span className="relative flex h-4 w-4 sm:h-5 sm:w-5 items-center justify-center shrink-0">
+            {isOpen ? (
+              <X className="h-4 w-4 sm:h-[18px] sm:w-[18px]" />
+            ) : (
+              <MessageCircle className="h-4 w-4 sm:h-[18px] sm:w-[18px] fill-white/15" />
+            )}
+          </span>
+          <span className="hidden sm:inline-block text-xs font-semibold tracking-wide whitespace-nowrap">
+            WhatsApp
+          </span>
+          <Move className="hidden sm:inline-block w-3 h-3 text-white/70 opacity-60 group-hover:opacity-100 transition-opacity" />
+        </button>
+      </div>
     </div>
   );
 }
