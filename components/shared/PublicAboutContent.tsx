@@ -91,7 +91,11 @@ export default function PublicAboutContent() {
             <AnimatedSection delay={0.1}>
               <div className="relative">
                 <div className="relative aspect-[4/5] overflow-hidden rounded-[12px] shadow-premium-lg">
-                  {mainImage.startsWith("data:") ? (
+                  {mainImage.startsWith("data:") ||
+                  (/^https?:\/\//i.test(mainImage) &&
+                    !mainImage.includes("picsum.photos") &&
+                    !mainImage.includes("ytimg.com") &&
+                    !mainImage.includes("youtube.com")) ? (
                     <img
                       src={mainImage}
                       alt="Royal Studio co-founders together"
@@ -112,7 +116,11 @@ export default function PublicAboutContent() {
                   )}
                 </div>
                 <div className="absolute -bottom-8 -left-8 hidden aspect-[4/5] w-40 overflow-hidden rounded-[12px] border-4 border-surface shadow-premium-lg sm:block md:w-48">
-                  {secondaryImage.startsWith("data:") ? (
+                  {secondaryImage.startsWith("data:") ||
+                  (/^https?:\/\//i.test(secondaryImage) &&
+                    !secondaryImage.includes("picsum.photos") &&
+                    !secondaryImage.includes("ytimg.com") &&
+                    !secondaryImage.includes("youtube.com")) ? (
                     <img
                       src={secondaryImage}
                       alt="Royal Studio team"
@@ -148,13 +156,19 @@ export default function PublicAboutContent() {
                   founder.image ||
                   defaultFounderPhotos[founder.name] ||
                   "/team/muhammad-ramzan.webp";
+                const isRaw =
+                  imgSrc.startsWith("data:") ||
+                  (/^https?:\/\//i.test(imgSrc) &&
+                    !imgSrc.includes("picsum.photos") &&
+                    !imgSrc.includes("ytimg.com") &&
+                    !imgSrc.includes("youtube.com"));
                 return (
                   <div
                     key={`${founder.name}-${idx}`}
                     className="rounded-[12px] border border-border bg-background p-8 text-center shadow-premium"
                   >
                     <div className="relative mx-auto mb-4 h-20 w-20 overflow-hidden rounded-full shadow-premium">
-                      {imgSrc.startsWith("data:") ? (
+                      {isRaw ? (
                         <img
                           src={imgSrc}
                           alt={founder.name}

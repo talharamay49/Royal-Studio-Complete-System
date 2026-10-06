@@ -12,6 +12,8 @@ import {
 } from "@/lib/seo";
 import { dbInstance } from "@/lib/admin/db";
 
+export const dynamic = "force-dynamic";
+
 interface Props {
   params: Promise<{ slug: string }>;
 }
@@ -80,7 +82,11 @@ export default async function BlogPostPage({ params }: Props) {
 
       <article className="pt-24">
         <div className="relative h-[50vh] min-h-[320px]">
-          {post.image?.startsWith("data:") ? (
+          {post.image?.startsWith("data:") ||
+          (/^https?:\/\//i.test(post.image || "") &&
+            !post.image.includes("picsum.photos") &&
+            !post.image.includes("ytimg.com") &&
+            !post.image.includes("youtube.com")) ? (
             <img
               src={post.image}
               alt={post.title}

@@ -60,7 +60,11 @@ export default function AboutPreview() {
           <AnimatedSection delay={0.15}>
             <div className="relative">
               <div className="relative aspect-[4/5] overflow-hidden rounded-[12px] shadow-premium-lg">
-                {mainImage.startsWith("data:") ? (
+                {mainImage.startsWith("data:") ||
+                (/^https?:\/\//i.test(mainImage) &&
+                  !mainImage.includes("picsum.photos") &&
+                  !mainImage.includes("ytimg.com") &&
+                  !mainImage.includes("youtube.com")) ? (
                   <img
                     src={mainImage}
                     alt="Royal Studio founders and team"

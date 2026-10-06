@@ -1790,13 +1790,24 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
                       </td>
                       <td className="py-3.5 px-4 text-right">
                         {lead.linkedEventId && (
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/events/${lead.linkedEventId}`)}
-                            className="px-3 py-1 bg-slate-900 text-amber-400 rounded-lg text-[11px] font-bold cursor-pointer"
-                          >
-                            Open ERP Event
-                          </button>
+                          <div className="inline-flex items-center gap-1.5">
+                            <a
+                              href={`/proposal/${lead.linkedEventId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-lg text-[11px] font-bold"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              <span>Proposal</span>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/events/${lead.linkedEventId}`)}
+                              className="px-3 py-1 bg-slate-900 text-amber-400 rounded-lg text-[11px] font-bold cursor-pointer"
+                            >
+                              Open ERP Event
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>

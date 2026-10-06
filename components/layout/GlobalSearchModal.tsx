@@ -33,8 +33,13 @@ export default function GlobalSearchModal({
 }: {
   scrolled?: boolean;
 }) {
-  const { portfolioItems, detailedServices, blogPosts, pricingPackages } =
-    usePublicWebsiteCMS();
+  const {
+    portfolioItems,
+    detailedServices,
+    blogPosts,
+    pricingPackages,
+    websiteCustomization,
+  } = usePublicWebsiteCMS();
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeTab, setActiveTab] = useState<SearchFilterTab>("all");
@@ -66,22 +71,49 @@ export default function GlobalSearchModal({
 
     const portfolioResults: SearchResultItem[] = portfolioItems
       .filter((item) => {
+        if (item.visible === false) return false;
         if (!q) return true;
         return (
           item.title.toLowerCase().includes(q) ||
           item.category.toLowerCase().includes(q) ||
           (item.location || "").toLowerCase().includes(q) ||
-          (item.exif?.camera || "").toLowerCase().includes(q)
+          (item.exif?.camera || "").toLowerCase().includes(q) ||
+          (item.socialHandle || "").toLowerCase().includes(q) ||
+          (item.sourcePlatform || "").toLowerCase().includes(q) ||
+          (item.caption || "").toLowerCase().includes(q)
         );
       })
       .map((item) => ({
         id: `port-${item.id}`,
         type: "portfolio",
         title: item.title,
-        subtitle: `${item.category.toUpperCase()} · ${item.location || "Burewala"}`,
-        badge: "Portfolio",
+        subtitle: `${item.category.toUpperCase()} · ${item.location || "Burewala"}${
+          item.mediaType === "video" ? " · Video" : ""
+        }${item.socialHandle ? ` · ${item.socialHandle}` : ""}`,
+        badge: item.mediaType === "video" ? "Portfolio Video" : "Portfolio",
         href: `/portfolio?category=${encodeURIComponent(item.category)}`,
         image: item.image,
+      }));
+
+    const weddingFilmResults: SearchResultItem[] = (
+      websiteCustomization?.films?.weddingFilms || []
+    )
+      .filter((film) => {
+        if (!q) return true;
+        return (
+          film.title.toLowerCase().includes(q) ||
+          (film.location || "").toLowerCase().includes(q) ||
+          "wedding film youtube showreel".includes(q)
+        );
+      })
+      .map((film) => ({
+        id: `film-${film.id}`,
+        type: "portfolio",
+        title: film.title,
+        subtitle: `WEDDING FILM · ${film.location || "Burewala"} · ${film.duration || ""}`,
+        badge: "YouTube Film",
+        href: `/wedding-films`,
+        image: `https://i.ytimg.com/vi/${film.youtubeId}/hqdefault.jpg`,
       }));
 
     const serviceResults: SearchResultItem[] = detailedServices
@@ -145,6 +177,7 @@ export default function GlobalSearchModal({
     const combined = [
       ...serviceResults,
       ...portfolioResults,
+      ...weddingFilmResults,
       ...blogResults,
       ...packageResults,
     ];
@@ -153,7 +186,15 @@ export default function GlobalSearchModal({
       return q ? combined.slice(0, 18) : combined.slice(0, 10);
     }
     return combined.filter((item) => item.type === activeTab).slice(0, 18);
-  }, [query, activeTab, portfolioItems, detailedServices, blogPosts, pricingPackages]);
+  }, [
+    query,
+    activeTab,
+    portfolioItems,
+    detailedServices,
+    blogPosts,
+    pricingPackages,
+    websiteCustomization,
+  ]);
 
   return (
     <>
