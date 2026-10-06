@@ -9,7 +9,11 @@ import {
   Plus,
   Trash2,
   Eye,
-  Sparkles
+  Sparkles,
+  MessageCircle,
+  Copy,
+  ExternalLink,
+  CheckCircle2,
 } from 'lucide-react';
 import { useStudioData } from '../context/StudioDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -312,7 +316,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
                 <tr>
                   <th className="py-3 px-4">Invoice #</th>
                   <th className="py-3 px-4">Client & Event</th>
-                  <th className="py-3 px-4">Due Date</th>
+                  <th className="py-3 px-4">Milestone Schedule (30/60/10%)</th>
                   <th className="py-3 px-4">Total Amount</th>
                   <th className="py-3 px-4">Paid</th>
                   <th className="py-3 px-4">Balance Due</th>
@@ -324,6 +328,59 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
                 {filteredInvoices.map(inv => {
                   const client = clients.find(c => c.id === inv.clientId);
                   const event = events.find(e => e.id === inv.eventId);
+                  const totalAmt = Math.max(0, Number(inv.total || 0));
+                  const paidAmt = Math.max(0, Number(inv.paidAmount || 0));
+                  const m1Target = Math.round(totalAmt * 0.3);
+                  const m2Target = Math.round(totalAmt * 0.9); // 30% + 60%
+                  const m1Done = paidAmt >= m1Target && totalAmt > 0;
+                  const m2Done = paidAmt >= m2Target && totalAmt > 0;
+                  const m3Done = paidAmt >= totalAmt && totalAmt > 0;
+
+                  const nextStageLabel = !m1Done
+                    ? '30% Booking Advance'
+                    : !m2Done
+                    ? '60% Event End Day'
+                    : !m3Done
+                    ? '10% Album Delivery'
+                    : 'All Milestones Paid';
+
+                  const nextStageDueAmount = !m1Done
+                    ? Math.max(0, m1Target - paidAmt)
+                    : !m2Done
+                    ? Math.max(0, m2Target - paidAmt)
+                    : Math.max(0, totalAmt - paidAmt);
+
+                  const rawWa = (client?.whatsapp || client?.phone || '').replace(/[^0-9]/g, '');
+                  const cleanWa = rawWa
+                    ? rawWa.startsWith('92')
+                      ? rawWa
+                      : `92${rawWa.replace(/^0/, '')}`
+                    : '';
+
+                  const reminderText = [
+                    `Assalam-o-Alaikum *${client?.name || 'Valued Client'}*,`,
+                    `Warm regards from *${profile?.studioName || 'Royal Studio'}*!`,
+                    ``,
+                    `This is a polite payment milestone reminder for Invoice *${inv.invoiceNumber}* (${event?.title || 'Event Booking'}):`,
+                    `• *Current Milestone Due:* ${nextStageLabel}`,
+                    `• *Milestone Balance Due:* ${formatPKR(nextStageDueAmount)}`,
+                    `• *Total Invoice Paid:* ${formatPKR(paidAmt)} / ${formatPKR(totalAmt)}`,
+                    `• *Remaining Contract Balance:* ${formatPKR(inv.remainingAmount)}`,
+                    profile?.bankName
+                      ? `• *Bank Details:* ${profile.bankName} — ${profile.accountTitle} (${profile.accountNumber})`
+                      : '',
+                    ``,
+                    `View your interactive proposal & schedule online: ${
+                      typeof window !== 'undefined' ? window.location.origin : ''
+                    }/proposal/${inv.eventId}`,
+                  ]
+                    .filter(Boolean)
+                    .join('\n');
+
+                  const waReminderUrl = cleanWa
+                    ? `https://wa.me/${cleanWa}?text=${encodeURIComponent(reminderText)}`
+                    : `https://wa.me/?text=${encodeURIComponent(reminderText)}`;
+
                   return (
                     <tr key={inv.id} className="hover:bg-amber-50/40">
                       <td className="py-3.5 px-4 font-mono font-bold text-gray-900">{inv.invoiceNumber}</td>
@@ -336,7 +393,34 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
                           {event?.title || 'View Event'}
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 text-gray-600 font-medium">{formatDate(inv.dueDate)}</td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-1 mb-1">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              m1Done ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            30% {m1Done ? '✓' : 'Due'}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              m2Done ? 'bg-emerald-100 text-emerald-800' : m1Done ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'
+                            }`}
+                          >
+                            60% {m2Done ? '✓' : ''}
+                          </span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                              m3Done ? 'bg-emerald-100 text-emerald-800' : m2Done ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'
+                            }`}
+                          >
+                            10% {m3Done ? '✓' : ''}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-gray-500">
+                          Due: {formatDate(inv.dueDate)} • Next: <strong>{nextStageLabel}</strong>
+                        </div>
+                      </td>
                       <td className="py-3.5 px-4 font-mono font-bold text-gray-900">{formatPKR(inv.total)}</td>
                       <td className="py-3.5 px-4 font-mono text-emerald-600 font-bold">{formatPKR(inv.paidAmount)}</td>
                       <td className="py-3.5 px-4 font-mono font-bold text-rose-600">{formatPKR(inv.remainingAmount)}</td>
@@ -356,13 +440,25 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
                           </button>
 
                           {inv.remainingAmount > 0 && (
-                            <button
-                              onClick={() => handleOpenPayment(inv)}
-                              className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded text-[11px] font-semibold cursor-pointer"
-                              title="Record Payment"
-                            >
-                              Pay
-                            </button>
+                            <>
+                              <a
+                                href={waReminderUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition-colors cursor-pointer"
+                                title={`Send WhatsApp Payment Reminder for ${nextStageLabel}`}
+                              >
+                                <MessageCircle className="w-3.5 h-3.5" />
+                                <span>Remind</span>
+                              </a>
+                              <button
+                                onClick={() => handleOpenPayment(inv)}
+                                className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded text-[11px] font-semibold cursor-pointer"
+                                title="Record Payment"
+                              >
+                                Pay
+                              </button>
+                            </>
                           )}
                           <button
                             onClick={() => handleDownloadPDF(inv)}
@@ -403,6 +499,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
                   <th className="py-3 px-4">Issue Date</th>
                   <th className="py-3 px-4">Valid Until</th>
                   <th className="py-3 px-4">Quoted Amount</th>
+                  <th className="py-3 px-4">Online Approval</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
@@ -425,8 +522,44 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
                       <td className="py-3.5 px-4 text-gray-600 font-medium">{formatDate(quo.issueDate)}</td>
                       <td className="py-3.5 px-4 text-gray-600 font-medium">{formatDate(quo.validUntil)}</td>
                       <td className="py-3.5 px-4 font-mono font-bold text-slate-900">{formatPKR(quo.total)}</td>
+                      <td className="py-3.5 px-4">
+                        {event?.approvedByClient ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
+                            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                            Approved ({event.approvedByClient})
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-semibold">
+                            Awaiting Client Approval
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => {
+                              const url = `${window.location.origin}/proposal/${quo.id}`;
+                              navigator.clipboard.writeText(url);
+                              addToast(`Proposal link copied for ${quo.quotationNumber}!`);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded text-[11px] font-bold transition-colors cursor-pointer"
+                            title="Copy Interactive Client Proposal Link (/proposal/[id])"
+                          >
+                            <Copy className="w-3 h-3 text-emerald-700" />
+                            <span>Copy Link</span>
+                          </button>
+
+                          <a
+                            href={`/proposal/${quo.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded text-[11px] font-bold transition-colors cursor-pointer"
+                            title="Open Interactive Client Proposal Page"
+                          >
+                            <ExternalLink className="w-3 h-3 text-amber-400" />
+                            <span>Proposal</span>
+                          </a>
+
                           <button
                             onClick={() => handleViewQuotation(quo)}
                             className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 rounded text-[11px] font-bold transition-colors cursor-pointer"

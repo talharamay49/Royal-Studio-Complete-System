@@ -11,8 +11,8 @@ import {
   Phone,
   ShieldCheck,
 } from "lucide-react";
-import { navLinks, siteConfig } from "@/lib/data";
-import { usePublicStudioProfile } from "@/components/shared/StudioProfileContext";
+import { navLinks as defaultNavLinks, siteConfig } from "@/lib/data";
+import { usePublicStudioProfile, usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import Logo from "./Logo";
 
 function TiktokIcon({ size = 18 }: { size?: number }) {
@@ -32,13 +32,30 @@ function TiktokIcon({ size = 18 }: { size?: number }) {
 export default function Footer() {
   const pathname = usePathname();
   const profile = usePublicStudioProfile();
+  const { websiteCustomization } = usePublicWebsiteCMS();
 
   if (pathname?.startsWith("/admin")) {
     return null;
   }
 
+  const navCfg = websiteCustomization?.navigation;
+  const activeNavLinks =
+    navCfg?.navLinks && navCfg.navLinks.length > 0
+      ? navCfg.navLinks.filter((l) => l.visible !== false)
+      : defaultNavLinks;
+  const citiesList =
+    navCfg?.citiesServed && navCfg.citiesServed.length > 0
+      ? navCfg.citiesServed
+      : siteConfig.citiesServed;
+  const showCitiesInFooter = navCfg?.showCitiesInFooter !== false;
+  const showSocialLinksInFooter = navCfg?.showSocialLinksInFooter !== false;
+
   const studioName = profile?.publicStudioName || profile?.studioName || siteConfig.name;
-  const description = profile?.description || profile?.tagline || siteConfig.description;
+  const description =
+    navCfg?.footerTagline || profile?.description || profile?.tagline || siteConfig.description;
+  const footerSubtext =
+    navCfg?.footerSubtext ||
+    `Wedding Photographer ${profile?.city || "Burewala"} · Luxury Wedding Photography Pakistan`;
   const displayAddress = profile?.publicDisplayAddress || profile?.address || siteConfig.address.full;
   const googleMapsUrl = profile?.googleMapsUrl || siteConfig.social.maps;
   const email = profile?.email || siteConfig.email;
@@ -64,26 +81,28 @@ export default function Footer() {
               <p className="text-sm leading-relaxed text-text-muted">
                 {description}
               </p>
-              <div className="mt-6 flex gap-3">
-                {socials.map(({ icon: Icon, href, label }) => (
-                  <a
-                    key={label}
-                    href={href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={label}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-text-muted transition-all hover:border-accent hover:text-accent"
-                  >
-                    <Icon size={18} />
-                  </a>
-                ))}
-              </div>
+              {showSocialLinksInFooter && (
+                <div className="mt-6 flex gap-3">
+                  {socials.map(({ icon: Icon, href, label }) => (
+                    <a
+                      key={label}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={label}
+                      className="flex h-10 w-10 items-center justify-center rounded-xl border border-border text-text-muted transition-all hover:border-accent hover:text-accent"
+                    >
+                      <Icon size={18} />
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div>
               <h4 className="mb-4 font-display text-lg text-primary">Quick Links</h4>
               <ul className="space-y-2">
-                {navLinks.map((link) => (
+                {activeNavLinks.map((link) => (
                   <li key={link.href}>
                     <Link
                       href={link.href}
@@ -144,16 +163,20 @@ export default function Footer() {
 
             <div>
               <h4 className="mb-4 font-display text-lg text-primary">Cities Served</h4>
-              <ul className="flex flex-wrap gap-2">
-                {siteConfig.citiesServed.slice(0, 8).map((city) => (
-                  <li
-                    key={city}
-                    className="rounded-full border border-border px-3 py-1 text-xs text-text-muted"
-                  >
-                    {city}
-                  </li>
-                ))}
-              </ul>
+              {showCitiesInFooter ? (
+                <ul className="flex flex-wrap gap-2">
+                  {citiesList.slice(0, 12).map((city) => (
+                    <li
+                      key={city}
+                      className="rounded-full border border-border px-3 py-1 text-xs text-text-muted"
+                    >
+                      {city}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-text-muted">Nationwide wedding &amp; event coverage across Pakistan.</p>
+              )}
             </div>
           </div>
         </div>
@@ -166,7 +189,7 @@ export default function Footer() {
             {siteConfig.founders.join(" & ")}. All rights reserved.
           </p>
           <div className="flex items-center gap-4 text-xs text-text-muted">
-            <span>Wedding Photographer {profile?.city || "Burewala"} · Luxury Wedding Photography Pakistan</span>
+            <span>{footerSubtext}</span>
             <span>·</span>
             <Link
               href="/admin"

@@ -78,10 +78,10 @@
     "emailHeaderLogo": "/RoyalLogo.png",
     "socialProfileImage": "/logo.png",
     "socialCoverImage": "/image.png",
-    "documentBackground": "/invoice_lens_bg.jpg",
-    "quotationBackground": "/invoice_lens_bg.jpg",
-    "invoiceBackground": "/invoice_lens_bg.jpg",
-    "receiptBackground": "/invoice_lens_bg.jpg",
+    "documentBackground": "/01.jpg",
+    "quotationBackground": "/01.jpg",
+    "invoiceBackground": "/01.jpg",
+    "receiptBackground": "/01.jpg",
     "letterheadText": "ROYAL STUDIO — PHOTOGRAPHY & FILMS",
     "documentFooterText": "Thank you for choosing Royal Studio. We Capture Your Memories!",
     "defaultTermsAndConditions": "50% advance deposit required upon contract confirmation to lock dates, camera crew, and equipment. Balance payable before final delivery. Edited highlight reels and albums delivered within 15-20 working days.",
@@ -252,7 +252,12 @@
       "borderRadius": "sharp",
       "applyToPublicWebsite": true,
       "borderRadiusPx": 0
-    }
+    },
+    "documentShowBackground": true,
+    "documentBackgroundFit": "as-is",
+    "documentBackgroundOpacity": 100,
+    "documentPageFillColor": "#efece4",
+    "documentTableStyle": "transparent"
   },
   "profileAuditLogs": [
     {

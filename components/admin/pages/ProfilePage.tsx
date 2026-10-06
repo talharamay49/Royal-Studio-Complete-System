@@ -40,6 +40,7 @@ import {
 import { Modal } from '../components/common/Modal';
 import { ConfirmationDialog } from '../components/common/ConfirmationDialog';
 import { StaffProfilePage } from './StaffProfilePage';
+import { generateSampleStationeryPDF } from '../utils/pdfGenerator';
 import {
   User,
   AdminProfile,
@@ -198,17 +199,29 @@ export const ProfilePage: React.FC = () => {
     }
   };
 
-  const handleImageUpload = (field: keyof AdminProfile, file: File | undefined) => {
+  const handleImageUpload = (field: keyof AdminProfile, file: File | undefined, syncAllDocBgs = false) => {
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      addToast('Image file size should be under 2MB.', 'warning');
+    if (file.size > 5 * 1024 * 1024) {
+      addToast('Image file size should be under 5MB.', 'warning');
       return;
     }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        setField(field, reader.result as any);
-        addToast(`Loaded image for ${String(field)}. Click Save Profile Changes to persist.`, 'info');
+        const dataUrl = reader.result;
+        if (syncAllDocBgs) {
+          setFormData(prev => ({
+            ...prev,
+            documentBackground: dataUrl,
+            invoiceBackground: dataUrl,
+            quotationBackground: dataUrl,
+            receiptBackground: dataUrl,
+          }));
+          addToast('Applied uploaded background image across all official documents. Click Save Document Settings to persist.', 'info');
+        } else {
+          setField(field, dataUrl as any);
+          addToast(`Loaded image for ${String(field)}. Click Save Changes to persist.`, 'info');
+        }
       }
     };
     reader.readAsDataURL(file);
@@ -1774,10 +1787,544 @@ export const ProfilePage: React.FC = () => {
       {/* TAB 6: DOCUMENT BRANDING & STATIONERY */}
       {activeTab === 'DOCUMENTS' && (
         <form onSubmit={e => handleSaveProfile(e, 'Document Branding & Terms')} className="space-y-6">
+          {/* Interactive Document Background Studio & Live A4 Preview */}
+          <div className="p-6 bg-white rounded-2xl border border-gray-200 shadow-xs space-y-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-gray-100">
+              <div>
+                <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                  <FileText className="w-4 h-4 text-amber-600" />
+                  <span>Official Document Background Page &amp; Stationery Customizer</span>
+                </div>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Your official A4 stationery (<span className="font-mono font-semibold text-gray-800">/01.jpg</span>) is applied as-is by default across Invoices, Quotations, Receipts, Dossiers, and Call Sheets. Upload a new background or customize layout, opacity, and styling below.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormData(prev => ({
+                      ...prev,
+                      documentBackground: '/01.jpg',
+                      invoiceBackground: '/01.jpg',
+                      quotationBackground: '/01.jpg',
+                      receiptBackground: '/01.jpg',
+                      documentShowBackground: true,
+                      documentBackgroundFit: 'as-is',
+                      documentBackgroundOpacity: 100,
+                      documentPageFillColor: '#efece4',
+                      documentShowHeaderLogo: true,
+                      documentHeaderLogoHeight: 16,
+                      documentAccentColor: '#a58137',
+                      documentTableStyle: 'transparent',
+                    }));
+                    addToast('Restored official 01.jpg document background (As-Is). Click Save Document Settings to persist.', 'info');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Use Official 01.jpg (As-Is)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => generateSampleStationeryPDF({ ...(profile as AdminProfile), ...formData }, 'INVOICE')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer shadow-xs"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Test Sample Invoice PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => generateSampleStationeryPDF({ ...(profile as AdminProfile), ...formData }, 'QUOTATION')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 text-slate-800 border border-gray-300 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Test Sample Quotation PDF</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* LEFT 7 COLS: UPLOAD & CUSTOMIZATION CONTROLS */}
+              <div className="lg:col-span-7 space-y-5">
+                {/* Master Document Background Upload Card */}
+                <div className="p-4 bg-amber-50/40 rounded-xl border border-amber-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                        1. Master Document Background Image (Default: /01.jpg)
+                      </span>
+                      <p className="text-[11px] text-gray-600">
+                        Upload any custom A4 background page (JPG, PNG, WEBP) or use the official <code className="font-mono font-bold">/01.jpg</code> stationery as-is.
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
+                      {formData.documentShowBackground !== false ? 'Active on PDFs' : 'Hidden'}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2.5">
+                    <input
+                      type="text"
+                      value={formData.documentBackground || '/01.jpg'}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setFormData(prev => ({
+                          ...prev,
+                          documentBackground: val,
+                          invoiceBackground: val,
+                          quotationBackground: val,
+                          receiptBackground: val,
+                        }));
+                      }}
+                      disabled={!isAdmin}
+                      placeholder="/01.jpg or paste image URL / data URI..."
+                      className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs font-mono"
+                    />
+                    {isAdmin && (
+                      <label className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer shrink-0 shadow-2xs">
+                        <Upload className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Upload Custom Background</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={e => handleImageUpload('documentBackground', e.target.files?.[0], true)}
+                        />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Quick Background Style Presets */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className="text-[11px] font-semibold text-gray-500">Quick Presets:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          documentBackground: '/01.jpg',
+                          invoiceBackground: '/01.jpg',
+                          quotationBackground: '/01.jpg',
+                          receiptBackground: '/01.jpg',
+                          documentShowBackground: true,
+                          documentBackgroundFit: 'as-is',
+                          documentBackgroundOpacity: 100,
+                          documentPageFillColor: '#efece4',
+                          documentTableStyle: 'transparent',
+                        }));
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${
+                        (formData.documentBackground || '/01.jpg') === '/01.jpg' &&
+                        formData.documentShowBackground !== false &&
+                        (formData.documentBackgroundOpacity ?? 100) === 100
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                      }`}
+                    >
+                      Official 01.jpg (100% As-Is)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          documentBackground: '/01.jpg',
+                          invoiceBackground: '/01.jpg',
+                          quotationBackground: '/01.jpg',
+                          receiptBackground: '/01.jpg',
+                          documentShowBackground: true,
+                          documentBackgroundFit: 'as-is',
+                          documentBackgroundOpacity: 65,
+                          documentPageFillColor: '#efece4',
+                          documentTableStyle: 'transparent',
+                        }));
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 cursor-pointer"
+                    >
+                      Soft 01.jpg Watermark (65%)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          documentShowBackground: false,
+                          documentPageFillColor: '#efece4',
+                          documentTableStyle: 'transparent',
+                        }));
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 cursor-pointer"
+                    >
+                      Plain Warm Cream (#efece4)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData(prev => ({
+                          ...prev,
+                          documentShowBackground: false,
+                          documentPageFillColor: '#ffffff',
+                          documentTableStyle: 'solid-white',
+                        }));
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 cursor-pointer"
+                    >
+                      Pure White Minimal
+                    </button>
+                  </div>
+                </div>
+
+                {/* Layout, Opacity, Table & Color Customization Grid */}
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-4">
+                  <div className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    2. Background Placement, Opacity &amp; Overlay Customization
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Background Fit &amp; Placement Mode
+                      </label>
+                      <select
+                        value={formData.documentBackgroundFit || 'as-is'}
+                        onChange={e => setField('documentBackgroundFit', e.target.value as any)}
+                        disabled={!isAdmin}
+                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs font-semibold"
+                      >
+                        <option value="as-is">Full A4 Page As-Is (210mm × 297mm Exact)</option>
+                        <option value="contain">Fit Proportionally Inside Page</option>
+                        <option value="top-banner">Top Stationery Graphic Only</option>
+                        <option value="center-watermark">Centered Emblem Watermark</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Table Row Background Style
+                      </label>
+                      <select
+                        value={formData.documentTableStyle || 'transparent'}
+                        onChange={e => setField('documentTableStyle', e.target.value as any)}
+                        disabled={!isAdmin}
+                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs font-semibold"
+                      >
+                        <option value="transparent">Transparent Rows (Show 01.jpg Background As-Is)</option>
+                        <option value="cream">Soft Warm Cream Rows</option>
+                        <option value="solid-white">Solid White Table Rows</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-gray-700">
+                          Background Image Opacity
+                        </label>
+                        <span className="text-xs font-mono font-bold text-amber-700">
+                          {formData.documentBackgroundOpacity ?? 100}%
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={10}
+                        max={100}
+                        step={5}
+                        value={formData.documentBackgroundOpacity ?? 100}
+                        onChange={e => setField('documentBackgroundOpacity', Number(e.target.value))}
+                        disabled={!isAdmin}
+                        className="w-full accent-amber-600 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-gray-400">
+                        <span>10% (Faint)</span>
+                        <span>100% (Original As-Is)</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-semibold text-gray-700">
+                          Top-Left Header Logo Size (mm)
+                        </label>
+                        <span className="text-xs font-mono font-bold text-slate-700">
+                          {formData.documentHeaderLogoHeight ?? 16} mm
+                        </span>
+                      </div>
+                      <input
+                        type="range"
+                        min={10}
+                        max={28}
+                        step={1}
+                        value={formData.documentHeaderLogoHeight ?? 16}
+                        onChange={e => setField('documentHeaderLogoHeight', Number(e.target.value))}
+                        disabled={!isAdmin}
+                        className="w-full accent-slate-900 cursor-pointer"
+                      />
+                      <div className="flex justify-between text-[10px] text-gray-400">
+                        <span>Compact (10mm)</span>
+                        <span>Large (28mm)</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Base Page Paper Color
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={formData.documentPageFillColor || '#efece4'}
+                          onChange={e => setField('documentPageFillColor', e.target.value)}
+                          disabled={!isAdmin}
+                          className="w-9 h-9 rounded border border-gray-300 cursor-pointer bg-white p-0.5"
+                        />
+                        <input
+                          type="text"
+                          value={formData.documentPageFillColor || '#efece4'}
+                          onChange={e => setField('documentPageFillColor', e.target.value)}
+                          disabled={!isAdmin}
+                          className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Document Heading &amp; Accent Color
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={formData.documentAccentColor || '#a58137'}
+                          onChange={e => setField('documentAccentColor', e.target.value)}
+                          disabled={!isAdmin}
+                          className="w-9 h-9 rounded border border-gray-300 cursor-pointer bg-white p-0.5"
+                        />
+                        <input
+                          type="text"
+                          value={formData.documentAccentColor || '#a58137'}
+                          onChange={e => setField('documentAccentColor', e.target.value)}
+                          disabled={!isAdmin}
+                          className="flex-1 px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-6 pt-2 border-t border-gray-200/80">
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.documentShowBackground !== false}
+                        onChange={e => setField('documentShowBackground', e.target.checked)}
+                        disabled={!isAdmin}
+                        className="rounded border-gray-300"
+                      />
+                      <span>Enable Document Background Image on PDFs</span>
+                    </label>
+
+                    <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.documentShowHeaderLogo !== false}
+                        onChange={e => setField('documentShowHeaderLogo', e.target.checked)}
+                        disabled={!isAdmin}
+                        className="rounded border-gray-300"
+                      />
+                      <span>Show Top-Left RoyalLogo.png Emblem on PDFs</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Per-Document Type Background Overrides */}
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
+                  <div className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    3. Per-Document Background Overrides (Optional)
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {(
+                      [
+                        { key: 'invoiceBackground', label: 'Invoice PDF Background' },
+                        { key: 'quotationBackground', label: 'Quotation PDF Background' },
+                        { key: 'receiptBackground', label: 'Receipt PDF Background' },
+                      ] as const
+                    ).map(item => (
+                      <div key={item.key} className="p-3 bg-white rounded-lg border border-gray-200 space-y-2">
+                        <label className="block text-[11px] font-bold text-gray-800">{item.label}</label>
+                        <input
+                          type="text"
+                          value={(formData[item.key] as string) || formData.documentBackground || '/01.jpg'}
+                          onChange={e => setField(item.key, e.target.value)}
+                          disabled={!isAdmin}
+                          className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded text-[11px] font-mono"
+                        />
+                        {isAdmin && (
+                          <label className="inline-flex items-center gap-1 px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-[10px] font-semibold cursor-pointer">
+                            <Upload className="w-3 h-3 text-amber-600" />
+                            <span>Upload Custom</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={e => handleImageUpload(item.key, e.target.files?.[0], false)}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* RIGHT 5 COLS: LIVE A4 PORTRAIT DOCUMENT PREVIEW */}
+              <div className="lg:col-span-5 flex flex-col items-center">
+                <div className="w-full max-w-[360px] space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-900">Live A4 Stationery Preview</span>
+                    <span className="text-[11px] font-mono text-gray-500">210mm × 297mm (A4)</span>
+                  </div>
+
+                  {/* A4 Aspect Ratio Sheet */}
+                  <div
+                    className="relative w-full aspect-[1/1.414] rounded-xl border-2 border-gray-300 shadow-lg overflow-hidden select-none"
+                    style={{
+                      backgroundColor: formData.documentPageFillColor || '#efece4',
+                    }}
+                  >
+                    {/* Background Image Layer (01.jpg As-Is by default) */}
+                    {formData.documentShowBackground !== false && (
+                      <img
+                        src={formData.documentBackground || '/01.jpg'}
+                        alt="Document Stationery Background"
+                        className={`absolute inset-0 w-full h-full pointer-events-none transition-all ${
+                          formData.documentBackgroundFit === 'contain'
+                            ? 'object-contain'
+                            : formData.documentBackgroundFit === 'top-banner'
+                            ? 'object-contain object-top'
+                            : formData.documentBackgroundFit === 'center-watermark'
+                            ? 'object-contain scale-75'
+                            : 'object-fill'
+                        }`}
+                        style={{
+                          opacity: (formData.documentBackgroundOpacity ?? 100) / 100,
+                        }}
+                      />
+                    )}
+
+                    {/* Simulated Official PDF Content Overlay */}
+                    <div className="relative z-10 p-4 h-full flex flex-col justify-between text-[9px] text-slate-900">
+                      <div className="space-y-2.5">
+                        {/* Top Timestamp Bar */}
+                        <div className="flex items-center justify-between text-[7px] text-gray-500 border-b border-gray-300/80 pb-1">
+                          <span>05/10/2026, 16:30</span>
+                          <span>{formData.studioName || 'Royal Studio'} — Official INVOICE</span>
+                        </div>
+
+                        {/* Header Logo + Title + Stamp */}
+                        <div className="flex items-start justify-between gap-2 pt-0.5">
+                          <div className="flex items-center gap-2">
+                            {formData.documentShowHeaderLogo !== false && (
+                              <img
+                                src={formData.documentLogo || formData.primaryLogo || '/RoyalLogo.png'}
+                                alt="Logo"
+                                className="object-contain shrink-0"
+                                style={{
+                                  height: `${Math.round((formData.documentHeaderLogoHeight ?? 16) * 1.4)}px`,
+                                }}
+                              />
+                            )}
+                            <div>
+                              <div className="text-sm font-black tracking-tight text-slate-900 leading-none">
+                                INVOICE
+                              </div>
+                              <div
+                                className="text-[7px] font-bold uppercase tracking-wider mt-0.5"
+                                style={{ color: formData.documentAccentColor || '#a58137' }}
+                              >
+                                {formData.letterheadText || 'ROYAL STUDIO — PHOTOGRAPHY & FILMS'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="px-2 py-0.5 rounded bg-emerald-100 border border-emerald-500 text-emerald-800 font-bold text-[7px]">
+                            PAID IN FULL
+                          </div>
+                        </div>
+
+                        {/* Bill To / From */}
+                        <div className="grid grid-cols-2 gap-2 pt-1 text-[7.5px]">
+                          <div>
+                            <div
+                              className="font-bold uppercase text-[6.5px]"
+                              style={{ color: formData.documentAccentColor || '#a58137' }}
+                            >
+                              BILL TO (CLIENT)
+                            </div>
+                            <div className="font-bold text-slate-900">Ahsan &amp; Zoya Family</div>
+                            <div className="text-gray-600">Royal Palm Marquee, Burewala</div>
+                          </div>
+                          <div>
+                            <div
+                              className="font-bold uppercase text-[6.5px]"
+                              style={{ color: formData.documentAccentColor || '#a58137' }}
+                            >
+                              FROM (OFFICIAL STUDIO)
+                            </div>
+                            <div className="font-bold text-slate-900">{formData.studioName || 'Royal Studio'}</div>
+                            <div className="text-gray-600 truncate">{formData.phone || '0308-4877073'}</div>
+                          </div>
+                        </div>
+
+                        {/* Sample Table */}
+                        <div className="mt-2 border border-slate-400/60 rounded overflow-hidden">
+                          <div className="bg-slate-900 text-white font-bold px-2 py-1 flex justify-between text-[7px]">
+                            <span>SERVICES &amp; COVERAGE DETAILS</span>
+                            <span>AMOUNT</span>
+                          </div>
+                          <div
+                            className={`px-2 py-1.5 border-b border-slate-300/60 flex justify-between text-[7.5px] ${
+                              formData.documentTableStyle === 'solid-white'
+                                ? 'bg-white'
+                                : formData.documentTableStyle === 'cream'
+                                ? 'bg-[#f5f2eb]'
+                                : 'bg-transparent'
+                            }`}
+                          >
+                            <span>Day 1: Barat Cinema &amp; Portrait Coverage</span>
+                            <span className="font-bold">PKR 155,000</span>
+                          </div>
+                          <div
+                            className={`px-2 py-1.5 flex justify-between text-[7.5px] ${
+                              formData.documentTableStyle === 'solid-white'
+                                ? 'bg-white'
+                                : formData.documentTableStyle === 'cream'
+                                ? 'bg-[#f5f2eb]'
+                                : 'bg-transparent'
+                            }`}
+                          >
+                            <span>Day 2: Walima Reception &amp; 4K Drone</span>
+                            <span className="font-bold">PKR 130,000</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer */}
+                      <div className="pt-2 border-t border-gray-300/70 text-center text-[7px] font-semibold text-gray-600">
+                        {formData.documentFooterText ||
+                          'Thank you for choosing Royal Studio. We Capture Your Memories!'}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-center text-gray-500">
+                    The preview above reflects your live <code className="font-mono font-bold">/01.jpg</code> background &amp; table transparency settings.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="p-6 bg-white rounded-2xl border border-gray-200 shadow-xs space-y-5">
             <div className="flex items-center gap-2 pb-3 border-b border-gray-100 text-slate-900 font-bold text-sm">
               <FileText className="w-4 h-4 text-amber-600" />
-              <span>Invoices, Quotations & Official Stationery Settings</span>
+              <span>Document Numbering, Letterhead Text &amp; Contract Terms</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1807,15 +2354,16 @@ export const ProfilePage: React.FC = () => {
 
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  Document Watermark / Lens Background
+                  Active Document Background Path
                 </label>
                 <input
                   type="text"
-                  value={formData.documentBackground || '/invoice_lens_bg.jpg'}
+                  value={formData.documentBackground || '/01.jpg'}
                   onChange={e => {
                     setField('documentBackground', e.target.value);
                     setField('invoiceBackground', e.target.value);
                     setField('quotationBackground', e.target.value);
+                    setField('receiptBackground', e.target.value);
                   }}
                   disabled={!isAdmin}
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-mono"
@@ -2390,6 +2938,33 @@ export const ProfilePage: React.FC = () => {
                   disabled={!isAdmin}
                   className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs"
                 />
+              </div>
+
+              <div className="md:col-span-2 pt-3 border-t border-gray-100">
+                <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-gray-900">
+                      Customer Side Detailed Event Price Breakdown (Real-Time Pricing Engine)
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      Default: Hidden on customer side. Toggle on only if you want website visitors to see the Detailed Event Price Breakdown table &amp; unit rates in the public Inquiry Form.
+                    </p>
+                  </div>
+                  <label className="inline-flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-800 shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formData.showPublicPriceBreakdown)}
+                      onChange={e => setField('showPublicPriceBreakdown', e.target.checked)}
+                      disabled={!isAdmin}
+                      className="w-4 h-4 rounded border-gray-300"
+                    />
+                    <span>
+                      {formData.showPublicPriceBreakdown
+                        ? 'Visible on Customer Side'
+                        : 'Hidden on Customer Side (Default)'}
+                    </span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>

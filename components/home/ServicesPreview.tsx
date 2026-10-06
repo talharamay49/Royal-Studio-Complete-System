@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import {
   Camera,
@@ -11,6 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { homeServices } from "@/lib/data";
+import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import SectionHeading from "@/components/shared/SectionHeading";
 import AnimatedSection from "@/components/shared/AnimatedSection";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,22 +31,40 @@ const iconMap: Record<string, LucideIcon> = {
 };
 
 export default function ServicesPreview() {
+  const { websiteCustomization } = usePublicWebsiteCMS();
+  const vis = websiteCustomization?.sectionVisibility;
+  const secCfg = websiteCustomization?.sections;
+
+  if (vis && vis.showServicesPreview === false) {
+    return null;
+  }
+
+  const label = secCfg?.servicesLabel || "Our Services";
+  const title = secCfg?.servicesTitle || "Crafted for Every Celebration";
+  const description =
+    secCfg?.servicesDescription ||
+    "From sacred Nikah ceremonies to cinematic wedding films, we deliver luxury coverage tailored to your vision.";
+  const servicesList =
+    secCfg?.homeServices && secCfg.homeServices.length > 0
+      ? secCfg.homeServices
+      : homeServices;
+
   return (
     <section className="section-padding bg-background">
       <div className="mx-auto max-w-7xl">
         <AnimatedSection>
           <SectionHeading
-            label="Our Services"
-            title="Crafted for Every Celebration"
-            description="From sacred Nikah ceremonies to cinematic wedding films, we deliver luxury coverage tailored to your vision."
+            label={label}
+            title={title}
+            description={description}
           />
         </AnimatedSection>
 
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {homeServices.map((service, i) => {
-            const Icon = iconMap[service.icon];
+          {servicesList.map((service, i) => {
+            const Icon = iconMap[service.icon] || Camera;
             return (
-              <AnimatedSection key={service.id} delay={i * 0.05}>
+              <AnimatedSection key={service.id || i} delay={i * 0.05}>
                 <Card className="group h-full border-border/80 transition-all duration-500 hover:border-accent/40 hover:shadow-premium-lg">
                   <CardContent className="p-6">
                     <div className="mb-4 inline-flex rounded-xl bg-accent/10 p-3 text-accent transition-colors group-hover:bg-accent/15">

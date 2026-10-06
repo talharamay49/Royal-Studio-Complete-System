@@ -22,21 +22,37 @@ import {
   Camera,
   MapPin,
   Database,
-  Download
+  Download,
+  Share2,
+  Sliders,
+  GripVertical,
+  ChevronsUp,
+  LayoutGrid,
+  Star,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { useStudioData } from '../context/StudioDataContext';
 import { Modal } from '../components/common/Modal';
 import { ConfirmationDialog } from '../components/common/ConfirmationDialog';
+import { CompleteWebsiteCustomizer } from '../components/cms/CompleteWebsiteCustomizer';
+import { SocialMediaPortfolioSelector } from '../components/cms/SocialMediaPortfolioSelector';
 import type {
   PortfolioItem,
   PortfolioCategory,
   PricingPackage,
   Service,
   Testimonial,
-  BlogPost
+  BlogPost,
+  WebsiteCustomizationConfig,
+  ConnectedSocialAccount,
+  SocialMediaPostItem,
 } from '@/types';
-import { portfolioCategories } from '@/lib/data';
+import {
+  portfolioCategories,
+  defaultWebsiteCustomization,
+  defaultConnectedSocialAccounts,
+  defaultSocialMediaPosts,
+} from '@/lib/data';
 
 interface WebsiteLead {
   id: string;
@@ -62,9 +78,21 @@ interface WebsiteCMSState {
   testimonials: Testimonial[];
   blogPosts: BlogPost[];
   websiteLeads: WebsiteLead[];
+  websiteCustomization?: WebsiteCustomizationConfig;
+  connectedSocialAccounts?: ConnectedSocialAccount[];
+  socialMediaPosts?: SocialMediaPostItem[];
 }
 
-type CmsTab = 'PORTFOLIO' | 'PACKAGES' | 'SERVICES' | 'TESTIMONIALS' | 'BLOG' | 'LEADS' | 'DATABASE';
+type CmsTab =
+  | 'WEBSITE_CUSTOMIZER'
+  | 'PORTFOLIO'
+  | 'SOCIAL_PORTFOLIO'
+  | 'PACKAGES'
+  | 'SERVICES'
+  | 'TESTIMONIALS'
+  | 'BLOG'
+  | 'LEADS'
+  | 'DATABASE';
 
 interface WebsiteCmsPageProps {
   navigate: (path: string) => void;
@@ -89,8 +117,28 @@ const PORTFOLIO_CATEGORIES_LIST: Exclude<PortfolioCategory, 'all'>[] = [
 ];
 
 export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
-  const { addToast, refreshAll } = useStudioData();
+  const { addToast, refreshAll, profile, updateProfile } = useStudioData();
   const [activeTab, setActiveTab] = useState<CmsTab>('PORTFOLIO');
+  const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
+
+  const handleToggleCustomerBreakdownVisibility = async () => {
+    setIsUpdatingVisibility(true);
+    try {
+      const nextVal = !Boolean(profile?.showPublicPriceBreakdown);
+      await updateProfile(
+        { showPublicPriceBreakdown: nextVal },
+        'Customer Price Breakdown Visibility'
+      );
+      addToast(
+        nextVal
+          ? 'Detailed Event Price Breakdown is now VISIBLE on the Customer Inquiry Form.'
+          : 'Detailed Event Price Breakdown is now HIDDEN on the Customer Inquiry Form (Default).',
+        'success'
+      );
+    } finally {
+      setIsUpdatingVisibility(false);
+    }
+  };
   const [dbStats, setDbStats] = useState<{
     driverName: string;
     storagePath: string;
@@ -112,14 +160,21 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
     testimonials: [],
     blogPosts: [],
     websiteLeads: [],
+    websiteCustomization: defaultWebsiteCustomization,
+    connectedSocialAccounts: defaultConnectedSocialAccounts,
+    socialMediaPosts: defaultSocialMediaPosts,
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
-  // Portfolio Filter & Modal State
+  // Portfolio Filter, Drag-and-Drop & Modal State
   const [categoryFilter, setCategoryFilter] = useState<PortfolioCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [portfolioViewMode, setPortfolioViewMode] = useState<'DETAILED' | 'STORYBOARD'>('DETAILED');
+  const [draggedPortfolioId, setDraggedPortfolioId] = useState<number | null>(null);
+  const [dragOverPortfolioId, setDragOverPortfolioId] = useState<number | null>(null);
+  const [dragOverCategory, setDragOverCategory] = useState<PortfolioCategory | null>(null);
   const [isPortfolioModalOpen, setIsPortfolioModalOpen] = useState(false);
   const [editingPortfolioItem, setEditingPortfolioItem] = useState<PortfolioItem | null>(null);
   const [portfolioForm, setPortfolioForm] = useState<{
@@ -228,6 +283,15 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
         testimonials: data.testimonials || [],
         blogPosts: data.blogPosts || [],
         websiteLeads: data.websiteLeads || [],
+        websiteCustomization: data.websiteCustomization || defaultWebsiteCustomization,
+        connectedSocialAccounts:
+          data.connectedSocialAccounts && data.connectedSocialAccounts.length > 0
+            ? data.connectedSocialAccounts
+            : defaultConnectedSocialAccounts,
+        socialMediaPosts:
+          data.socialMediaPosts && data.socialMediaPosts.length > 0
+            ? data.socialMediaPosts
+            : defaultSocialMediaPosts,
       });
       if (info) setDbStats(info);
     } catch (err: any) {
@@ -414,7 +478,113 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
     const nextList = [...cmsData.portfolioItems];
     const [moved] = nextList.splice(idx, 1);
     nextList.splice(targetIdx, 0, moved);
+    setCmsData((prev) => ({ ...prev, portfolioItems: nextList }));
     await persistCmsUpdate({ portfolioItems: nextList }, 'Portfolio display order updated.');
+  };
+
+  const handlePinPortfolioItemToTop = async (id: number) => {
+    const idx = cmsData.portfolioItems.findIndex((i) => i.id === id);
+    if (idx <= 0) return;
+    const nextList = [...cmsData.portfolioItems];
+    const [moved] = nextList.splice(idx, 1);
+    nextList.unshift(moved);
+    setCmsData((prev) => ({ ...prev, portfolioItems: nextList }));
+    await persistCmsUpdate(
+      { portfolioItems: nextList },
+      `"${moved.title}" prioritized to #1 Featured position!`
+    );
+  };
+
+  const handleQuickOrganizePortfolioItem = async (
+    id: number,
+    patch: Partial<Pick<PortfolioItem, 'category' | 'aspect'>>
+  ) => {
+    const target = cmsData.portfolioItems.find((i) => i.id === id);
+    if (!target) return;
+    const nextList = cmsData.portfolioItems.map((i) =>
+      i.id === id ? { ...i, ...patch } : i
+    );
+    setCmsData((prev) => ({ ...prev, portfolioItems: nextList }));
+    await persistCmsUpdate(
+      { portfolioItems: nextList },
+      `Updated "${target.title}" (${patch.category ? `Category: ${patch.category}` : `Aspect: ${patch.aspect}`}).`
+    );
+  };
+
+  const handlePortfolioDragStart = (e: React.DragEvent<HTMLDivElement>, id: number) => {
+    setDraggedPortfolioId(id);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(id));
+  };
+
+  const handlePortfolioDragOverCard = (e: React.DragEvent<HTMLDivElement>, targetId: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (draggedPortfolioId !== null && draggedPortfolioId !== targetId) {
+      if (dragOverPortfolioId !== targetId) {
+        setDragOverPortfolioId(targetId);
+      }
+    }
+  };
+
+  const handlePortfolioDropOnCard = async (
+    e: React.DragEvent<HTMLDivElement>,
+    targetId: number
+  ) => {
+    e.preventDefault();
+    const sourceId =
+      draggedPortfolioId ?? Number(e.dataTransfer.getData('text/plain'));
+    setDraggedPortfolioId(null);
+    setDragOverPortfolioId(null);
+    setDragOverCategory(null);
+
+    if (!sourceId || sourceId === targetId) return;
+
+    const fromIdx = cmsData.portfolioItems.findIndex((i) => i.id === sourceId);
+    const toIdx = cmsData.portfolioItems.findIndex((i) => i.id === targetId);
+    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+
+    const nextList = [...cmsData.portfolioItems];
+    const [moved] = nextList.splice(fromIdx, 1);
+    nextList.splice(toIdx, 0, moved);
+
+    // Real-time optimistic update + persistence
+    setCmsData((prev) => ({ ...prev, portfolioItems: nextList }));
+    await persistCmsUpdate(
+      { portfolioItems: nextList },
+      `Reordered "${moved.title}" to Priority #${toIdx + 1}!`
+    );
+  };
+
+  const handlePortfolioDropOnCategory = async (
+    e: React.DragEvent<HTMLButtonElement>,
+    targetCat: PortfolioCategory
+  ) => {
+    e.preventDefault();
+    const sourceId =
+      draggedPortfolioId ?? Number(e.dataTransfer.getData('text/plain'));
+    setDraggedPortfolioId(null);
+    setDragOverPortfolioId(null);
+    setDragOverCategory(null);
+
+    if (!sourceId || targetCat === 'all') return;
+    const item = cmsData.portfolioItems.find((i) => i.id === sourceId);
+    if (!item || item.category === targetCat) return;
+
+    const nextList = cmsData.portfolioItems.map((i) =>
+      i.id === sourceId ? { ...i, category: targetCat } : i
+    );
+    setCmsData((prev) => ({ ...prev, portfolioItems: nextList }));
+    await persistCmsUpdate(
+      { portfolioItems: nextList },
+      `Moved "${item.title}" to ${targetCat.toUpperCase()} category!`
+    );
+  };
+
+  const handlePortfolioDragEnd = () => {
+    setDraggedPortfolioId(null);
+    setDragOverPortfolioId(null);
+    setDragOverCategory(null);
   };
 
   // ================= PRICING PACKAGES HANDLERS =================
@@ -693,10 +863,10 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
             <span>Public Website &amp; Portfolio Content Manager</span>
           </div>
           <h2 className="text-xl md:text-2xl font-bold tracking-tight">
-            Manage Public Portfolio &amp; Website Pages
+            Complete Portfolio Website Customizer &amp; Social Media Hub
           </h2>
           <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-            Add, edit, reorder, or upload photos for the public <strong>/portfolio</strong> gallery, customize public pricing packages, services, client reviews, journal articles, and manage website booking inquiries.
+            Customize every section, heading, hero video, about story, wedding film, FAQ, and navigation menu across the public website — and select photos directly from connected social media accounts to showcase in your <strong>/portfolio</strong> gallery.
           </p>
         </div>
 
@@ -733,7 +903,15 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
       {/* Navigation Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3">
         {[
+          { id: 'WEBSITE_CUSTOMIZER', label: 'Complete Website Customizer', icon: Sliders },
           { id: 'PORTFOLIO', label: `Portfolio Gallery (${cmsData.portfolioItems.length})`, icon: ImageIcon },
+          {
+            id: 'SOCIAL_PORTFOLIO',
+            label: `Social Media to Portfolio (${
+              (cmsData.socialMediaPosts || []).filter((p) => p.selectedForPortfolio).length
+            } Selected)`,
+            icon: Share2,
+          },
           { id: 'PACKAGES', label: `Public Packages (${cmsData.pricingPackages.length})`, icon: PackageIcon },
           { id: 'SERVICES', label: `Public Services (${cmsData.detailedServices.length})`, icon: Layers },
           { id: 'TESTIMONIALS', label: `Testimonials (${cmsData.testimonials.length})`, icon: MessageSquareQuote },
@@ -761,24 +939,100 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
         })}
       </div>
 
+      {/* ================= TAB 0: COMPLETE WEBSITE CUSTOMIZER ================= */}
+      {activeTab === 'WEBSITE_CUSTOMIZER' && (
+        <CompleteWebsiteCustomizer
+          value={cmsData.websiteCustomization || defaultWebsiteCustomization}
+          isSaving={isSaving}
+          onSave={async (updatedConfig, sectionLabel) => {
+            await persistCmsUpdate(
+              { websiteCustomization: updatedConfig },
+              `${sectionLabel} saved and published to the live website!`
+            );
+          }}
+          onUploadImage={(e, onLoaded) =>
+            handleImageFileUpload(e, (url) => onLoaded(url))
+          }
+        />
+      )}
+
+      {/* ================= TAB: SOCIAL MEDIA TO PORTFOLIO SELECTOR ================= */}
+      {activeTab === 'SOCIAL_PORTFOLIO' && (
+        <SocialMediaPortfolioSelector
+          connectedAccounts={cmsData.connectedSocialAccounts || defaultConnectedSocialAccounts}
+          socialPosts={cmsData.socialMediaPosts || defaultSocialMediaPosts}
+          portfolioItems={cmsData.portfolioItems}
+          isSaving={isSaving}
+          onSaveSocialState={async (nextAccounts, nextPosts, nextPortfolio, toastMessage) => {
+            await persistCmsUpdate(
+              {
+                connectedSocialAccounts: nextAccounts,
+                socialMediaPosts: nextPosts,
+                portfolioItems: nextPortfolio,
+              },
+              toastMessage
+            );
+          }}
+          onUploadImage={handleImageFileUpload}
+        />
+      )}
+
       {/* ================= TAB 1: PUBLIC PORTFOLIO GALLERY MANAGER ================= */}
       {activeTab === 'PORTFOLIO' && (
         <div className="space-y-5">
           {/* Toolbar */}
           <div className="p-4 bg-white rounded-2xl border border-gray-200 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="relative w-full sm:w-80">
-                <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search portfolio by title, category, city..."
-                  className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
-                />
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="relative w-full sm:w-72">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search portfolio by title, category, city..."
+                    className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs"
+                  />
+                </div>
+
+                {/* View Mode Switcher (Detailed vs Storyboard Drag-and-Drop) */}
+                <div className="inline-flex items-center p-1 bg-gray-100 rounded-xl border border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setPortfolioViewMode('DETAILED')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      portfolioViewMode === 'DETAILED'
+                        ? 'bg-slate-900 text-amber-400 shadow-2xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>Detailed Cards</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPortfolioViewMode('STORYBOARD')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      portfolioViewMode === 'STORYBOARD'
+                        ? 'bg-slate-900 text-amber-400 shadow-2xs'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <span>Storyboard Drag Grid</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('SOCIAL_PORTFOLIO')}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>Select Photos from Social Media</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleOpenAddPortfolio}
@@ -790,21 +1044,57 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
               </div>
             </div>
 
-            {/* Category Pills */}
+            {/* Real-Time Drag & Drop Interactive Guide Banner */}
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 rounded-xl bg-amber-50/80 border border-amber-200/80 text-xs text-amber-950">
+              <div className="flex items-center gap-2">
+                <GripVertical className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  <strong>Real-Time Drag &amp; Drop Active:</strong> Drag any photo card to reorder priority in real time, or drag a photo directly onto any <strong>Category Pill</strong> below to re-categorize it.
+                </span>
+              </div>
+              <span className="text-[11px] font-semibold text-amber-800">
+                Top {cmsData.websiteCustomization?.sectionVisibility?.homePortfolioLimit || 9} items appear on Homepage
+              </span>
+            </div>
+
+            {/* Category Pills (Also act as Drop Targets to Re-Categorize Dragged Media!) */}
             <div className="flex flex-wrap gap-1.5 pt-1">
               {portfolioCategories.map((cat) => {
                 const count =
                   cat.id === 'all'
                     ? cmsData.portfolioItems.length
                     : cmsData.portfolioItems.filter((i) => i.category === cat.id).length;
+                const isDropTarget =
+                  draggedPortfolioId !== null &&
+                  cat.id !== 'all' &&
+                  dragOverCategory === cat.id;
+
                 return (
                   <button
                     key={cat.id}
                     type="button"
                     onClick={() => setCategoryFilter(cat.id)}
+                    onDragOver={(e) => {
+                      if (draggedPortfolioId !== null && cat.id !== 'all') {
+                        e.preventDefault();
+                        if (dragOverCategory !== cat.id) {
+                          setDragOverCategory(cat.id);
+                        }
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverCategory === cat.id) {
+                        setDragOverCategory(null);
+                      }
+                    }}
+                    onDrop={(e) => handlePortfolioDropOnCategory(e, cat.id)}
                     className={`px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
-                      categoryFilter === cat.id
+                      isDropTarget
+                        ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-600 scale-105 shadow-sm'
+                        : categoryFilter === cat.id
                         ? 'bg-slate-900 text-amber-400'
+                        : draggedPortfolioId !== null && cat.id !== 'all'
+                        ? 'bg-amber-50 text-amber-900 border border-dashed border-amber-300 hover:bg-amber-100'
                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                     }`}
                   >
@@ -815,7 +1105,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
             </div>
           </div>
 
-          {/* Portfolio Cards Grid */}
+          {/* Portfolio Cards Grid (Supports Real-Time Drag-and-Drop Reordering & Prioritization) */}
           {isLoading ? (
             <div className="p-12 text-center text-xs text-gray-500">Loading portfolio gallery...</div>
           ) : filteredPortfolio.length === 0 ? (
@@ -835,33 +1125,115 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div
+              className={
+                portfolioViewMode === 'STORYBOARD'
+                  ? 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3'
+                  : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4'
+              }
+            >
               {filteredPortfolio.map((item) => {
                 const globalIndex = cmsData.portfolioItems.findIndex((i) => i.id === item.id);
+                const homeLimit =
+                  cmsData.websiteCustomization?.sectionVisibility?.homePortfolioLimit || 9;
+                const isHomepageFeatured = globalIndex >= 0 && globalIndex < homeLimit;
+                const isDragging = draggedPortfolioId === item.id;
+                const isDragOver = dragOverPortfolioId === item.id;
+
                 return (
                   <div
                     key={item.id}
-                    className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-2xs hover:shadow-md transition-all flex flex-col justify-between group"
+                    draggable
+                    onDragStart={(e) => handlePortfolioDragStart(e, item.id)}
+                    onDragOver={(e) => handlePortfolioDragOverCard(e, item.id)}
+                    onDragLeave={() => {
+                      if (dragOverPortfolioId === item.id) {
+                        setDragOverPortfolioId(null);
+                      }
+                    }}
+                    onDrop={(e) => handlePortfolioDropOnCard(e, item.id)}
+                    onDragEnd={handlePortfolioDragEnd}
+                    className={`bg-white rounded-2xl border overflow-hidden transition-all flex flex-col justify-between group select-none cursor-grab active:cursor-grabbing ${
+                      isDragging
+                        ? 'opacity-45 scale-95 border-amber-400 ring-2 ring-amber-400'
+                        : isDragOver
+                        ? 'border-amber-500 ring-2 ring-amber-500 shadow-lg scale-[1.02] bg-amber-50/20'
+                        : 'border-gray-200 shadow-2xs hover:shadow-md hover:border-amber-300'
+                    }`}
                   >
                     <div>
-                      <div className="relative h-52 bg-slate-950 overflow-hidden">
+                      <div
+                        className={`relative bg-slate-950 overflow-hidden ${
+                          portfolioViewMode === 'STORYBOARD' ? 'h-36' : 'h-52'
+                        }`}
+                      >
                         <img
                           src={item.image}
                           alt={item.title}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          draggable={false}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 pointer-events-none"
                         />
-                        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                          <span className="px-2.5 py-0.5 rounded-md bg-slate-950/85 text-amber-400 text-[10px] font-bold uppercase tracking-wider backdrop-blur-xs">
+
+                        {/* Drop Target Indicator Overlay */}
+                        {isDragOver && (
+                          <div className="absolute inset-0 bg-amber-500/25 backdrop-blur-[1px] flex items-center justify-center p-2 z-10 pointer-events-none">
+                            <span className="px-3 py-1.5 rounded-xl bg-slate-950 text-amber-400 text-xs font-bold shadow-lg border border-amber-400/50">
+                              Drop to place at #{globalIndex + 1}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Top-Left Priority & Drag Handle Pill */}
+                        <div className="absolute top-2.5 left-2.5 flex flex-wrap items-center gap-1">
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950/90 text-white text-[10px] font-mono font-bold shadow-xs"
+                            title="Drag card to reorder priority"
+                          >
+                            <GripVertical className="w-3 h-3 text-amber-400" />
+                            <span>#{globalIndex + 1}</span>
+                          </span>
+                          {isHomepageFeatured && portfolioViewMode === 'DETAILED' && (
+                            <span
+                              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 text-[10px] font-bold"
+                              title="Featured on Homepage Portfolio Preview"
+                            >
+                              <Star className="w-2.5 h-2.5 fill-slate-950" />
+                              <span>Home</span>
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 rounded-md bg-slate-950/85 text-amber-400 text-[10px] font-bold uppercase tracking-wider backdrop-blur-xs">
                             {item.category}
                           </span>
-                          <span className="px-2 py-0.5 rounded-md bg-white/90 text-slate-800 text-[10px] font-semibold uppercase">
-                            {item.aspect}
-                          </span>
+                          {portfolioViewMode === 'DETAILED' && item.socialSource && (
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/95 text-slate-950 text-[10px] font-bold uppercase">
+                              {item.socialSource}
+                            </span>
+                          )}
                         </div>
+
+                        {/* Top-Right Priority & Step Controls */}
                         <div className="absolute top-2.5 right-2.5 flex items-center gap-1">
+                          {globalIndex > 0 && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handlePinPortfolioItemToTop(item.id);
+                              }}
+                              disabled={isSaving}
+                              className="px-1.5 py-1 rounded bg-amber-500 text-slate-950 hover:bg-amber-400 disabled:opacity-30 text-[10px] font-bold inline-flex items-center gap-0.5 shadow-xs cursor-pointer"
+                              title="Prioritize to #1 Featured Position"
+                            >
+                              <ChevronsUp className="w-3 h-3" />
+                              <span>#1</span>
+                            </button>
+                          )}
                           <button
                             type="button"
-                            onClick={() => handleMovePortfolioItem(item.id, 'up')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMovePortfolioItem(item.id, 'up');
+                            }}
                             disabled={globalIndex <= 0 || isSaving}
                             className="p-1 rounded bg-slate-950/80 text-white hover:bg-amber-500 hover:text-slate-950 disabled:opacity-30 cursor-pointer"
                             title="Move Earlier in Gallery"
@@ -870,7 +1242,10 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleMovePortfolioItem(item.id, 'down')}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMovePortfolioItem(item.id, 'down');
+                            }}
                             disabled={globalIndex >= cmsData.portfolioItems.length - 1 || isSaving}
                             className="p-1 rounded bg-slate-950/80 text-white hover:bg-amber-500 hover:text-slate-950 disabled:opacity-30 cursor-pointer"
                             title="Move Later in Gallery"
@@ -880,32 +1255,72 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
                         </div>
                       </div>
 
-                      <div className="p-3.5 space-y-1">
+                      <div className="p-3 space-y-2">
                         <div className="font-bold text-xs text-gray-900 truncate" title={item.title}>
                           {item.title}
                         </div>
-                        <div className="flex items-center justify-between text-[11px] text-gray-500">
-                          <span className="inline-flex items-center gap-1">
-                            <MapPin className="w-3 h-3 text-amber-600" />
-                            {item.location || 'Burewala'}
-                          </span>
-                          {item.exif?.camera && (
-                            <span className="font-mono text-[10px] text-gray-400 truncate max-w-[120px]">
-                              {item.exif.camera}
-                            </span>
-                          )}
-                        </div>
+
+                        {portfolioViewMode === 'DETAILED' && (
+                          <>
+                            <div className="flex items-center justify-between text-[11px] text-gray-500">
+                              <span className="inline-flex items-center gap-1">
+                                <MapPin className="w-3 h-3 text-amber-600" />
+                                {item.location || 'Burewala'}
+                              </span>
+                              {item.exif?.camera && (
+                                <span className="font-mono text-[10px] text-gray-400 truncate max-w-[120px]">
+                                  {item.exif.camera}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Quick Real-Time Category & Aspect Ratio Organizers */}
+                            <div className="grid grid-cols-2 gap-1.5 pt-1">
+                              <select
+                                value={item.category}
+                                onChange={(e) =>
+                                  handleQuickOrganizePortfolioItem(item.id, {
+                                    category: e.target.value as Exclude<PortfolioCategory, 'all'>,
+                                  })
+                                }
+                                className="px-2 py-1 bg-gray-50 border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 uppercase cursor-pointer"
+                                title="Quickly change category"
+                              >
+                                {PORTFOLIO_CATEGORIES_LIST.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {cat}
+                                  </option>
+                                ))}
+                              </select>
+
+                              <select
+                                value={item.aspect}
+                                onChange={(e) =>
+                                  handleQuickOrganizePortfolioItem(item.id, {
+                                    aspect: e.target.value as 'tall' | 'wide' | 'square',
+                                  })
+                                }
+                                className="px-2 py-1 bg-gray-50 border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 uppercase cursor-pointer"
+                                title="Quickly change grid aspect ratio"
+                              >
+                                <option value="tall">Tall (3:4)</option>
+                                <option value="wide">Wide (16:10)</option>
+                                <option value="square">Square (1:1)</option>
+                              </select>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
 
-                    <div className="px-3.5 py-2.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-2">
+                    <div className="px-3 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between gap-2">
                       <button
                         type="button"
                         onClick={() => handleOpenEditPortfolio(item)}
                         className="inline-flex items-center gap-1 text-xs font-bold text-slate-700 hover:text-amber-700 cursor-pointer"
                       >
                         <Edit className="w-3.5 h-3.5" />
-                        <span>Edit Details</span>
+                        <span>{portfolioViewMode === 'STORYBOARD' ? 'Edit' : 'Edit Details'}</span>
                       </button>
                       <button
                         type="button"
@@ -927,6 +1342,44 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
       {/* ================= TAB 2: PUBLIC PRICING PACKAGES ================= */}
       {activeTab === 'PACKAGES' && (
         <div className="space-y-4">
+          <div className="p-4 bg-white rounded-2xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-xs font-bold text-gray-900">
+                  Customer Side Detailed Event Price Breakdown (Inquiry Form)
+                </h4>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                    profile?.showPublicPriceBreakdown
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : 'bg-slate-100 text-slate-700 border border-slate-300'
+                  }`}
+                >
+                  {profile?.showPublicPriceBreakdown
+                    ? 'Visible on Customer Side'
+                    : 'Hidden on Customer Side (Default)'}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Control whether the Real-Time Equipment &amp; Crew Pricing Engine table is hidden (default) or shown to customers on the public website.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={isUpdatingVisibility}
+              onClick={handleToggleCustomerBreakdownVisibility}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer shrink-0 ${
+                profile?.showPublicPriceBreakdown
+                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'
+                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+              }`}
+            >
+              {profile?.showPublicPriceBreakdown
+                ? 'Hide on Customer Side (Default)'
+                : 'Show on Customer Side'}
+            </button>
+          </div>
+
           <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200">
             <div>
               <h3 className="text-sm font-bold text-gray-900">Public Website Pricing Packages (/pricing)</h3>

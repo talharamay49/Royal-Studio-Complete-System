@@ -5,7 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, ArrowUp } from "lucide-react";
-import { navLinks } from "@/lib/data";
+import { navLinks as defaultNavLinks } from "@/lib/data";
+import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import Logo from "./Logo";
 import GlobalSearchModal from "./GlobalSearchModal";
 import { Button } from "@/components/ui/button";
@@ -14,8 +15,17 @@ import { ThemeToggle } from "@/components/shared/ThemeToggle";
 
 export default function Navbar() {
   const pathname = usePathname();
+  const { websiteCustomization } = usePublicWebsiteCMS();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const navCfg = websiteCustomization?.navigation;
+  const activeNavLinks =
+    navCfg?.navLinks && navCfg.navLinks.length > 0
+      ? navCfg.navLinks.filter((l) => l.visible !== false)
+      : defaultNavLinks;
+  const headerCtaLabel = navCfg?.headerCtaLabel || "Check Availability";
+  const headerCtaHref = navCfg?.headerCtaHref || "/contact#inquiry-form";
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -118,7 +128,7 @@ export default function Navbar() {
           <Logo />
 
           <ul className="hidden items-center gap-7 lg:flex">
-            {navLinks.map((link) => {
+            {activeNavLinks.map((link) => {
               const isActive = pathname === link.href;
               return (
                 <li key={link.href}>
@@ -161,10 +171,10 @@ export default function Navbar() {
               className="hidden sm:inline-flex"
             >
               <Link
-                href="/contact#inquiry-form"
-                onClick={(e) => handleNavLinkClick(e, "/contact#inquiry-form")}
+                href={headerCtaHref}
+                onClick={(e) => handleNavLinkClick(e, headerCtaHref)}
               >
-                Check Availability
+                {headerCtaLabel}
               </Link>
             </Button>
             <button
@@ -190,7 +200,7 @@ export default function Navbar() {
             className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-y-auto bg-surface px-6 py-20 lg:hidden"
           >
             <ul className="flex flex-col items-center gap-5 sm:gap-7">
-              {navLinks.map((link, i) => (
+              {activeNavLinks.map((link, i) => (
                 <motion.li
                   key={link.href}
                   initial={{ opacity: 0, y: 16 }}
@@ -212,15 +222,15 @@ export default function Navbar() {
               <motion.li
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: navLinks.length * 0.05 }}
+                transition={{ delay: activeNavLinks.length * 0.05 }}
                 className="flex flex-col items-center gap-3 pt-2"
               >
                 <Button asChild variant="accent">
                   <Link
-                    href="/contact#inquiry-form"
-                    onClick={(e) => handleNavLinkClick(e, "/contact#inquiry-form")}
+                    href={headerCtaHref}
+                    onClick={(e) => handleNavLinkClick(e, headerCtaHref)}
                   >
-                    Check Availability
+                    {headerCtaLabel}
                   </Link>
                 </Button>
                 <ThemeToggle className="rounded-full px-4 py-2" />

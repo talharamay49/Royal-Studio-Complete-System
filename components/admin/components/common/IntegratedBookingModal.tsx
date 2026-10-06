@@ -753,6 +753,10 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
               cameraCategory: firstDay.cameraCategory,
               crewCategory: firstDay.crewCategory,
               cameraCount: firstDay.cameraCount,
+              tierSlots: (firstDay.tierSlots || []).map((s, sIdx) => ({
+                ...s,
+                id: `${d.id}-slot-copy-${sIdx}`,
+              })),
               extraCustomAmount: firstDay.extraCustomAmount,
               customPackageName: `${d.eventType} Customized Package`,
               customPackageDeliverables: firstDay.customPackageDeliverables,
@@ -831,6 +835,16 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
         daySchedulesInput: bookingDays.map((d, idx) => {
           const dayCalculatedCost = getDayCalculatedCost(d);
           const dayCombinedRate = CAMERA_CATEGORY_RATES[d.cameraCategory].ratePerDay;
+          const slots = Array.isArray(d.tierSlots) ? d.tierSlots : [];
+          const slotPhotos = slots.reduce((sum, s) => sum + Number(s.photographers || 0), 0);
+          const slotVideos = slots.reduce((sum, s) => sum + Number(s.videographers || 0), 0);
+          const slotDrones = slots.reduce((sum, s) => sum + Number(s.drones || 0), 0);
+          const totalSlotCams = slotPhotos + slotVideos + slotDrones;
+          const effectiveCams = totalSlotCams > 0 ? totalSlotCams : d.cameraCount;
+          const slotSummaryText =
+            d.packageMode === 'CUSTOM' && slots.length > 0
+              ? slots.map((s) => calculateTierSlotSummary(s).formulaText).join(' + ')
+              : '';
 
           const customPackageForDay =
             d.packageMode === 'CUSTOM' &&
@@ -840,9 +854,12 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
                   name: d.customPackageName.trim() || `${d.eventType} Customized Package`,
                   category,
                   price: dayCalculatedCost,
-                  description: `Customized ${d.eventType} package (${d.cameraCount} Cam × ${CAMERA_CATEGORY_RATES[d.cameraCategory].shortLabel})`,
-                  requiredPhotographers: Math.max(1, Math.ceil(d.cameraCount / 2)),
-                  requiredVideographers: Math.max(1, Math.floor(d.cameraCount / 2)),
+                  description:
+                    slotSummaryText ||
+                    `Customized ${d.eventType} package (${effectiveCams} Cam × ${CAMERA_CATEGORY_RATES[d.cameraCategory].shortLabel})`,
+                  requiredPhotographers: slotPhotos > 0 ? slotPhotos : Math.max(1, Math.ceil(effectiveCams / 2)),
+                  requiredVideographers: slotVideos > 0 ? slotVideos : Math.max(1, Math.floor(effectiveCams / 2)),
+                  requiredDroneOperators: slotDrones,
                   includedServices: d.customPackageDeliverables
                     .split(',')
                     .map((s) => s.trim())
@@ -863,7 +880,7 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
             startTime: d.startTime,
             endTime: d.endTime,
             durationHours: d.durationHours,
-            notes: d.notes,
+            notes: [d.notes, slotSummaryText].filter(Boolean).join(' — '),
             packageMode: d.packageMode,
             standardPackageId:
               d.packageMode === 'BUILTIN' ? d.selectedPackageId || undefined : undefined,
@@ -876,8 +893,11 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
             extraCustomAmount: d.extraCustomAmount,
             cameraCategory: d.cameraCategory,
             crewCategory: d.crewCategory,
-            cameraCount: d.cameraCount,
-            crewCount: Math.max(d.cameraCount, d.assignedCrewIds.length),
+            cameraCount: effectiveCams,
+            photographersCount: slotPhotos > 0 ? slotPhotos : Math.max(1, Math.ceil(effectiveCams / 2)),
+            cinematographersCount: slotVideos > 0 ? slotVideos : Math.max(1, Math.floor(effectiveCams / 2)),
+            droneIncluded: slotDrones > 0,
+            crewCount: Math.max(effectiveCams, d.assignedCrewIds.length),
             cameraRatePerDay: dayCombinedRate,
             crewRatePerDay: dayCombinedRate,
             assignedCameraIds: d.assignedCameraIds,

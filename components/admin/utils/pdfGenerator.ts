@@ -9,6 +9,10 @@ import {
   EventDaySchedule,
   Payment,
   Package,
+  TeamMember,
+  EventTeamAssignment,
+  Equipment,
+  EventEquipmentAssignment,
 } from '../types';
 import { formatPKR, formatDate } from './calculations';
 
@@ -59,6 +63,73 @@ async function loadImageAsset(src: string): Promise<LoadedImageAsset | null> {
   });
 }
 
+function hexToRgbTuple(hex: string | undefined, fallback: [number, number, number]): [number, number, number] {
+  if (!hex) return fallback;
+  const clean = hex.replace('#', '').trim();
+  if (clean.length === 6) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    if (!Number.isNaN(r) && !Number.isNaN(g) && !Number.isNaN(b)) {
+      return [r, g, b];
+    }
+  }
+  return fallback;
+}
+
+function getTableBodyFillColor(profile: AdminProfile): [number, number, number] | false {
+  const style = profile.documentTableStyle || 'transparent';
+  if (style === 'solid-white') return [255, 255, 255];
+  if (style === 'cream') return [245, 242, 235];
+  return false; // Transparent so 01.jpg stationery background & lens remain visible as-is
+}
+
+async function renderStationeryWithOpacity(
+  asset: LoadedImageAsset,
+  opacityPercent: number,
+  bgRgb: [number, number, number]
+): Promise<LoadedImageAsset> {
+  if (opacityPercent >= 99 || typeof window === 'undefined') {
+    return asset;
+  }
+  const cacheKey = `${asset.dataUrl.slice(0, 64)}_op_${opacityPercent}_${bgRgb.join(',')}`;
+  if (imageCache.has(cacheKey)) {
+    return imageCache.get(cacheKey)!;
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = asset.width;
+        canvas.height = asset.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(asset);
+          return;
+        }
+        ctx.fillStyle = `rgb(${bgRgb[0]}, ${bgRgb[1]}, ${bgRgb[2]})`;
+        ctx.fillRect(0, 0, asset.width, asset.height);
+        ctx.globalAlpha = Math.max(0.05, Math.min(1, opacityPercent / 100));
+        ctx.drawImage(img, 0, 0, asset.width, asset.height);
+        const blended: LoadedImageAsset = {
+          dataUrl: canvas.toDataURL('image/jpeg', 0.95),
+          format: 'JPEG',
+          width: asset.width,
+          height: asset.height,
+        };
+        imageCache.set(cacheKey, blended);
+        resolve(blended);
+      } catch {
+        resolve(asset);
+      }
+    };
+    img.onerror = () => resolve(asset);
+    img.src = asset.dataUrl;
+  });
+}
+
 async function applyOfficialStationeryAndLogo(
   doc: jsPDF,
   profile: AdminProfile,
@@ -68,29 +139,70 @@ async function applyOfficialStationeryAndLogo(
   const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
   const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
 
-  // Base warm cream fallback before drawing official image.png background
-  doc.setFillColor(240, 239, 233);
+  // Base warm cream fallback matching 01.jpg (#efece4) or admin-customized page fill color
+  const bgRgb = hexToRgbTuple(profile.documentPageFillColor, [239, 236, 228]);
+  doc.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
   doc.rect(0, 0, pageWidth, pageHeight, 'F');
 
-  // 1. Draw the FULL-PAGE official Royal Studio stationery background (image.png AS-IS)
-  const bgAsset =
-    (await loadImageAsset(bgSrc)) ||
-    (bgSrc !== '/image.png' ? await loadImageAsset('/image.png') : null);
+  // 1. Draw the FULL-PAGE official Royal Studio stationery background (01.jpg AS-IS by default)
+  const showBackground = profile.documentShowBackground !== false;
+  if (showBackground) {
+    const resolvedSrc = bgSrc || '/01.jpg';
+    const rawBgAsset =
+      (await loadImageAsset(resolvedSrc)) ||
+      (resolvedSrc !== '/01.jpg' ? await loadImageAsset('/01.jpg') : null) ||
+      (await loadImageAsset('/image.png'));
 
-  if (bgAsset) {
-    try {
-      doc.addImage(
-        bgAsset.dataUrl,
-        bgAsset.format,
-        0,
-        0,
-        pageWidth,
-        pageHeight,
-        undefined,
-        'FAST'
-      );
-    } catch {
-      // Fallback cream background already drawn
+    if (rawBgAsset) {
+      try {
+        const opacity =
+          typeof profile.documentBackgroundOpacity === 'number'
+            ? profile.documentBackgroundOpacity
+            : 100;
+        const bgAsset = await renderStationeryWithOpacity(rawBgAsset, opacity, bgRgb);
+        const fitMode = profile.documentBackgroundFit || 'as-is';
+
+        if (fitMode === 'as-is' || fitMode === 'contain') {
+          doc.addImage(
+            bgAsset.dataUrl,
+            bgAsset.format,
+            0,
+            0,
+            pageWidth,
+            pageHeight,
+            undefined,
+            'FAST'
+          );
+        } else if (fitMode === 'top-banner') {
+          const bannerRatio = bgAsset.height / Math.max(1, bgAsset.width);
+          const drawH = Math.min(pageHeight, pageWidth * bannerRatio);
+          doc.addImage(
+            bgAsset.dataUrl,
+            bgAsset.format,
+            0,
+            0,
+            pageWidth,
+            drawH,
+            undefined,
+            'FAST'
+          );
+        } else if (fitMode === 'center-watermark') {
+          const targetW = pageWidth * 0.85;
+          const targetH = targetW * (bgAsset.height / Math.max(1, bgAsset.width));
+          doc.addImage(
+            bgAsset.dataUrl,
+            bgAsset.format,
+            (pageWidth - targetW) / 2,
+            (pageHeight - targetH) / 2,
+            targetW,
+            targetH,
+            undefined,
+            'FAST'
+          );
+        }
+      } catch {
+        // Fallback cream background already drawn
+      }
     }
   }
 
@@ -115,29 +227,35 @@ async function applyOfficialStationeryAndLogo(
   doc.line(15, 12, pageWidth - 15, 12);
 
   // 2. Draw the ORIGINAL RoyalLogo.png in the top-left header preserving exact proportions
-  const logoSrc =
-    profile.documentLogo || profile.primaryLogo || profile.logo || '/RoyalLogo.png';
-  const logoAsset =
-    (await loadImageAsset(logoSrc)) ||
-    (logoSrc !== '/RoyalLogo.png' ? await loadImageAsset('/RoyalLogo.png') : null);
+  const showHeaderLogo = profile.documentShowHeaderLogo !== false;
+  if (showHeaderLogo) {
+    const logoSrc =
+      profile.documentLogo || profile.primaryLogo || profile.logo || '/RoyalLogo.png';
+    const logoAsset =
+      (await loadImageAsset(logoSrc)) ||
+      (logoSrc !== '/RoyalLogo.png' ? await loadImageAsset('/RoyalLogo.png') : null);
 
-  if (logoAsset) {
-    try {
-      const targetHeight = 16;
-      const aspectRatio = logoAsset.width / Math.max(1, logoAsset.height);
-      const targetWidth = Math.min(32, targetHeight * aspectRatio);
-      doc.addImage(
-        logoAsset.dataUrl,
-        logoAsset.format,
-        15,
-        15,
-        targetWidth,
-        targetHeight,
-        undefined,
-        'FAST'
-      );
-    } catch {
-      // Non-fatal
+    if (logoAsset) {
+      try {
+        const targetHeight =
+          typeof profile.documentHeaderLogoHeight === 'number'
+            ? Math.max(8, Math.min(30, profile.documentHeaderLogoHeight))
+            : 16;
+        const aspectRatio = logoAsset.width / Math.max(1, logoAsset.height);
+        const targetWidth = Math.min(42, targetHeight * aspectRatio);
+        doc.addImage(
+          logoAsset.dataUrl,
+          logoAsset.format,
+          15,
+          15,
+          targetWidth,
+          targetHeight,
+          undefined,
+          'FAST'
+        );
+      } catch {
+        // Non-fatal
+      }
     }
   }
 }
@@ -161,8 +279,10 @@ export async function generateInvoicePDF(
   const pageHeight = doc.internal.pageSize.getHeight();
 
   const bgSrc =
-    profile.invoiceBackground || profile.documentBackground || '/image.png';
+    profile.invoiceBackground || profile.documentBackground || '/01.jpg';
   await applyOfficialStationeryAndLogo(doc, profile, bgSrc, 'INVOICE');
+  const tableFill = getTableBodyFillColor(profile);
+  const accentRgb = hexToRgbTuple(profile.documentAccentColor, [165, 129, 55]);
 
   // TITLE & SUBTITLE
   doc.setFont('helvetica', 'bold');
@@ -172,7 +292,7 @@ export async function generateInvoicePDF(
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.setTextColor(165, 129, 55);
+  doc.setTextColor(accentRgb[0], accentRgb[1], accentRgb[2]);
   doc.text(
     (profile.letterheadText || `${profile.studioName || 'ROYAL STUDIO'} — PHOTOGRAPHY & FILMS`).toUpperCase(),
     35,
@@ -299,7 +419,7 @@ export async function generateInvoicePDF(
       cellPadding: 3,
     },
     bodyStyles: {
-      fillColor: [255, 255, 255],
+      ...(tableFill ? { fillColor: tableFill } : {}),
       textColor: [15, 23, 42],
       fontSize: 8,
       cellPadding: 3,
@@ -355,7 +475,7 @@ export async function generateInvoicePDF(
       cellPadding: 3,
     },
     bodyStyles: {
-      fillColor: [255, 255, 255],
+      ...(tableFill ? { fillColor: tableFill } : {}),
       textColor: [30, 41, 59],
       fontSize: 8,
       cellPadding: 3,
@@ -532,8 +652,10 @@ export async function generateQuotationPDF(
   const pageHeight = doc.internal.pageSize.getHeight();
 
   const bgSrc =
-    profile.quotationBackground || profile.documentBackground || '/image.png';
+    profile.quotationBackground || profile.documentBackground || '/01.jpg';
   await applyOfficialStationeryAndLogo(doc, profile, bgSrc, 'QUOTATION');
+  const quoTableFill = getTableBodyFillColor(profile);
+  const quoAccentRgb = hexToRgbTuple(profile.documentAccentColor, [165, 129, 55]);
 
   // TITLE & SUBTITLE
   doc.setFont('helvetica', 'bold');
@@ -543,7 +665,7 @@ export async function generateQuotationPDF(
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
-  doc.setTextColor(165, 129, 55);
+  doc.setTextColor(quoAccentRgb[0], quoAccentRgb[1], quoAccentRgb[2]);
   doc.text(
     (profile.letterheadText || `${profile.studioName || 'ROYAL STUDIO'} — PHOTOGRAPHY & FILMS`).toUpperCase(),
     35,
@@ -651,7 +773,7 @@ export async function generateQuotationPDF(
       cellPadding: 3,
     },
     bodyStyles: {
-      fillColor: [255, 255, 255],
+      ...(quoTableFill ? { fillColor: quoTableFill } : {}),
       textColor: [15, 23, 42],
       fontSize: 8,
       cellPadding: 3,
@@ -707,7 +829,7 @@ export async function generateQuotationPDF(
       cellPadding: 3,
     },
     bodyStyles: {
-      fillColor: [255, 255, 255],
+      ...(quoTableFill ? { fillColor: quoTableFill } : {}),
       textColor: [30, 41, 59],
       fontSize: 8,
       cellPadding: 3,
@@ -850,7 +972,7 @@ export async function generatePaymentReceiptPDF(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  const bgSrc = profile.receiptBackground || profile.documentBackground || '/image.png';
+  const bgSrc = profile.receiptBackground || profile.documentBackground || '/01.jpg';
   await applyOfficialStationeryAndLogo(doc, profile, bgSrc, 'PAYMENT RECEIPT');
 
   // Official Receipt Badge
@@ -1010,7 +1132,7 @@ export async function generateEventDocumentPDF(
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
-  const bgSrc = profile.documentBackground || '/image.png';
+  const bgSrc = profile.documentBackground || '/01.jpg';
   await applyOfficialStationeryAndLogo(doc, profile, bgSrc, 'EVENT DOSSIER');
 
   const docNo = `RS-EVT-${event.id.slice(-4).toUpperCase()}`;
@@ -1100,3 +1222,424 @@ export async function generateEventDocumentPDF(
 
   doc.save(`${docNo}_${event.title.replace(/\s+/g, '_')}.pdf`);
 }
+
+export function buildWhatsAppCallSheetText(
+  daySchedule: EventDaySchedule,
+  event: Event,
+  client: Client | null | undefined,
+  profile: AdminProfile | null | undefined,
+  dayCrew: EventTeamAssignment[],
+  teamMembers: TeamMember[],
+  dayEquip: EventEquipmentAssignment[],
+  equipmentList: Equipment[]
+): string {
+  const venueQuery = encodeURIComponent(
+    `${daySchedule.venue || event.venue}, ${event.city || 'Burewala'}`
+  );
+  const mapsPinUrl = `https://www.google.com/maps/search/?api=1&query=${venueQuery}`;
+
+  const crewLines =
+    dayCrew.length > 0
+      ? dayCrew.map((ca, idx) => {
+          const member = teamMembers.find((m) => m.id === ca.teamMemberId);
+          return `  ${idx + 1}. *${member?.name || 'Crew Specialist'}* — ${ca.role} (${
+            member?.phone || 'N/A'
+          })`;
+        })
+      : [
+          `  • ${daySchedule.photographersCount ?? 1}x Photographer(s), ${
+            daySchedule.cinematographersCount ?? 1
+          }x Videographer(s)${daySchedule.droneIncluded ? ', 1x Drone Pilot' : ''}`,
+        ];
+
+  const gearLines =
+    dayEquip.length > 0
+      ? dayEquip.map((ea, idx) => {
+          const item = equipmentList.find((eq) => eq.id === ea.equipmentId);
+          return `  ${idx + 1}. ${ea.quantity}x ${item?.name || 'Camera / Gear'} (${
+            item?.category || 'Gear'
+          } · S/N: ${item?.serialNumber || 'N/A'})`;
+        })
+      : [
+          `  • ${daySchedule.cameraCount || 2} Camera Unit(s) (${
+            daySchedule.cameraCategory || 'CAT_2'
+          })${daySchedule.droneIncluded ? ' + 4K Drone Unit' : ''}`,
+        ];
+
+  return [
+    `*ROYAL STUDIO — DAILY PRODUCTION CALL SHEET*`,
+    `*Event:* ${event.title}`,
+    `*Ceremony:* Day ${daySchedule.dayNumber} — ${daySchedule.eventType}`,
+    `*Date:* ${formatDate(daySchedule.date)} (${
+      daySchedule.timingMode === 'DAY_TIME' ? 'Day Shift' : 'Night Shift'
+    })`,
+    `*Crew Call Time:* ${daySchedule.callTime || '16:30'} | *Shoot:* ${
+      daySchedule.startTime
+    } – ${daySchedule.endTime}`,
+    `*Dress Code:* ${daySchedule.dressCode || 'Formal Studio Black'}`,
+    `*Venue:* ${daySchedule.venue || event.venue}, ${event.city}`,
+    `*Google Maps Pin:* ${mapsPinUrl}`,
+    `*Client Contact:* ${client?.name || 'Client'} (${client?.phone || 'N/A'})`,
+    ``,
+    `*ASSIGNED PRODUCTION CREW:*`,
+    ...crewLines,
+    ``,
+    `*ASSIGNED CAMERAS, DRONES & GEAR:*`,
+    ...gearLines,
+    daySchedule.notes ? `\n*Production Notes:* ${daySchedule.notes}` : '',
+    ``,
+    `_${profile?.studioName || 'Royal Studio'} Production Desk (${
+      profile?.phone || '0308-4877073'
+    })_`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+export async function generateCallSheetPDF(
+  daySchedule: EventDaySchedule,
+  event: Event,
+  client: Client | null | undefined,
+  profile: AdminProfile,
+  dayCrew: EventTeamAssignment[],
+  teamMembers: TeamMember[],
+  dayEquip: EventEquipmentAssignment[],
+  equipmentList: Equipment[]
+): Promise<void> {
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const bgSrc = profile.documentBackground || '/01.jpg';
+
+  await applyOfficialStationeryAndLogo(doc, profile, bgSrc, 'PRODUCTION CALL SHEET');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`CALL SHEET — DAY ${daySchedule.dayNumber}: ${daySchedule.eventType.toUpperCase()}`, 35, 23);
+
+  doc.setFontSize(8.5);
+  doc.setTextColor(165, 129, 55);
+  doc.text(
+    `${event.title} • ${formatDate(daySchedule.date)} • CALL TIME: ${daySchedule.callTime || '16:30'}`,
+    35,
+    29
+  );
+
+  const venueQuery = encodeURIComponent(
+    `${daySchedule.venue || event.venue}, ${event.city || 'Burewala'}`
+  );
+  const mapsPinUrl = `https://maps.google.com/?q=${venueQuery}`;
+
+  autoTable(doc, {
+    startY: 36,
+    head: [['CALL TIME', 'SHOOT WINDOW', 'SHIFT MODE', 'DRESS CODE', 'VENUE & MAP PIN']],
+    body: [
+      [
+        daySchedule.callTime || '16:30',
+        `${daySchedule.startTime} - ${daySchedule.endTime}`,
+        daySchedule.timingMode === 'DAY_TIME' ? 'DAY_TIME (5h)' : 'NIGHT_TIME',
+        daySchedule.dressCode || 'Formal Studio Black',
+        `${daySchedule.venue || event.venue}, ${event.city}\nMap: ${mapsPinUrl}`,
+      ],
+    ],
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      cellPadding: 3,
+    },
+    bodyStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [15, 23, 42],
+      fontSize: 8,
+      cellPadding: 3,
+    },
+    theme: 'grid',
+    margin: { left: 15, right: 15 },
+  });
+
+  const afterHeaderY = (doc as any).lastAutoTable?.finalY || 58;
+
+  // Crew Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('1. ASSIGNED PRODUCTION CREW ROSTER', 15, afterHeaderY + 8);
+
+  const crewRows =
+    dayCrew.length > 0
+      ? dayCrew.map((ca, idx) => {
+          const mem = teamMembers.find((m) => m.id === ca.teamMemberId);
+          return [
+            String(idx + 1),
+            mem?.name || 'Assigned Specialist',
+            ca.role,
+            mem?.phone || '—',
+            daySchedule.callTime || '16:30',
+            ca.assignmentStatus,
+          ];
+        })
+      : [
+          [
+            '1',
+            `Day ${daySchedule.dayNumber} Unit`,
+            `${daySchedule.photographersCount ?? 1} Photo / ${
+              daySchedule.cinematographersCount ?? 1
+            } Video${daySchedule.droneIncluded ? ' / 1 Drone' : ''}`,
+            profile.phone || '0308-4877073',
+            daySchedule.callTime || '16:30',
+            'Scheduled',
+          ],
+        ];
+
+  autoTable(doc, {
+    startY: afterHeaderY + 11,
+    head: [['#', 'CREW MEMBER', 'ROLE / UNIT', 'CONTACT PHONE', 'CALL TIME', 'STATUS']],
+    body: crewRows,
+    headStyles: {
+      fillColor: [165, 129, 55],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      cellPadding: 2.5,
+    },
+    bodyStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [15, 23, 42],
+      fontSize: 8,
+      cellPadding: 2.5,
+    },
+    theme: 'grid',
+    margin: { left: 15, right: 15 },
+  });
+
+  const afterCrewY = (doc as any).lastAutoTable?.finalY || afterHeaderY + 45;
+
+  // Equipment Manifest Table
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('2. CAMERA BODIES, LENSES & DRONE MANIFEST', 15, afterCrewY + 8);
+
+  const equipRows =
+    dayEquip.length > 0
+      ? dayEquip.map((ea, idx) => {
+          const item = equipmentList.find((eq) => eq.id === ea.equipmentId);
+          return [
+            String(idx + 1),
+            item?.name || 'Studio Gear',
+            item?.category || 'Camera',
+            item?.serialNumber || '—',
+            String(ea.quantity),
+            ea.isCheckedOut ? 'Checked Out' : 'Ready for Dispatch',
+          ];
+        })
+      : [
+          [
+            '1',
+            `Tier ${daySchedule.cameraCategory || 'CAT_2'} Cinema & Still Rig`,
+            daySchedule.droneIncluded ? 'Camera + 4K Drone' : 'Camera Rig',
+            'STUDIO-KIT',
+            String(daySchedule.cameraCount || 2),
+            'Ready for Dispatch',
+          ],
+        ];
+
+  autoTable(doc, {
+    startY: afterCrewY + 11,
+    head: [['#', 'EQUIPMENT / CAMERA BODY', 'CATEGORY', 'SERIAL NO.', 'QTY', 'DISPATCH STATUS']],
+    body: equipRows,
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 7.5,
+      cellPadding: 2.5,
+    },
+    bodyStyles: {
+      fillColor: [255, 255, 255],
+      textColor: [15, 23, 42],
+      fontSize: 8,
+      cellPadding: 2.5,
+    },
+    theme: 'grid',
+    margin: { left: 15, right: 15 },
+  });
+
+  const afterEquipY = (doc as any).lastAutoTable?.finalY || afterCrewY + 45;
+
+  if (daySchedule.notes) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text('3. SPECIAL PRODUCTION INSTRUCTIONS & PACKAGE NOTES:', 15, afterEquipY + 8);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    const splitNotes = doc.splitTextToSize(daySchedule.notes, pageWidth - 30);
+    doc.text(splitNotes, 15, afterEquipY + 13);
+  }
+
+  const footerY = pageHeight - 12;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 95);
+  doc.text(
+    `Official Production Call Sheet — ${profile.studioName || 'Royal Studio'} (${profile.phone || '0308-4877073'})`,
+    pageWidth / 2,
+    footerY,
+    { align: 'center' }
+  );
+
+  doc.save(
+    `CallSheet_Day${daySchedule.dayNumber}_${daySchedule.eventType.replace(/\s+/g, '_')}_${daySchedule.date}.pdf`
+  );
+}
+
+export async function generateSampleStationeryPDF(
+  profile: AdminProfile,
+  docType: 'INVOICE' | 'QUOTATION' = 'INVOICE'
+): Promise<void> {
+  const sampleClient: Client = {
+    id: 'sample-client',
+    name: 'Ahsan & Zoya Wedding Family',
+    phone: '0300-1234567',
+    whatsapp: '0300-1234567',
+    email: 'client@example.com',
+    city: 'Burewala',
+    address: 'Canal View Housing Scheme, Burewala',
+    notes: 'Sample stationery preview',
+    createdDate: new Date().toISOString().slice(0, 10),
+    createdBy: 'Admin',
+  };
+
+  const sampleEvent: Event = {
+    id: 'sample-event-01',
+    title: 'Ahsan & Zoya Royal Wedding',
+    category: 'Wedding',
+    weddingSubtype: 'Barat',
+    clientId: sampleClient.id,
+    eventDate: new Date().toISOString().slice(0, 10),
+    startTime: '18:00',
+    endTime: '23:30',
+    venue: 'Royal Palm Marquee',
+    city: 'Burewala',
+    status: 'Confirmed',
+    isMultiDay: true,
+    packagePrice: 285000,
+    discount: 10000,
+    tax: 0,
+    advancePaid: 140000,
+    totalClientPayments: 140000,
+    remainingBalance: 135000,
+    staffCost: 45000,
+    rentalCost: 0,
+    eventExpenses: 15000,
+    netProfit: 215000,
+    netMargin: 78,
+    notes: '2x Full-Frame Cinema Rigs, 2x Portrait Photographers, 4K Aerial Drone Coverage, Luxury Italian Album',
+    createdBy: 'Admin',
+    createdDate: new Date().toISOString().slice(0, 10),
+    updatedDate: new Date().toISOString().slice(0, 10),
+  };
+
+  const sampleDays: EventDaySchedule[] = [
+    {
+      id: 'sample-day-1',
+      eventId: sampleEvent.id,
+      dayNumber: 1,
+      date: new Date().toISOString().slice(0, 10),
+      eventType: 'Barat',
+      venue: 'Royal Palm Marquee, Burewala',
+      startTime: '18:00',
+      endTime: '23:30',
+      callTime: '16:30',
+      dressCode: 'Formal Studio Black',
+      timingMode: 'NIGHT_TIME',
+      customPrice: 155000,
+      photographersCount: 2,
+      cinematographersCount: 2,
+      droneIncluded: true,
+      notes: 'Cinematic Barat entry, couple portraits & aerial drone coverage',
+    },
+    {
+      id: 'sample-day-2',
+      eventId: sampleEvent.id,
+      dayNumber: 2,
+      date: new Date().toISOString().slice(0, 10),
+      eventType: 'Walima',
+      venue: 'Grand Garrison Banquet, Burewala',
+      startTime: '19:00',
+      endTime: '23:30',
+      callTime: '17:30',
+      dressCode: 'Formal Studio Black',
+      timingMode: 'NIGHT_TIME',
+      customPrice: 130000,
+      photographersCount: 2,
+      cinematographersCount: 1,
+      droneIncluded: true,
+      notes: 'Luxury Walima reception portrait session & highlight film',
+    },
+  ];
+
+  if (docType === 'QUOTATION') {
+    const sampleQuotation: Quotation = {
+      id: 'sample-quo-01',
+      quotationNumber: `${profile.quotationPrefix || 'RS-QUO-'}SAMPLE`,
+      eventId: sampleEvent.id,
+      clientId: sampleClient.id,
+      issueDate: new Date().toISOString().slice(0, 10),
+      validUntil: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+      subtotal: 285000,
+      discount: 10000,
+      tax: 0,
+      total: 275000,
+      paymentTerms: profile.paymentTerms || '50% advance upon booking confirmation.',
+      notes: 'Official Stationery Preview — Customized from Admin Panel',
+      createdBy: 'Admin',
+    };
+    await generateQuotationPDF(sampleQuotation, sampleEvent, sampleClient, profile, sampleDays);
+    return;
+  }
+
+  const sampleInvoice: Invoice = {
+    id: 'sample-inv-01',
+    invoiceNumber: `${profile.invoicePrefix || 'RS-INV-'}SAMPLE`,
+    eventId: sampleEvent.id,
+    clientId: sampleClient.id,
+    issueDate: new Date().toISOString().slice(0, 10),
+    dueDate: new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10),
+    subtotal: 285000,
+    discount: 10000,
+    tax: 0,
+    total: 275000,
+    paidAmount: 140000,
+    remainingAmount: 135000,
+    status: 'Partially Paid',
+    paymentTerms: profile.paymentTerms || '50% advance upon booking confirmation.',
+    notes: 'Official Stationery Preview — Customized from Admin Panel',
+    createdBy: 'Admin',
+  };
+
+  await generateInvoicePDF(sampleInvoice, sampleEvent, sampleClient, profile, sampleDays, [
+    {
+      id: 'sample-pay-1',
+      paymentId: 'RS-PAY-SAMPLE',
+      eventId: sampleEvent.id,
+      invoiceId: sampleInvoice.id,
+      amount: 140000,
+      paymentDate: new Date().toISOString().slice(0, 10),
+      method: 'Bank Transfer',
+      reference: 'MEEZAN-984120',
+      notes: 'Booking Advance Deposit',
+      createdBy: 'Admin',
+    },
+  ]);
+}
+

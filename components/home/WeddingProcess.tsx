@@ -1,24 +1,45 @@
+"use client";
+
 import { weddingProcess } from "@/lib/data";
+import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import SectionHeading from "@/components/shared/SectionHeading";
 import AnimatedSection from "@/components/shared/AnimatedSection";
 
 export default function WeddingProcess() {
+  const { websiteCustomization } = usePublicWebsiteCMS();
+  const vis = websiteCustomization?.sectionVisibility;
+  const secCfg = websiteCustomization?.sections;
+
+  if (vis && vis.showWeddingProcess === false) {
+    return null;
+  }
+
+  const label = secCfg?.processLabel || "Our Process";
+  const title = secCfg?.processTitle || "Your Journey With Royal Studio";
+  const description =
+    secCfg?.processDescription ||
+    "From first inquiry to final delivery — a seamless, luxury experience at every step.";
+  const steps =
+    secCfg?.weddingProcess && secCfg.weddingProcess.length > 0
+      ? secCfg.weddingProcess
+      : weddingProcess;
+
   return (
     <section className="section-padding bg-background">
       <div className="mx-auto max-w-7xl">
         <AnimatedSection>
           <SectionHeading
-            label="Our Process"
-            title="Your Journey With Royal Studio"
-            description="From first inquiry to final delivery — a seamless, luxury experience at every step."
+            label={label}
+            title={title}
+            description={description}
           />
         </AnimatedSection>
 
         <div className="relative">
           <div className="absolute top-0 bottom-0 left-6 hidden w-px bg-border md:left-1/2 md:block" />
           <div className="space-y-8">
-            {weddingProcess.map((step, i) => (
-              <AnimatedSection key={step.step} delay={i * 0.05}>
+            {steps.map((step, i) => (
+              <AnimatedSection key={step.step || i} delay={i * 0.05}>
                 <div
                   className={`flex flex-col gap-4 md:flex-row md:items-center ${
                     i % 2 === 0 ? "md:flex-row" : "md:flex-row-reverse"

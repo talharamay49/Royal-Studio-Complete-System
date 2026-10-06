@@ -5,6 +5,14 @@ import {
   calculateDaySummary,
   type CustomDayConfiguration,
 } from "@/lib/pricing/unifiedPricing";
+import {
+  portfolioItems as defaultPortfolioItems,
+  pricingPackages as defaultPricingPackages,
+  detailedServices as defaultDetailedServices,
+  testimonials as defaultTestimonials,
+  blogPosts as defaultBlogPosts,
+} from "@/lib/data";
+import { computeInvoiceStatus } from "@/components/admin/utils/calculations";
 
 function sanitizeField(value: unknown, maxLength = 500): string {
   if (typeof value !== "string") return "";
@@ -206,6 +214,7 @@ export async function POST(request: Request) {
         eventDaysCount !== "1 Day" ||
         functionsList.length > 1,
       daysCount: Math.max(1, customDaysConfig.length || 1),
+      selectedAddons: addonsList,
       staffCost: 0,
       rentalCost: 0,
       eventExpenses: 0,
@@ -253,17 +262,28 @@ export async function POST(request: Request) {
           photographersCount: dayCalc.totalPhotographers,
           cinematographersCount: dayCalc.totalVideographers,
           droneIncluded: dayCalc.totalDrones > 0,
+          services: (dayCfg.services || []).map((s) => ({
+            ...s,
+            tierPricePerUnit:
+              typeof s.tierPricePerUnit === "number"
+                ? s.tierPricePerUnit
+                : s.cameraCategory === "CAT_3"
+                ? 20000
+                : s.cameraCategory === "CAT_2"
+                ? 15000
+                : 10000,
+          })),
         });
       });
     }
 
     if (!db.cms) {
       db.cms = {
-        portfolioItems: [],
-        pricingPackages: [],
-        detailedServices: [],
-        testimonials: [],
-        blogPosts: [],
+        portfolioItems: [...defaultPortfolioItems],
+        pricingPackages: [...defaultPricingPackages],
+        detailedServices: [...defaultDetailedServices],
+        testimonials: [...defaultTestimonials],
+        blogPosts: [...defaultBlogPosts],
         websiteLeads: [],
       };
     }
@@ -287,6 +307,55 @@ export async function POST(request: Request) {
       linkedEventId: newInquiryEvent.id,
     });
 
+    // Auto-create Official Quotation and Invoice for this inquiry in ERP
+    const issueDateStr = submittedAt.split("T")[0];
+    const validUntilStr = new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0];
+    const quoNumber = `${db.profile?.quotationPrefix || "RS-QUO-"}${String(
+      (db.quotations?.length || 0) + 1001
+    ).padStart(4, "0")}`;
+    db.quotations.unshift({
+      id: `quo-${Date.now().toString().slice(-6)}`,
+      quotationNumber: quoNumber,
+      clientId: client.id,
+      eventId: linkedEventId,
+      issueDate: issueDateStr,
+      validUntil: validUntilStr,
+      subtotal: calculatedEstimate,
+      discount: 0,
+      tax: 0,
+      total: calculatedEstimate,
+      paymentTerms: db.profile?.paymentTerms || "50% advance to lock dates and crew",
+      notes: newInquiryEvent.notes,
+      createdBy: "website-inquiry",
+    });
+
+    const invNumber = `${db.profile?.invoicePrefix || "RS-INV-"}${String(
+      (db.invoices?.length || 0) + 1001
+    ).padStart(4, "0")}`;
+    const invStatus = computeInvoiceStatus(
+      { dueDate: weddingDate, total: calculatedEstimate },
+      0
+    );
+    db.invoices.unshift({
+      id: `inv-${Date.now().toString().slice(-6)}`,
+      invoiceNumber: invNumber,
+      clientId: client.id,
+      eventId: linkedEventId,
+      issueDate: issueDateStr,
+      dueDate: weddingDate,
+      subtotal: calculatedEstimate,
+      discount: 0,
+      tax: 0,
+      total: calculatedEstimate,
+      paidAmount: 0,
+      remainingAmount: calculatedEstimate,
+      paymentTerms: db.profile?.paymentTerms || "50% advance to lock dates and crew",
+      status: invStatus,
+      notes: `Auto-generated from Website Inquiry (${referenceId}).`,
+      createdBy: "website-inquiry",
+    });
+
+    dbInstance.recalculateEvent(linkedEventId);
     await dbInstance.save();
 
     const formspreeEndpoint = process.env.FORMSPREE_ENDPOINT;
@@ -311,6 +380,7 @@ export async function POST(request: Request) {
       success: true,
       referenceId,
       eventId: linkedEventId,
+      proposalUrl: `/proposal/${linkedEventId}`,
       clientName: clientDisplayName,
       whatsappUrl,
     });

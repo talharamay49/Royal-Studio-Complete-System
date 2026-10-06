@@ -9,7 +9,7 @@ import SectionHeading from "@/components/shared/SectionHeading";
 import AnimatedSection from "@/components/shared/AnimatedSection";
 
 export default function Testimonials() {
-  const { testimonials } = usePublicWebsiteCMS();
+  const { testimonials, websiteCustomization } = usePublicWebsiteCMS();
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
@@ -19,6 +19,10 @@ export default function Testimonials() {
     }, 7000);
     return () => clearInterval(interval);
   }, [testimonials.length]);
+
+  if (websiteCustomization?.sectionVisibility?.showTestimonials === false) {
+    return null;
+  }
 
   const activeTestimonial = testimonials[current % Math.max(1, testimonials.length)] || testimonials[0];
   if (!activeTestimonial) return null;

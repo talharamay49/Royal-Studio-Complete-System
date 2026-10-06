@@ -21,6 +21,9 @@ import {
   detailedServices as defaultDetailedServices,
   testimonials as defaultTestimonials,
   blogPosts as defaultBlogPosts,
+  defaultWebsiteCustomization,
+  defaultConnectedSocialAccounts,
+  defaultSocialMediaPosts,
 } from '@/lib/data';
 import { optimizePortfolioImageServer } from '@/lib/imageOptimizer';
 
@@ -616,8 +619,21 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         testimonials: [...defaultTestimonials],
         blogPosts: [...defaultBlogPosts],
         websiteLeads: [],
+        websiteCustomization: JSON.parse(JSON.stringify(defaultWebsiteCustomization)),
+        connectedSocialAccounts: JSON.parse(JSON.stringify(defaultConnectedSocialAccounts)),
+        socialMediaPosts: JSON.parse(JSON.stringify(defaultSocialMediaPosts)),
       };
       dbInstance.save();
+    } else {
+      if (!db.cms.websiteCustomization) {
+        db.cms.websiteCustomization = JSON.parse(JSON.stringify(defaultWebsiteCustomization));
+      }
+      if (!Array.isArray(db.cms.connectedSocialAccounts) || db.cms.connectedSocialAccounts.length === 0) {
+        db.cms.connectedSocialAccounts = JSON.parse(JSON.stringify(defaultConnectedSocialAccounts));
+      }
+      if (!Array.isArray(db.cms.socialMediaPosts) || db.cms.socialMediaPosts.length === 0) {
+        db.cms.socialMediaPosts = JSON.parse(JSON.stringify(defaultSocialMediaPosts));
+      }
     }
     if (isAdmin) {
       return NextResponse.json(db.cms);
@@ -641,6 +657,9 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         testimonials: [...defaultTestimonials],
         blogPosts: [...defaultBlogPosts],
         websiteLeads: [],
+        websiteCustomization: JSON.parse(JSON.stringify(defaultWebsiteCustomization)),
+        connectedSocialAccounts: JSON.parse(JSON.stringify(defaultConnectedSocialAccounts)),
+        socialMediaPosts: JSON.parse(JSON.stringify(defaultSocialMediaPosts)),
       };
     }
     if (Array.isArray(body.portfolioItems)) {
@@ -694,6 +713,49 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       db.cms.blogPosts = optimizedPosts;
     }
     if (Array.isArray(body.websiteLeads)) db.cms.websiteLeads = body.websiteLeads;
+    if (body.websiteCustomization && typeof body.websiteCustomization === 'object') {
+      db.cms.websiteCustomization = {
+        ...defaultWebsiteCustomization,
+        ...db.cms.websiteCustomization,
+        ...body.websiteCustomization,
+        sectionVisibility: {
+          ...defaultWebsiteCustomization.sectionVisibility,
+          ...(db.cms.websiteCustomization?.sectionVisibility || {}),
+          ...(body.websiteCustomization.sectionVisibility || {}),
+        },
+        hero: {
+          ...defaultWebsiteCustomization.hero,
+          ...(db.cms.websiteCustomization?.hero || {}),
+          ...(body.websiteCustomization.hero || {}),
+        },
+        about: {
+          ...defaultWebsiteCustomization.about,
+          ...(db.cms.websiteCustomization?.about || {}),
+          ...(body.websiteCustomization.about || {}),
+        },
+        films: {
+          ...defaultWebsiteCustomization.films,
+          ...(db.cms.websiteCustomization?.films || {}),
+          ...(body.websiteCustomization.films || {}),
+        },
+        sections: {
+          ...defaultWebsiteCustomization.sections,
+          ...(db.cms.websiteCustomization?.sections || {}),
+          ...(body.websiteCustomization.sections || {}),
+        },
+        navigation: {
+          ...defaultWebsiteCustomization.navigation,
+          ...(db.cms.websiteCustomization?.navigation || {}),
+          ...(body.websiteCustomization.navigation || {}),
+        },
+      };
+    }
+    if (Array.isArray(body.connectedSocialAccounts)) {
+      db.cms.connectedSocialAccounts = body.connectedSocialAccounts;
+    }
+    if (Array.isArray(body.socialMediaPosts)) {
+      db.cms.socialMediaPosts = body.socialMediaPosts;
+    }
     dbInstance.save();
     return NextResponse.json(db.cms);
   }
@@ -708,6 +770,9 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       testimonials: [...defaultTestimonials],
       blogPosts: [...defaultBlogPosts],
       websiteLeads: db.cms?.websiteLeads || [],
+      websiteCustomization: JSON.parse(JSON.stringify(defaultWebsiteCustomization)),
+      connectedSocialAccounts: JSON.parse(JSON.stringify(defaultConnectedSocialAccounts)),
+      socialMediaPosts: JSON.parse(JSON.stringify(defaultSocialMediaPosts)),
     };
     dbInstance.save();
     return NextResponse.json(db.cms);
@@ -1300,17 +1365,48 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         crewCount: dayCrewCount,
         crewRatePerDay: dayCombinedRate,
         assignedCrewIds: dayCrewIds,
-        photographersCount: Math.max(1, Math.ceil(dayCamCount / 2)),
-        cinematographersCount: Math.max(1, Math.floor(dayCamCount / 2)),
-        droneIncluded: true,
+        photographersCount:
+          typeof dInput.photographersCount === 'number'
+            ? dInput.photographersCount
+            : Math.max(1, Math.ceil(dayCamCount / 2)),
+        cinematographersCount:
+          typeof dInput.cinematographersCount === 'number'
+            ? dInput.cinematographersCount
+            : Math.max(1, Math.floor(dayCamCount / 2)),
+        droneIncluded:
+          typeof dInput.droneIncluded === 'boolean' ? dInput.droneIncluded : true,
       });
     });
+
+    const invNumber = `${db.profile.invoicePrefix || 'RS-INV-'}${String(db.invoices.length + 1001).padStart(4, '0')}`;
+    const invTotal = priceNum + Number(tax || 0);
+    const invStatus = computeInvoiceStatus({ dueDate: newEvent.eventDate, total: invTotal }, advNum);
+    const newInvoice = {
+      id: `inv-${Date.now().toString().slice(-6)}`,
+      invoiceNumber: invNumber,
+      clientId,
+      eventId: newEvent.id,
+      issueDate: new Date().toISOString().split('T')[0],
+      dueDate: newEvent.eventDate,
+      subtotal: priceNum + Number(discount || 0),
+      discount: Number(discount || 0),
+      tax: Number(tax || 0),
+      total: invTotal,
+      paidAmount: advNum,
+      remainingAmount: Math.max(0, invTotal - advNum),
+      paymentTerms: db.profile.paymentTerms,
+      status: invStatus,
+      notes: `Official studio invoice (${daysCount} day(s), ${CAMERA_CATEGORY_RATES[camCatKey].shortLabel}).`,
+      createdBy: user?.id || 'usr-admin',
+    };
+    db.invoices.unshift(newInvoice);
 
     if (advNum > 0) {
       const payment = {
         id: `pay-${Date.now().toString().slice(-6)}`,
         paymentId: `PAY-${Date.now().toString().slice(-4)}`,
         eventId: newEvent.id,
+        invoiceId: newInvoice.id,
         amount: advNum,
         paymentDate: newEvent.eventDate,
         method: 'Bank Transfer' as any,
@@ -1620,6 +1716,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const body = await parseJsonBody(req);
+    const addedPrice = Math.max(0, Number(body.customPrice || 0));
     const newSchedule = {
       id: `day-${Date.now().toString().slice(-6)}`,
       eventId: body.eventId,
@@ -1627,14 +1724,33 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       date: body.date,
       eventType: body.eventType || 'Barat',
       venue: body.venue || 'Venue',
+      timingMode: body.timingMode || 'NIGHT_TIME',
       startTime: body.startTime || '18:00',
       endTime: body.endTime || '23:00',
       callTime: body.callTime || '16:30',
       dressCode: body.dressCode || 'Formal',
       notes: body.notes || '',
-      customPrice: Number(body.customPrice || 0),
+      customPrice: addedPrice,
+      cameraCategory: body.cameraCategory || 'CAT_1',
+      crewCategory: body.crewCategory || 'CREW_CAT_1',
+      cameraCount: typeof body.cameraCount === 'number' ? body.cameraCount : undefined,
+      crewCount: typeof body.crewCount === 'number' ? body.crewCount : undefined,
+      photographersCount: typeof body.photographersCount === 'number' ? body.photographersCount : 1,
+      cinematographersCount: typeof body.cinematographersCount === 'number' ? body.cinematographersCount : 1,
+      droneIncluded: Boolean(body.droneIncluded),
+      services: Array.isArray(body.services) ? body.services : undefined,
     };
     db.daySchedules.push(newSchedule);
+    const parentEvt = db.events.find(e => e.id === body.eventId);
+    if (parentEvt) {
+      const allDaysForEvt = db.daySchedules.filter(d => d.eventId === body.eventId);
+      parentEvt.isMultiDay = allDaysForEvt.length > 1 || Boolean(parentEvt.isMultiDay);
+      parentEvt.daysCount = allDaysForEvt.length;
+      const sumDays = allDaysForEvt.reduce((acc, d) => acc + Number(d.customPrice || 0), 0);
+      if (sumDays > 0) {
+        parentEvt.packagePrice = Math.max(0, sumDays - Number(parentEvt.discount || 0) + Number(parentEvt.tax || 0));
+      }
+    }
     await dbInstance.recalculateEvent(body.eventId);
     await dbInstance.save();
     return NextResponse.json(newSchedule);
@@ -1647,8 +1763,15 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const body = await parseJsonBody(req);
     const index = db.daySchedules.findIndex(d => d.id === id);
     if (index === -1) return NextResponse.json({ error: 'Day schedule not found' }, { status: 404 });
+    const prevPrice = Number(db.daySchedules[index].customPrice || 0);
     db.daySchedules[index] = { ...db.daySchedules[index], ...body };
-    await dbInstance.recalculateEvent(db.daySchedules[index].eventId);
+    const nextPrice = Number(db.daySchedules[index].customPrice || 0);
+    const eventId = db.daySchedules[index].eventId;
+    const parentEvt = db.events.find(e => e.id === eventId);
+    if (parentEvt && nextPrice !== prevPrice) {
+      parentEvt.packagePrice = Math.max(0, Number(parentEvt.packagePrice || 0) + (nextPrice - prevPrice));
+    }
+    await dbInstance.recalculateEvent(eventId);
     await dbInstance.save();
     return NextResponse.json(db.daySchedules[index]);
   }
@@ -1660,7 +1783,12 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const schedule = db.daySchedules.find(d => d.id === id);
     if (!schedule) return NextResponse.json({ error: 'Day schedule not found' }, { status: 404 });
     const eventId = schedule.eventId;
+    const removedPrice = Number(schedule.customPrice || 0);
     db.daySchedules = db.daySchedules.filter(d => d.id !== id);
+    const parentEvt = db.events.find(e => e.id === eventId);
+    if (parentEvt && removedPrice > 0) {
+      parentEvt.packagePrice = Math.max(0, Number(parentEvt.packagePrice || 0) - removedPrice);
+    }
     await dbInstance.recalculateEvent(eventId);
     await dbInstance.save();
     return NextResponse.json({ success: true });
@@ -1720,23 +1848,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const body = await parseJsonBody(req);
-    const { eventId, teamMemberId, role, date, hours, rate, cost, notes, assignmentStatus } = body;
-
-    const conflicting = db.teamAssignments.find(a => {
-      if (a.teamMemberId !== teamMemberId) return false;
-      if (a.assignmentStatus === 'Cancelled') return false;
-      if (a.eventId === eventId) return false;
-      const otherEvent = db.events.find(e => e.id === a.eventId);
-      return otherEvent && otherEvent.eventDate === date && otherEvent.status !== 'Cancelled';
-    });
-
-    if (conflicting) {
-      const conflictEvent = db.events.find(e => e.id === conflicting.eventId);
-      return NextResponse.json(
-        { error: `Conflict detected! This team member is already assigned to "${conflictEvent?.title || 'Another Event'}" on ${date}.` },
-        { status: 400 }
-      );
-    }
+    const { eventId, teamMemberId, role, date, timingMode, hours, rate, cost, notes, assignmentStatus } = body;
 
     const newAssignment = {
       id: `eta-${Date.now().toString().slice(-6)}`,
@@ -1744,6 +1856,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       teamMemberId,
       role,
       date,
+      timingMode: timingMode || undefined,
       hours: Number(hours || 8),
       rate: Number(rate || 0),
       cost: Number(cost || rate || 0),
@@ -1848,21 +1961,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         { status: 400 }
       );
     }
-    const conflictingEvents = db.events.filter(e => e.id !== event.id && e.eventDate === event.eventDate && e.status !== 'Cancelled');
-    const conflictingEventIds = conflictingEvents.map(e => e.id);
     const requestedQty = Number(quantity || 1);
-    const alreadyBookedQty = db.equipmentAssignments
-      .filter(a => conflictingEventIds.includes(a.eventId) && a.equipmentId === equipmentId)
-      .reduce((sum, a) => sum + a.quantity, 0);
-    const availableQty = equip.quantity - alreadyBookedQty;
-
-    if (requestedQty > availableQty) {
-      return NextResponse.json(
-        { error: `Equipment unavailable: "${equip.name}" has ${availableQty} available on this date, requested ${requestedQty}.` },
-        { status: 400 }
-      );
-    }
-
     const rate = Number(rentalRate || equip.rentalRate || 0);
     const newAssignment = {
       id: `eea-${Date.now().toString().slice(-6)}`,
@@ -2428,7 +2527,7 @@ Rules:
       try {
         const ai = new GoogleGenAI({ apiKey: rawApiKey });
         const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
+          model: 'gemini-3-flash-preview',
           contents: `Here is the current live data from Royal Studio database:\n${JSON.stringify(dataSummary, null, 2)}`,
           config: {
             systemInstruction: systemPrompt,

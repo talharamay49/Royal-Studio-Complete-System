@@ -178,8 +178,11 @@ export function enforceDayTimeWindow(
 }
 
 /**
- * Dynamic Booking Pricing Formula:
- * Total Cost = [(Number of Cameras * Camera Category Rate) + (Staff/Crew Count * Crew Category Rate)] * Number of Days
+ * Dynamic Booking Pricing Formula (Unified Category + Tier Combined Rate):
+ * - Category 1 Camera + Tier 1 Crew = PKR 10,000 / cam / day (5k Camera + 5k Crew)
+ * - Category 2 Camera + Tier 2 Crew = PKR 15,000 / cam / day (7.5k Camera + 7.5k Crew)
+ * - Category 3 Camera + Tier 3 Crew = PKR 20,000 / cam / day (10k Camera + 10k Crew)
+ * Total Cost = [(Number of Cameras * Camera Half-Rate) + (Staff/Crew Count * Crew Half-Rate)] * Number of Days
  *              + Package Base Rate + Add-Ons - Discount
  */
 export function calculateDynamicBookingPricing(params: {
@@ -203,15 +206,20 @@ export function calculateDynamicBookingPricing(params: {
 } {
   const days = Math.max(1, Number(params.daysCount || 1));
   const cams = Math.max(0, Number(params.cameraCount || 0));
-  const camRate = Math.max(0, Number(params.cameraCategoryRate || 0));
+  const rawCamRate = Math.max(0, Number(params.cameraCategoryRate || 0));
   const crew = Math.max(0, Number(params.crewCount || 0));
-  const crewRate = Math.max(0, Number(params.crewCategoryRate || 0));
+  const rawCrewRate = Math.max(0, Number(params.crewCategoryRate || 0));
   const pkgBase = Math.max(0, Number(params.packageBaseRate || 0));
   const addOns = Math.max(0, Number(params.addOnsTotal || 0));
   const disc = Math.max(0, Number(params.discount || 0));
 
-  const cameraDailyCost = cams * camRate;
-  const crewDailyCost = crew * crewRate;
+  // CAMERA_CATEGORY_RATES and CREW_CATEGORY_RATES store the combined rate (10k / 15k / 20k).
+  // Each half (camera body + operator crew) represents 50% of the combined rate so 1 Cam + 1 Crew = 10k / 15k / 20k.
+  const camHalfRate = rawCamRate >= 10000 && rawCrewRate > 0 ? rawCamRate / 2 : rawCamRate;
+  const crewHalfRate = rawCrewRate >= 10000 && rawCamRate > 0 ? rawCrewRate / 2 : rawCrewRate;
+
+  const cameraDailyCost = Math.round(cams * camHalfRate);
+  const crewDailyCost = Math.round(crew * crewHalfRate);
   const combinedDailyResourceCost = cameraDailyCost + crewDailyCost;
   const multiDayResourceCost = combinedDailyResourceCost * days;
   const totalCost = Math.max(0, multiDayResourceCost + pkgBase + addOns - disc);

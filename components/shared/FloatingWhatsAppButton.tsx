@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { MessageCircle, X, ExternalLink, PhoneCall } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { siteConfig } from "@/lib/data";
-import { usePublicStudioProfile } from "@/components/shared/StudioProfileContext";
+import { usePublicStudioProfile, usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 
 function toWhatsAppUrl(phoneStr: string, studioName: string, lineLabel: string): string {
   const digits = phoneStr.replace(/[^0-9]/g, "");
@@ -21,6 +21,7 @@ function toWhatsAppUrl(phoneStr: string, studioName: string, lineLabel: string):
 export default function FloatingWhatsAppButton() {
   const pathname = usePathname();
   const profile = usePublicStudioProfile();
+  const { websiteCustomization } = usePublicWebsiteCMS();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -39,7 +40,10 @@ export default function FloatingWhatsAppButton() {
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [isOpen]);
 
-  if (pathname?.startsWith("/admin")) {
+  if (
+    pathname?.startsWith("/admin") ||
+    websiteCustomization?.sectionVisibility?.showFloatingWhatsapp === false
+  ) {
     return null;
   }
 

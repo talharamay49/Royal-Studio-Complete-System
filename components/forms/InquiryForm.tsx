@@ -81,6 +81,8 @@ function parseNumericPackagePrice(priceStr: string): number {
 
 interface InquirySuccessPayload {
   referenceId: string;
+  eventId?: string;
+  proposalUrl?: string;
   clientName: string;
   weddingDate: string;
   city: string;
@@ -92,9 +94,20 @@ interface InquirySuccessPayload {
   whatsappUrl: string;
 }
 
+interface LiveDateAvailability {
+  date: string;
+  status: "AVAILABLE" | "LIMITED_CREW" | "HIGH_DEMAND";
+  badgeLabel: string;
+  detailMessage: string;
+  bookedEventsCount: number;
+  remainingCrewEstimate: number;
+  remainingCamerasEstimate: number;
+}
+
 export default function InquiryForm() {
   const profile = usePublicStudioProfile();
   const { pricingPackages } = usePublicWebsiteCMS();
+  const showCustomerPriceBreakdown = profile?.showPublicPriceBreakdown === true;
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [showAllStepsAtOnce, setShowAllStepsAtOnce] = useState<boolean>(false);
@@ -138,6 +151,54 @@ export default function InquiryForm() {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [confirmation, setConfirmation] = useState<InquirySuccessPayload | null>(null);
+  const [availabilityByDate, setAvailabilityByDate] = useState<
+    Record<string, LiveDateAvailability>
+  >({});
+  const [checkingAvailability, setCheckingAvailability] = useState<boolean>(false);
+
+  // Compute target dates across primary weddingDate and customDays
+  const activeDatesString = useMemo(() => {
+    const datesSet = new Set<string>();
+    if (weddingDate) {
+      datesSet.add(weddingDate);
+      const baseObj = new Date(`${weddingDate}T12:00:00`);
+      if (!isNaN(baseObj.getTime())) {
+        customDays.forEach((d, idx) => {
+          if (d.date) {
+            datesSet.add(d.date);
+          } else {
+            const dt = new Date(baseObj);
+            dt.setDate(dt.getDate() + idx);
+            datesSet.add(dt.toISOString().split("T")[0]);
+          }
+        });
+      }
+    }
+    customDays.forEach((d) => {
+      if (d.date) datesSet.add(d.date);
+    });
+    return Array.from(datesSet).join(",");
+  }, [weddingDate, customDays]);
+
+  useEffect(() => {
+    if (!activeDatesString) return;
+    let cancelled = false;
+    setCheckingAvailability(true);
+    fetch(`/api/availability?dates=${encodeURIComponent(activeDatesString)}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!cancelled && json?.availabilityByDate) {
+          setAvailabilityByDate(json.availabilityByDate);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setCheckingAvailability(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDatesString]);
 
   // Real-time unified pricing calculation
   const livePricingQuote = useMemo(() => {
@@ -756,6 +817,10 @@ export default function InquiryForm() {
       if (res.ok && result.success) {
         setConfirmation({
           referenceId: result.referenceId || "RS-INQ",
+          eventId: result.eventId,
+          proposalUrl:
+            result.proposalUrl ||
+            (result.eventId ? `/proposal/${result.eventId}` : undefined),
           clientName:
             result.clientName ||
             (groomName.trim() ? `${brideName.trim()} & ${groomName.trim()}` : brideName.trim()),
@@ -843,28 +908,40 @@ export default function InquiryForm() {
             </span>
             <span className="font-semibold text-primary">{confirmation.city}</span>
           </div>
-          <div className="border-t border-border pt-2 space-y-1.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted block">
-              Day-by-Day Equipment &amp; Crew Configuration:
-            </span>
-            {confirmation.dayBreakdownSummary.map((line, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between text-xs text-primary bg-surface px-2.5 py-1.5 rounded-lg border border-border/60"
-              >
-                <span>{line}</span>
+          {showCustomerPriceBreakdown && (
+            <>
+              <div className="border-t border-border pt-2 space-y-1.5">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-text-muted block">
+                  Day-by-Day Equipment &amp; Crew Configuration:
+                </span>
+                {confirmation.dayBreakdownSummary.map((line, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between text-xs text-primary bg-surface px-2.5 py-1.5 rounded-lg border border-border/60"
+                  >
+                    <span>{line}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <div className="flex items-center justify-between border-t border-border pt-2.5">
-            <span className="font-semibold text-primary">Final Grand Total:</span>
-            <span className="font-mono text-sm font-bold text-accent tabular-nums">
-              PKR {confirmation.estimatedTotal.toLocaleString("en-PK")}
-            </span>
-          </div>
+              <div className="flex items-center justify-between border-t border-border pt-2.5">
+                <span className="font-semibold text-primary">Final Grand Total:</span>
+                <span className="font-mono text-sm font-bold text-accent tabular-nums">
+                  PKR {confirmation.estimatedTotal.toLocaleString("en-PK")}
+                </span>
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+        <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 pt-2">
+          {confirmation.proposalUrl && (
+            <Button asChild variant="accent" className="w-full sm:w-auto">
+              <a href={confirmation.proposalUrl}>
+                <Sparkles size={16} />
+                Open Interactive Proposal &amp; Online Approval Link
+              </a>
+            </Button>
+          )}
           {confirmation.whatsappUrl && (
             <Button asChild variant="whatsapp" className="w-full sm:w-auto">
               <a
@@ -1020,6 +1097,33 @@ export default function InquiryForm() {
                 <p className="mt-1 text-[11px] font-medium text-red-500">
                   {fieldErrors.weddingDate}
                 </p>
+              )}
+              {weddingDate && !fieldErrors.weddingDate && (
+                <div className="mt-1.5">
+                  {checkingAvailability && !availabilityByDate[weddingDate] ? (
+                    <span className="text-[11px] text-text-muted">
+                      Checking studio crew &amp; camera availability...
+                    </span>
+                  ) : availabilityByDate[weddingDate] ? (
+                    <div
+                      className={cn(
+                        "rounded-lg border px-2.5 py-1.5 text-[11px] flex items-center justify-between gap-2",
+                        availabilityByDate[weddingDate].status === "AVAILABLE"
+                          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                          : availabilityByDate[weddingDate].status === "LIMITED_CREW"
+                          ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+                          : "border-rose-500/40 bg-rose-500/10 text-rose-400"
+                      )}
+                    >
+                      <span className="font-bold">
+                        ● {availabilityByDate[weddingDate].badgeLabel}
+                      </span>
+                      <span className="truncate opacity-90">
+                        {availabilityByDate[weddingDate].detailMessage}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
               )}
             </div>
             <div className="sm:col-span-2 xl:col-span-1">
@@ -1203,27 +1307,29 @@ export default function InquiryForm() {
               </div>
             </div>
 
-            {/* Unified Pricing Rate Legend */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-border/60">
-              {UNIFIED_TIER_LIST.map((tier) => (
-                <div
-                  key={tier.cameraCategory}
-                  className="flex items-center justify-between rounded-xl border border-border/80 bg-background px-3 py-2 text-xs"
-                >
-                  <div>
-                    <div className="font-semibold text-primary">
-                      Cat {tier.tierNumber} + Tier {tier.tierNumber}
+            {/* Unified Pricing Rate Legend (Only shown on customer side if Admin enables showPublicPriceBreakdown) */}
+            {showCustomerPriceBreakdown && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-border/60">
+                {UNIFIED_TIER_LIST.map((tier) => (
+                  <div
+                    key={tier.cameraCategory}
+                    className="flex items-center justify-between rounded-xl border border-border/80 bg-background px-3 py-2 text-xs"
+                  >
+                    <div>
+                      <div className="font-semibold text-primary">
+                        Cat {tier.tierNumber} + Tier {tier.tierNumber}
+                      </div>
+                      <div className="text-[11px] text-text-muted">
+                        Camera + Crew Combined
+                      </div>
                     </div>
-                    <div className="text-[11px] text-text-muted">
-                      Camera + Crew Combined
-                    </div>
+                    <span className="font-mono font-bold text-accent tabular-nums">
+                      PKR {(tier.ratePerCamPerDay / 1000).toFixed(0)}k/cam/day
+                    </span>
                   </div>
-                  <span className="font-mono font-bold text-accent tabular-nums">
-                    PKR {(tier.ratePerCamPerDay / 1000).toFixed(0)}k/cam/day
-                  </span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {configMode === "CUSTOM_DAYS" ? (
@@ -1348,6 +1454,48 @@ export default function InquiryForm() {
                             </option>
                           </select>
 
+                          {/* Per-Day Specific Date & Live Availability */}
+                          {(() => {
+                            let resolvedDayDate = day.date || "";
+                            if (!resolvedDayDate && weddingDate) {
+                              const baseDt = new Date(`${weddingDate}T12:00:00`);
+                              if (!isNaN(baseDt.getTime())) {
+                                baseDt.setDate(baseDt.getDate() + dayIndex);
+                                resolvedDayDate = baseDt.toISOString().split("T")[0];
+                              }
+                            }
+                            const dayAvail = resolvedDayDate
+                              ? availabilityByDate[resolvedDayDate]
+                              : undefined;
+                            return (
+                              <div className="inline-flex flex-wrap items-center gap-1.5">
+                                <input
+                                  type="date"
+                                  aria-label={`Day ${day.dayNumber} Date`}
+                                  value={resolvedDayDate}
+                                  onChange={(e) =>
+                                    updateDayConfig(day.id, { date: e.target.value })
+                                  }
+                                  className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-mono text-primary"
+                                />
+                                {dayAvail && (
+                                  <span
+                                    className={cn(
+                                      "text-[11px] font-semibold",
+                                      dayAvail.status === "AVAILABLE"
+                                        ? "text-emerald-400"
+                                        : dayAvail.status === "LIMITED_CREW"
+                                        ? "text-amber-400"
+                                        : "text-rose-400"
+                                    )}
+                                  >
+                                    ● {dayAvail.badgeLabel}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })()}
+
                           {/* Per-Day Mode Switch: Custom Services/Tiers vs Pre-Built Package */}
                           <div className="inline-flex rounded-lg border border-border bg-background p-0.5">
                             <button
@@ -1390,14 +1538,16 @@ export default function InquiryForm() {
                         </div>
 
                         <div className="flex items-center justify-between sm:justify-end gap-3">
-                          <div className="text-right">
-                            <span className="text-[10px] uppercase tracking-wider text-text-muted block">
-                              Day {day.dayNumber} ({day.eventFunction}) Subtotal
-                            </span>
-                            <span className="font-mono text-sm font-bold text-accent tabular-nums">
-                              PKR {(dayCalc?.daySubtotal || 0).toLocaleString("en-PK")}
-                            </span>
-                          </div>
+                          {showCustomerPriceBreakdown && (
+                            <div className="text-right">
+                              <span className="text-[10px] uppercase tracking-wider text-text-muted block">
+                                Day {day.dayNumber} ({day.eventFunction}) Subtotal
+                              </span>
+                              <span className="font-mono text-sm font-bold text-accent tabular-nums">
+                                PKR {(dayCalc?.daySubtotal || 0).toLocaleString("en-PK")}
+                              </span>
+                            </div>
+                          )}
                           {customDays.length > 1 && (
                             <button
                               type="button"
@@ -1560,8 +1710,10 @@ export default function InquiryForm() {
                                             key={t.cameraCategory}
                                             value={t.cameraCategory}
                                           >
-                                            Cat {t.tierNumber} + Tier {t.tierNumber} — PKR{" "}
-                                            {t.ratePerCamPerDay.toLocaleString("en-PK")}/unit
+                                            Cat {t.tierNumber} + Tier {t.tierNumber}
+                                            {showCustomerPriceBreakdown
+                                              ? ` — PKR ${t.ratePerCamPerDay.toLocaleString("en-PK")}/unit`
+                                              : ` (${t.shortLabel})`}
                                           </option>
                                         ))}
                                       </select>
@@ -1603,14 +1755,16 @@ export default function InquiryForm() {
 
                                     {/* Line Subtotal & Delete */}
                                     <div className="md:col-span-2 flex items-center justify-between md:justify-end gap-2">
-                                      <div className="text-right">
-                                        <span className="text-[10px] text-text-muted block">
-                                          Subtotal
-                                        </span>
-                                        <span className="font-mono text-xs font-bold text-accent tabular-nums">
-                                          PKR {lineTotal.toLocaleString("en-PK")}
-                                        </span>
-                                      </div>
+                                      {showCustomerPriceBreakdown && (
+                                        <div className="text-right">
+                                          <span className="text-[10px] text-text-muted block">
+                                            Subtotal
+                                          </span>
+                                          <span className="font-mono text-xs font-bold text-accent tabular-nums">
+                                            PKR {lineTotal.toLocaleString("en-PK")}
+                                          </span>
+                                        </div>
+                                      )}
                                       {dayServices.length > 1 && (
                                         <button
                                           type="button"
@@ -1632,10 +1786,12 @@ export default function InquiryForm() {
                                       Equipment: <strong className="text-primary">{equipmentSpec}</strong> · Crew:{" "}
                                       <strong className="text-primary">{crewSpec}</strong>
                                     </span>
-                                    <span className="font-mono tabular-nums">
-                                      {srv.quantity} × PKR {unitRate.toLocaleString("en-PK")} = PKR{" "}
-                                      {lineTotal.toLocaleString("en-PK")}
-                                    </span>
+                                    {showCustomerPriceBreakdown && (
+                                      <span className="font-mono tabular-nums">
+                                        {srv.quantity} × PKR {unitRate.toLocaleString("en-PK")} = PKR{" "}
+                                        {lineTotal.toLocaleString("en-PK")}
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               );
@@ -1820,22 +1976,34 @@ export default function InquiryForm() {
         </div>
       )}
 
-      {/* DETAILED PRICE BREAKDOWN COMPONENT + MODAL TRIGGER */}
-      <PriceBreakdownTable
-        quote={livePricingQuote}
-        selectedAddons={selectedAddons}
-        compact={false}
-        onOpenModal={() => setIsBreakdownModalOpen(true)}
-      />
+      {/* DETAILED PRICE BREAKDOWN COMPONENT + MODAL TRIGGER (Managed from Admin Side · Default Hidden on Customer Side) */}
+      {showCustomerPriceBreakdown && (
+        <>
+          <PriceBreakdownTable
+            quote={livePricingQuote}
+            selectedAddons={selectedAddons}
+            compact={false}
+            onOpenModal={() => setIsBreakdownModalOpen(true)}
+            weddingDate={weddingDate}
+            city={city}
+            studioWhatsapp={
+              profile?.publicWhatsappNumber || profile?.whatsapp || "923084877073"
+            }
+          />
 
-      <PriceBreakdownModal
-        isOpen={isBreakdownModalOpen}
-        onClose={() => setIsBreakdownModalOpen(false)}
-        quote={livePricingQuote}
-        selectedAddons={selectedAddons}
-        weddingDate={weddingDate}
-        city={city}
-      />
+          <PriceBreakdownModal
+            isOpen={isBreakdownModalOpen}
+            onClose={() => setIsBreakdownModalOpen(false)}
+            quote={livePricingQuote}
+            selectedAddons={selectedAddons}
+            weddingDate={weddingDate}
+            city={city}
+            studioWhatsapp={
+              profile?.publicWhatsappNumber || profile?.whatsapp || "923084877073"
+            }
+          />
+        </>
+      )}
 
       {/* STEP 3: Client Contact Details & Submission */}
       {(showAllStepsAtOnce || step === 3) && (

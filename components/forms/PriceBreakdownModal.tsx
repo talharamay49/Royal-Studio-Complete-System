@@ -10,15 +10,77 @@ import {
   CheckCircle2,
   Calendar,
   Layers,
+  MessageCircle,
 } from "lucide-react";
 import { type CalculatedMultiDayQuote } from "@/lib/pricing/unifiedPricing";
 import { Button } from "@/components/ui/button";
+
+export function buildWhatsAppQuoteUrl(
+  quote: CalculatedMultiDayQuote,
+  selectedAddons: string[],
+  weddingDate?: string,
+  city?: string,
+  studioWhatsapp = "923084877073"
+): string {
+  const cleanNumber = studioWhatsapp.replace(/[^0-9]/g, "");
+  const formattedWa = cleanNumber.startsWith("92")
+    ? cleanNumber
+    : `92${cleanNumber.replace(/^0/, "")}`;
+
+  const dayLines = quote.days.map((day) => {
+    if (day.mode === "PREBUILT_PACKAGE") {
+      return `• *Day ${day.dayNumber} (${day.eventFunction}):* ${
+        day.packageName || "Studio Package"
+      } = PKR ${day.daySubtotal.toLocaleString("en-PK")}`;
+    }
+    const items = day.serviceLineItems
+      .map(
+        (li) =>
+          `   - ${li.quantity}x ${li.serviceType} (Cat ${li.tierNumber} + Tier ${
+            li.tierNumber
+          } @ PKR ${li.unitPrice.toLocaleString("en-PK")}) = PKR ${li.lineTotal.toLocaleString(
+            "en-PK"
+          )}`
+      )
+      .join("\n");
+    return `• *Day ${day.dayNumber} — ${day.eventFunction}*${
+      day.date ? ` (${day.date})` : ""
+    }\n${items}\n   *Day ${day.dayNumber} Subtotal:* PKR ${day.daySubtotal.toLocaleString(
+      "en-PK"
+    )}`;
+  });
+
+  const messageLines = [
+    `*ROYAL STUDIO — CUSTOM EVENT QUOTE SUMMARY*`,
+    weddingDate ? `Primary Date: ${weddingDate}` : "",
+    city ? `City: ${city}` : "",
+    `Configured Events: ${quote.daysCount} Day(s) · ${quote.totalCameraUnitsAcrossDays} Total Units`,
+    ``,
+    `*Day-by-Day Equipment & Crew Breakdown:*`,
+    ...dayLines,
+    selectedAddons.length > 0
+      ? `\n*Luxury Add-Ons:* ${selectedAddons.join(", ")} (+PKR ${quote.addonsTotal.toLocaleString(
+          "en-PK"
+        )})`
+      : "",
+    ``,
+    `*FINAL GRAND TOTAL: PKR ${quote.grandTotal.toLocaleString("en-PK")}*`,
+    `Please confirm date availability and next steps to lock this booking.`,
+  ].filter(Boolean);
+
+  return `https://wa.me/${formattedWa}?text=${encodeURIComponent(
+    messageLines.join("\n")
+  )}`;
+}
 
 interface PriceBreakdownTableProps {
   quote: CalculatedMultiDayQuote;
   selectedAddons: string[];
   compact?: boolean;
   onOpenModal?: () => void;
+  weddingDate?: string;
+  city?: string;
+  studioWhatsapp?: string;
 }
 
 export function PriceBreakdownTable({
@@ -26,7 +88,18 @@ export function PriceBreakdownTable({
   selectedAddons,
   compact = false,
   onOpenModal,
+  weddingDate,
+  city,
+  studioWhatsapp,
 }: PriceBreakdownTableProps) {
+  const whatsappQuoteUrl = buildWhatsAppQuoteUrl(
+    quote,
+    selectedAddons,
+    weddingDate,
+    city,
+    studioWhatsapp
+  );
+
   return (
     <div className="rounded-2xl border border-accent/50 bg-surface p-4 sm:p-6 space-y-4 shadow-xs">
       {/* Header */}
@@ -54,7 +127,16 @@ export function PriceBreakdownTable({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-3">
+        <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2.5">
+          <a
+            href={whatsappQuoteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition-colors whitespace-nowrap"
+          >
+            <MessageCircle size={13} />
+            <span>Send Quote to WhatsApp</span>
+          </a>
           {onOpenModal && (
             <button
               type="button"
@@ -250,6 +332,7 @@ interface PriceBreakdownModalProps {
   selectedAddons: string[];
   weddingDate?: string;
   city?: string;
+  studioWhatsapp?: string;
 }
 
 export function PriceBreakdownModal({
@@ -259,8 +342,17 @@ export function PriceBreakdownModal({
   selectedAddons,
   weddingDate,
   city,
+  studioWhatsapp,
 }: PriceBreakdownModalProps) {
   if (!isOpen) return null;
+
+  const whatsappQuoteUrl = buildWhatsAppQuoteUrl(
+    quote,
+    selectedAddons,
+    weddingDate,
+    city,
+    studioWhatsapp
+  );
 
   return (
     <div
@@ -311,6 +403,9 @@ export function PriceBreakdownModal({
           quote={quote}
           selectedAddons={selectedAddons}
           compact={false}
+          weddingDate={weddingDate}
+          city={city}
+          studioWhatsapp={studioWhatsapp}
         />
 
         {/* Tier Rate Key & Footer */}
@@ -325,9 +420,21 @@ export function PriceBreakdownModal({
             <span>·</span>
             <span>Cat 3 + Tier 3 = PKR 20,000/cam/day</span>
           </div>
-          <Button type="button" variant="accent" onClick={onClose}>
-            Done Reviewing Breakdown
-          </Button>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button asChild variant="whatsapp">
+              <a
+                href={whatsappQuoteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <MessageCircle size={15} />
+                <span>Send My Custom Quote to WhatsApp</span>
+              </a>
+            </Button>
+            <Button type="button" variant="accent" onClick={onClose}>
+              Done Reviewing Breakdown
+            </Button>
+          </div>
         </div>
       </div>
     </div>

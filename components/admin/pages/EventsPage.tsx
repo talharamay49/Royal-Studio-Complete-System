@@ -23,6 +23,7 @@ import { Modal } from '../components/common/Modal';
 import { ConfirmationDialog } from '../components/common/ConfirmationDialog';
 import { EventQrModal } from '../components/common/EventQrModal';
 import { IntegratedBookingModal } from '../components/common/IntegratedBookingModal';
+import ProposalQrShareModal from '@/components/proposal/ProposalQrShareModal';
 import { Event, EventCategory, WeddingSubtype, EventStatus } from '../types';
 
 interface EventsPageProps {
@@ -40,6 +41,8 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
     teamAssignments,
     equipment,
     equipmentAssignments,
+    quotations,
+    profile,
     createClient,
     createPackage,
     createEvent,
@@ -53,6 +56,7 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
   const [categoryFilter, setCategoryFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [proposalShareEvent, setProposalShareEvent] = useState<Event | null>(null);
   const [qrModalEvent, setQrModalEvent] = useState<Event | null>(null);
 
   // Quick-Create Inline Client mode inside New Event Booking modal
@@ -134,7 +138,7 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
     setEditEndTime(evt.endTime || '23:30');
     setEditVenue(evt.venue || '');
     setEditCity(evt.city || 'Lahore');
-    setEditPackagePrice(evt.packagePrice);
+    setEditPackagePrice((evt.packagePrice || 0) + (evt.discount || 0) - (evt.tax || 0));
     setEditStatus(evt.status);
     setEditDiscount(evt.discount || 0);
     setEditTax(evt.tax || 0);
@@ -153,6 +157,10 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
 
     setIsSavingEdit(true);
     try {
+      const netContractPrice = Math.max(
+        0,
+        Number(editPackagePrice || 0) - Number(editDiscount || 0) + Number(editTax || 0)
+      );
       await updateEvent(editingEvent.id, {
         clientId: editClientId,
         title: editTitle,
@@ -164,7 +172,7 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
         endTime: editEndTime,
         venue: editVenue,
         city: editCity,
-        packagePrice: Number(editPackagePrice || 0),
+        packagePrice: netContractPrice,
         status: editStatus,
         discount: Number(editDiscount || 0),
         tax: Number(editTax || 0),
@@ -523,15 +531,25 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  onClick={() => openEditModal(evt)}
-                  className="px-3 py-1.5 text-amber-900 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
-                >
-                  <Edit className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Edit</span>
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-gray-100" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setProposalShareEvent(evt)}
+                    className="px-2.5 py-1.5 text-amber-400 bg-slate-900 hover:bg-slate-800 rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>Proposal &amp; QR</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openEditModal(evt)}
+                    className="px-2.5 py-1.5 text-amber-900 bg-amber-50 border border-amber-200 rounded-lg text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <Edit className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Edit</span>
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => navigate(`/events/${evt.id}`)}
@@ -650,6 +668,17 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setProposalShareEvent(evt);
+                          }}
+                          className="px-2.5 py-1 text-amber-400 bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors inline-flex items-center gap-1 font-bold text-xs shadow-2xs cursor-pointer"
+                          title="Send Digital Proposal to Customer via Link & Scannable QR Code"
+                        >
+                          <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Proposal QR</span>
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1017,6 +1046,37 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
         title="Delete this Event?"
         message="This action will permanently delete this event, its day schedules, team assignments, equipment bookings, and expense records. This action cannot be undone."
       />
+
+      {proposalShareEvent && (
+        <ProposalQrShareModal
+          isOpen={Boolean(proposalShareEvent)}
+          onClose={() => setProposalShareEvent(null)}
+          proposalUrl={
+            typeof window !== 'undefined'
+              ? `${window.location.origin}/proposal/${proposalShareEvent.id}`
+              : `/proposal/${proposalShareEvent.id}`
+          }
+          quotationNumber={
+            quotations.find((q) => q.eventId === proposalShareEvent.id)?.quotationNumber ||
+            `RS-QUO-${proposalShareEvent.id.slice(-4).toUpperCase()}`
+          }
+          eventTitle={proposalShareEvent.title}
+          eventDate={proposalShareEvent.eventDate}
+          clientName={
+            clients.find((c) => c.id === proposalShareEvent.clientId)?.name || 'Valued Client'
+          }
+          clientPhone={
+            clients.find((c) => c.id === proposalShareEvent.clientId)?.whatsapp ||
+            clients.find((c) => c.id === proposalShareEvent.clientId)?.phone
+          }
+          studioName={profile?.studioName || 'Royal Studio'}
+          totalAmountText={formatPKR(
+            proposalShareEvent.packagePrice -
+              (proposalShareEvent.discount || 0) +
+              (proposalShareEvent.tax || 0)
+          )}
+        />
+      )}
     </div>
   );
 };

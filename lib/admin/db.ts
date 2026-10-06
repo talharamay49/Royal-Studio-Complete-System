@@ -30,8 +30,20 @@ import {
   detailedServices as defaultDetailedServices,
   testimonials as defaultTestimonials,
   blogPosts as defaultBlogPosts,
+  defaultWebsiteCustomization,
+  defaultConnectedSocialAccounts,
+  defaultSocialMediaPosts,
 } from '@/lib/data';
-import type { PortfolioItem, PricingPackage, Service, Testimonial, BlogPost } from '@/types';
+import type {
+  PortfolioItem,
+  PricingPackage,
+  Service,
+  Testimonial,
+  BlogPost,
+  WebsiteCustomizationConfig,
+  ConnectedSocialAccount,
+  SocialMediaPostItem,
+} from '@/types';
 import { getDatabaseAdapter, DatabaseEngineStats } from '@/lib/db/storageAdapter';
 
 export { firebaseConfig, firestoreDb, testFirestoreConnection };
@@ -60,6 +72,9 @@ export interface WebsiteCMSData {
   testimonials: Testimonial[];
   blogPosts: BlogPost[];
   websiteLeads: WebsiteLead[];
+  websiteCustomization?: WebsiteCustomizationConfig;
+  connectedSocialAccounts?: ConnectedSocialAccount[];
+  socialMediaPosts?: SocialMediaPostItem[];
 }
 
 export function hashPassword(plain: string): string {
@@ -187,10 +202,18 @@ export function getDefaultStudioProfile(): AdminProfile {
     socialCoverImage: '/image.png',
 
     // 6. Document Branding & Stationery
-    documentBackground: '/image.png',
-    quotationBackground: '/image.png',
-    invoiceBackground: '/image.png',
-    receiptBackground: '/image.png',
+    documentBackground: '/01.jpg',
+    quotationBackground: '/01.jpg',
+    invoiceBackground: '/01.jpg',
+    receiptBackground: '/01.jpg',
+    documentShowBackground: true,
+    documentBackgroundFit: 'as-is',
+    documentBackgroundOpacity: 100,
+    documentPageFillColor: '#efece4',
+    documentShowHeaderLogo: true,
+    documentHeaderLogoHeight: 16,
+    documentAccentColor: '#a58137',
+    documentTableStyle: 'transparent',
     letterheadText: 'ROYAL STUDIO — PHOTOGRAPHY & FILMS',
     documentFooterText: 'Thank you for choosing Royal Studio. We Capture Your Memories!',
     defaultTermsAndConditions:
@@ -309,6 +332,7 @@ export function getDefaultStudioProfile(): AdminProfile {
     seoDescription: 'Contact Royal Studio at Al Jannat Town Entrance, Canal Bungalow Road, Opposite Habib Mall, Burewala (0308-4877073) for luxury wedding photography & films.',
     openGraphImage: '/logo.png',
     showBusinessHoursPublicly: true,
+    showPublicPriceBreakdown: false,
 
     // 12. Unified Theme & Appearance Customization (Admin ERP & Public Website)
     themeConfig: {
@@ -1485,6 +1509,38 @@ export class StudioDatabase {
         this.db.profile.website = 'https://royalstudio.online';
         needsSave = true;
       }
+      if (
+        !this.db.profile.documentBackground ||
+        this.db.profile.documentBackground === '/image.png' ||
+        this.db.profile.documentBackground === '/invoice_lens_bg.jpg'
+      ) {
+        this.db.profile.documentBackground = '/01.jpg';
+        needsSave = true;
+      }
+      if (
+        !this.db.profile.invoiceBackground ||
+        this.db.profile.invoiceBackground === '/image.png' ||
+        this.db.profile.invoiceBackground === '/invoice_lens_bg.jpg'
+      ) {
+        this.db.profile.invoiceBackground = '/01.jpg';
+        needsSave = true;
+      }
+      if (
+        !this.db.profile.quotationBackground ||
+        this.db.profile.quotationBackground === '/image.png' ||
+        this.db.profile.quotationBackground === '/invoice_lens_bg.jpg'
+      ) {
+        this.db.profile.quotationBackground = '/01.jpg';
+        needsSave = true;
+      }
+      if (
+        !this.db.profile.receiptBackground ||
+        this.db.profile.receiptBackground === '/image.png' ||
+        this.db.profile.receiptBackground === '/invoice_lens_bg.jpg'
+      ) {
+        this.db.profile.receiptBackground = '/01.jpg';
+        needsSave = true;
+      }
     }
 
     if (!this.db.profileAuditLogs) {
@@ -1522,6 +1578,9 @@ export class StudioDatabase {
         testimonials: [...defaultTestimonials],
         blogPosts: [...defaultBlogPosts],
         websiteLeads: [],
+        websiteCustomization: JSON.parse(JSON.stringify(defaultWebsiteCustomization)),
+        connectedSocialAccounts: JSON.parse(JSON.stringify(defaultConnectedSocialAccounts)),
+        socialMediaPosts: JSON.parse(JSON.stringify(defaultSocialMediaPosts)),
       };
       needsSave = true;
     } else {
@@ -1547,6 +1606,18 @@ export class StudioDatabase {
       }
       if (!Array.isArray(this.db.cms.websiteLeads)) {
         this.db.cms.websiteLeads = [];
+        needsSave = true;
+      }
+      if (!this.db.cms.websiteCustomization) {
+        this.db.cms.websiteCustomization = JSON.parse(JSON.stringify(defaultWebsiteCustomization));
+        needsSave = true;
+      }
+      if (!Array.isArray(this.db.cms.connectedSocialAccounts) || this.db.cms.connectedSocialAccounts.length === 0) {
+        this.db.cms.connectedSocialAccounts = JSON.parse(JSON.stringify(defaultConnectedSocialAccounts));
+        needsSave = true;
+      }
+      if (!Array.isArray(this.db.cms.socialMediaPosts) || this.db.cms.socialMediaPosts.length === 0) {
+        this.db.cms.socialMediaPosts = JSON.parse(JSON.stringify(defaultSocialMediaPosts));
         needsSave = true;
       }
     }
@@ -1670,14 +1741,28 @@ export class StudioDatabase {
     event.remainingBalance = calculated.remainingBalance;
     event.updatedDate = new Date().toISOString();
 
-    // Also update any related invoices
+    // Also update any related invoices & quotations
     const invoice = this.db.invoices.find(inv => inv.eventId === eventId);
     if (invoice) {
-      invoice.subtotal = event.packagePrice;
-      invoice.total = invoice.subtotal - invoice.discount + invoice.tax;
+      const disc = Number(event.discount ?? invoice.discount ?? 0);
+      const tx = Number(event.tax ?? invoice.tax ?? 0);
+      invoice.discount = disc;
+      invoice.tax = tx;
+      invoice.subtotal = event.packagePrice + disc;
+      invoice.total = Math.max(0, event.packagePrice + tx);
       invoice.paidAmount = calculated.totalClientPayments;
       invoice.remainingAmount = Math.max(0, invoice.total - invoice.paidAmount);
       invoice.status = computeInvoiceStatus(invoice, invoice.paidAmount);
+    }
+
+    const quotation = this.db.quotations.find(quo => quo.eventId === eventId);
+    if (quotation) {
+      const disc = Number(event.discount ?? quotation.discount ?? 0);
+      const tx = Number(event.tax ?? quotation.tax ?? 0);
+      quotation.discount = disc;
+      quotation.tax = tx;
+      quotation.subtotal = event.packagePrice + disc;
+      quotation.total = Math.max(0, event.packagePrice + tx);
     }
 
     await this.save();

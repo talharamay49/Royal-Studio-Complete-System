@@ -80,6 +80,15 @@ export type CameraCategoryTier = 'CAT_1' | 'CAT_2' | 'CAT_3';
 
 export type CrewCategoryTier = 'CREW_CAT_1' | 'CREW_CAT_2' | 'CREW_CAT_3';
 
+export interface DayServiceSlot {
+  id: string;
+  serviceType: 'Photographer' | 'Videographer' | 'Drone';
+  cameraCategory: CameraCategoryTier;
+  crewCategory: CrewCategoryTier;
+  quantity: number;
+  tierPricePerUnit: number;
+}
+
 export interface EventDaySchedule {
   id: string;
   eventId: string;
@@ -108,6 +117,16 @@ export interface EventDaySchedule {
   photographersCount?: number;
   cinematographersCount?: number;
   droneIncluded?: boolean;
+  services?: DayServiceSlot[];
+}
+
+export interface ProposalApprovalHistoryEntry {
+  id: string;
+  action: 'ISSUED' | 'VIEWED' | 'ADDONS_UPDATED' | 'ACCEPTED';
+  timestamp: string;
+  actorName: string;
+  signatureName?: string;
+  details?: string;
 }
 
 export interface Event {
@@ -142,6 +161,13 @@ export interface Event {
   crewCategory?: CrewCategoryTier;
   crewCount?: number;
   crewRatePerDay?: number;
+  selectedAddons?: string[];
+  approvedByClient?: string;
+  approvedAt?: string;
+  proposalFirstViewedAt?: string;
+  proposalLastViewedAt?: string;
+  proposalViewCount?: number;
+  approvalHistory?: ProposalApprovalHistoryEntry[];
 
   // Cached calculated financials
   staffCost: number;
@@ -543,6 +569,14 @@ export interface AdminProfile {
   quotationBackground?: string;
   invoiceBackground?: string;
   receiptBackground?: string;
+  documentShowBackground?: boolean;
+  documentBackgroundFit?: 'as-is' | 'contain' | 'top-banner' | 'center-watermark';
+  documentBackgroundOpacity?: number;
+  documentPageFillColor?: string;
+  documentShowHeaderLogo?: boolean;
+  documentHeaderLogoHeight?: number;
+  documentAccentColor?: string;
+  documentTableStyle?: 'transparent' | 'cream' | 'solid-white';
   letterheadText?: string;
   documentFooterText?: string;
   defaultTermsAndConditions?: string;
@@ -594,6 +628,7 @@ export interface AdminProfile {
   seoDescription?: string;
   openGraphImage?: string;
   showBusinessHoursPublicly?: boolean;
+  showPublicPriceBreakdown?: boolean;
 
   // 12. Unified Theme & Appearance Customization (Admin ERP & Public Website)
   themeConfig?: StudioThemeConfig;

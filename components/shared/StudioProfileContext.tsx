@@ -2,7 +2,16 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import type { AdminProfile, StudioThemeConfig } from "@/components/admin/types";
-import type { PortfolioItem, PricingPackage, Service, Testimonial, BlogPost } from "@/types";
+import type {
+  PortfolioItem,
+  PricingPackage,
+  Service,
+  Testimonial,
+  BlogPost,
+  WebsiteCustomizationConfig,
+  ConnectedSocialAccount,
+  SocialMediaPostItem,
+} from "@/types";
 import { erpDatabase } from "@/components/admin/services/databaseService";
 import {
   siteConfig,
@@ -11,6 +20,9 @@ import {
   detailedServices as defaultDetailedServices,
   testimonials as defaultTestimonials,
   blogPosts as defaultBlogPosts,
+  defaultWebsiteCustomization,
+  defaultConnectedSocialAccounts,
+  defaultSocialMediaPosts,
 } from "@/lib/data";
 
 export interface PublicWebsiteCMS {
@@ -19,6 +31,9 @@ export interface PublicWebsiteCMS {
   detailedServices: Service[];
   testimonials: Testimonial[];
   blogPosts: BlogPost[];
+  websiteCustomization: WebsiteCustomizationConfig;
+  connectedSocialAccounts: ConnectedSocialAccount[];
+  socialMediaPosts: SocialMediaPostItem[];
   isLoading?: boolean;
 }
 
@@ -164,10 +179,10 @@ const fallbackProfile: AdminProfile = {
   primaryLogo: "/RoyalLogo.png",
   websiteLogo: "/RoyalLogo.png",
   documentLogo: "/RoyalLogo.png",
-  documentBackground: "/image.png",
-  quotationBackground: "/image.png",
-  invoiceBackground: "/image.png",
-  receiptBackground: "/image.png",
+  documentBackground: "/01.jpg",
+  quotationBackground: "/01.jpg",
+  invoiceBackground: "/01.jpg",
+  receiptBackground: "/01.jpg",
   address: siteConfig.address.full,
   addressLine1: siteConfig.address.line1,
   addressLine2: siteConfig.address.line2,
@@ -199,6 +214,7 @@ const fallbackProfile: AdminProfile = {
   accountTitle: "Royal Studio",
   accountNumber: "0102-0105582910",
   iban: "PK44MEZN0001020105582910",
+  showPublicPriceBreakdown: false,
   themeConfig: DEFAULT_STUDIO_THEME,
   notificationPreferences: {
     overdueInvoices: true,
@@ -214,6 +230,9 @@ const fallbackCMS: PublicWebsiteCMS = {
   detailedServices: defaultDetailedServices,
   testimonials: defaultTestimonials,
   blogPosts: defaultBlogPosts,
+  websiteCustomization: defaultWebsiteCustomization,
+  connectedSocialAccounts: defaultConnectedSocialAccounts,
+  socialMediaPosts: defaultSocialMediaPosts,
 };
 
 export interface StudioThemeContextValue {
@@ -401,7 +420,7 @@ export function StudioProfileProvider({ children }: { children: React.ReactNode 
           setCms({
             portfolioItems:
               Array.isArray(data.portfolioItems) && data.portfolioItems.length > 0
-                ? data.portfolioItems
+                ? data.portfolioItems.filter((i: PortfolioItem) => i.visible !== false)
                 : defaultPortfolioItems,
             pricingPackages:
               Array.isArray(data.pricingPackages) && data.pricingPackages.length > 0
@@ -419,6 +438,44 @@ export function StudioProfileProvider({ children }: { children: React.ReactNode 
               Array.isArray(data.blogPosts) && data.blogPosts.length > 0
                 ? data.blogPosts
                 : defaultBlogPosts,
+            websiteCustomization: data.websiteCustomization
+              ? {
+                  ...defaultWebsiteCustomization,
+                  ...data.websiteCustomization,
+                  sectionVisibility: {
+                    ...defaultWebsiteCustomization.sectionVisibility,
+                    ...(data.websiteCustomization.sectionVisibility || {}),
+                  },
+                  hero: {
+                    ...defaultWebsiteCustomization.hero,
+                    ...(data.websiteCustomization.hero || {}),
+                  },
+                  about: {
+                    ...defaultWebsiteCustomization.about,
+                    ...(data.websiteCustomization.about || {}),
+                  },
+                  films: {
+                    ...defaultWebsiteCustomization.films,
+                    ...(data.websiteCustomization.films || {}),
+                  },
+                  sections: {
+                    ...defaultWebsiteCustomization.sections,
+                    ...(data.websiteCustomization.sections || {}),
+                  },
+                  navigation: {
+                    ...defaultWebsiteCustomization.navigation,
+                    ...(data.websiteCustomization.navigation || {}),
+                  },
+                }
+              : defaultWebsiteCustomization,
+            connectedSocialAccounts:
+              Array.isArray(data.connectedSocialAccounts) && data.connectedSocialAccounts.length > 0
+                ? data.connectedSocialAccounts
+                : defaultConnectedSocialAccounts,
+            socialMediaPosts:
+              Array.isArray(data.socialMediaPosts) && data.socialMediaPosts.length > 0
+                ? data.socialMediaPosts
+                : defaultSocialMediaPosts,
             isLoading: false,
           });
         } else if (mounted) {
@@ -430,6 +487,38 @@ export function StudioProfileProvider({ children }: { children: React.ReactNode 
           setCms((prev) => ({ ...prev, isLoading: false }));
         }
       });
+
+    const handleCmsUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<any>;
+      if (customEvent.detail) {
+        const d = customEvent.detail;
+        setCms((prev) => ({
+          ...prev,
+          ...(Array.isArray(d.portfolioItems)
+            ? { portfolioItems: d.portfolioItems.filter((i: PortfolioItem) => i.visible !== false) }
+            : {}),
+          ...(Array.isArray(d.pricingPackages) ? { pricingPackages: d.pricingPackages } : {}),
+          ...(Array.isArray(d.detailedServices) ? { detailedServices: d.detailedServices } : {}),
+          ...(Array.isArray(d.testimonials) ? { testimonials: d.testimonials } : {}),
+          ...(Array.isArray(d.blogPosts) ? { blogPosts: d.blogPosts } : {}),
+          ...(d.websiteCustomization
+            ? {
+                websiteCustomization: {
+                  ...defaultWebsiteCustomization,
+                  ...prev.websiteCustomization,
+                  ...d.websiteCustomization,
+                },
+              }
+            : {}),
+          ...(Array.isArray(d.connectedSocialAccounts)
+            ? { connectedSocialAccounts: d.connectedSocialAccounts }
+            : {}),
+          ...(Array.isArray(d.socialMediaPosts) ? { socialMediaPosts: d.socialMediaPosts } : {}),
+        }));
+      }
+    };
+
+    window.addEventListener("royalstudio:cms-updated", handleCmsUpdated);
 
     const handleProfileUpdated = (event: Event) => {
       const customEvent = event as CustomEvent<AdminProfile>;
@@ -445,6 +534,7 @@ export function StudioProfileProvider({ children }: { children: React.ReactNode 
     return () => {
       mounted = false;
       window.removeEventListener("royalstudio:profile-updated", handleProfileUpdated);
+      window.removeEventListener("royalstudio:cms-updated", handleCmsUpdated);
     };
   }, []);
 

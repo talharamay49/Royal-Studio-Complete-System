@@ -27,10 +27,20 @@ export default function PortfolioGrid({
   showHeading = true,
   showViewAll = true,
 }: PortfolioGridProps) {
-  const { portfolioItems, isLoading } = usePublicWebsiteCMS();
+  const { portfolioItems, websiteCustomization, isLoading } = usePublicWebsiteCMS();
   const [activeFilter, setActiveFilter] = useState<PortfolioCategory>("all");
   const [lightbox, setLightbox] = useState<PortfolioItem | null>(null);
-  const [visibleCount, setVisibleCount] = useState(limit ?? 9);
+  const effectiveLimit =
+    showHeading && websiteCustomization?.sectionVisibility?.homePortfolioLimit
+      ? websiteCustomization.sectionVisibility.homePortfolioLimit
+      : limit;
+  const [visibleCount, setVisibleCount] = useState(effectiveLimit ?? 9);
+
+  const portfolioLabel = websiteCustomization?.sections?.portfolioLabel || "Portfolio";
+  const portfolioTitle = websiteCustomization?.sections?.portfolioTitle || "Stories We've Told";
+  const portfolioDescription =
+    websiteCustomization?.sections?.portfolioDescription ||
+    "Nikah, Mehndi, Barat, Walima, and beyond — explore our curated wedding gallery.";
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -41,6 +51,10 @@ export default function PortfolioGrid({
       }
     }
   }, []);
+
+  if (showHeading && websiteCustomization?.sectionVisibility?.showPortfolioSection === false) {
+    return null;
+  }
 
   if (isLoading) {
     return (
@@ -63,11 +77,11 @@ export default function PortfolioGrid({
       ? portfolioItems
       : portfolioItems.filter((item) => item.category === activeFilter);
 
-  const displayed = limit
-    ? filtered.slice(0, limit)
+  const displayed = effectiveLimit
+    ? filtered.slice(0, effectiveLimit)
     : filtered.slice(0, visibleCount);
 
-  const hasMore = !limit && visibleCount < filtered.length;
+  const hasMore = !effectiveLimit && visibleCount < filtered.length;
 
   return (
     <section
@@ -78,9 +92,9 @@ export default function PortfolioGrid({
         {showHeading ? (
           <AnimatedSection>
             <SectionHeading
-              label="Portfolio"
-              title="Stories We've Told"
-              description="Nikah, Mehndi, Barat, Walima, and beyond — explore our curated wedding gallery."
+              label={portfolioLabel}
+              title={portfolioTitle}
+              description={portfolioDescription}
             />
           </AnimatedSection>
         ) : activeFilter !== "all" ? (

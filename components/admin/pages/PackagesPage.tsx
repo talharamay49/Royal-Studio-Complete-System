@@ -11,6 +11,8 @@ import {
   Calculator,
   Layers,
   Copy,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useStudioData } from '../context/StudioDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -22,10 +24,15 @@ import {
   createDefaultThreeDayWeddingConfig,
   createMixedTierMehndiExampleConfig,
   mapCameraTierToCrewTier,
+  convertTierSlotsToServices,
   type CameraCategoryTier,
   type CustomDayConfiguration,
   type DayTierSlot,
 } from '@/lib/pricing/unifiedPricing';
+import {
+  PriceBreakdownTable,
+  PriceBreakdownModal,
+} from '@/components/forms/PriceBreakdownModal';
 import { Modal } from '../components/common/Modal';
 import { ConfirmationDialog } from '../components/common/ConfirmationDialog';
 import { Package, EventCategory } from '../types';
@@ -45,7 +52,15 @@ const CEREMONY_OPTIONS = [
 ];
 
 export const PackagesPage: React.FC<PackagesPageProps> = () => {
-  const { packages, createPackage, updatePackage, deletePackage, addToast } = useStudioData();
+  const {
+    packages,
+    profile,
+    updateProfile,
+    createPackage,
+    updatePackage,
+    deletePackage,
+    addToast,
+  } = useStudioData();
   const { isAdmin } = useAuth();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -53,8 +68,10 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [packageToDelete, setPackageToDelete] = useState<string | null>(null);
 
-  // Interactive Multi-Day & Mixed-Tier Custom Package Configurator State
-  const [showBuilder, setShowBuilder] = useState<boolean>(true);
+  // Interactive Multi-Day & Mixed-Tier Custom Package Configurator State (Default Hidden)
+  const [showBuilder, setShowBuilder] = useState<boolean>(false);
+  const [showAdminBreakdownTable, setShowAdminBreakdownTable] = useState<boolean>(false);
+  const [isUpdatingVisibility, setIsUpdatingVisibility] = useState<boolean>(false);
   const [customBuilderTitle, setCustomBuilderTitle] = useState<string>(
     'Custom 3-Day Wedding (Mehndi + Barat + Walima)'
   );
@@ -62,6 +79,7 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
     createDefaultThreeDayWeddingConfig()
   );
   const [builderExtraDeliverablesFee, setBuilderExtraDeliverablesFee] = useState<number>(0);
+  const [isBreakdownModalOpen, setIsBreakdownModalOpen] = useState<boolean>(false);
 
   // Modal Form State (with Unified Category + Tier Auto-Calculation)
   const [name, setName] = useState('');
@@ -134,16 +152,18 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
     setBuilderDays((prev) =>
       prev.map((d) => {
         if (d.id !== dayId) return d;
+        const nextSlots = d.tierSlots.map((s) => {
+          if (s.id !== slotId) return s;
+          const next = { ...s, ...patch };
+          if (patch.cameraCategory) {
+            next.crewCategory = mapCameraTierToCrewTier(patch.cameraCategory);
+          }
+          return next;
+        });
         return {
           ...d,
-          tierSlots: d.tierSlots.map((s) => {
-            if (s.id !== slotId) return s;
-            const next = { ...s, ...patch };
-            if (patch.cameraCategory) {
-              next.crewCategory = mapCameraTierToCrewTier(patch.cameraCategory);
-            }
-            return next;
-          }),
+          tierSlots: nextSlots,
+          services: convertTierSlotsToServices(nextSlots),
         };
       })
     );
@@ -153,19 +173,21 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
     setBuilderDays((prev) =>
       prev.map((d) => {
         if (d.id !== dayId) return d;
+        const nextSlots: DayTierSlot[] = [
+          ...d.tierSlots,
+          {
+            id: `${dayId}-slot-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+            cameraCategory: 'CAT_1',
+            crewCategory: 'CREW_CAT_1',
+            photographers: 0,
+            videographers: 1,
+            drones: 0,
+          },
+        ];
         return {
           ...d,
-          tierSlots: [
-            ...d.tierSlots,
-            {
-              id: `${dayId}-slot-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-              cameraCategory: 'CAT_1',
-              crewCategory: 'CREW_CAT_1',
-              photographers: 0,
-              videographers: 1,
-              drones: 0,
-            },
-          ],
+          tierSlots: nextSlots,
+          services: convertTierSlotsToServices(nextSlots),
         };
       })
     );
@@ -175,9 +197,11 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
     setBuilderDays((prev) =>
       prev.map((d) => {
         if (d.id !== dayId || d.tierSlots.length <= 1) return d;
+        const nextSlots = d.tierSlots.filter((s) => s.id !== slotId);
         return {
           ...d,
-          tierSlots: d.tierSlots.filter((s) => s.id !== slotId),
+          tierSlots: nextSlots,
+          services: convertTierSlotsToServices(nextSlots),
         };
       })
     );
@@ -186,6 +210,16 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
   const addBuilderDay = () => {
     setBuilderDays((prev) => {
       const nextNum = prev.length + 1;
+      const initialSlots: DayTierSlot[] = [
+        {
+          id: `bday-${nextNum}-slot-1`,
+          cameraCategory: 'CAT_2',
+          crewCategory: 'CREW_CAT_2',
+          photographers: 1,
+          videographers: 1,
+          drones: 0,
+        },
+      ];
       return [
         ...prev,
         {
@@ -193,16 +227,8 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
           dayNumber: nextNum,
           eventFunction: CEREMONY_OPTIONS[(nextNum - 1) % CEREMONY_OPTIONS.length],
           mode: 'CUSTOM_TIER',
-          tierSlots: [
-            {
-              id: `bday-${nextNum}-slot-1`,
-              cameraCategory: 'CAT_2',
-              crewCategory: 'CREW_CAT_2',
-              photographers: 1,
-              videographers: 1,
-              drones: 0,
-            },
-          ],
+          tierSlots: initialSlots,
+          services: convertTierSlotsToServices(initialSlots),
           extraDeliverableFee: 0,
         },
       ];
@@ -224,13 +250,15 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
       const d1 = prev[0];
       return prev.map((d, idx) => {
         if (idx === 0) return d;
+        const copiedSlots = d1.tierSlots.map((s, sIdx) => ({
+          ...s,
+          id: `${d.id}-copy-${sIdx}`,
+        }));
         return {
           ...d,
           mode: d1.mode,
-          tierSlots: d1.tierSlots.map((s, sIdx) => ({
-            ...s,
-            id: `${d.id}-copy-${sIdx}`,
-          })),
+          tierSlots: copiedSlots,
+          services: convertTierSlotsToServices(copiedSlots),
         };
       });
     });
@@ -363,6 +391,26 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
     setPackageToDelete(null);
   };
 
+  const handleToggleCustomerBreakdownVisibility = async () => {
+    if (!isAdmin) return;
+    setIsUpdatingVisibility(true);
+    try {
+      const nextValue = !Boolean(profile?.showPublicPriceBreakdown);
+      await updateProfile(
+        { showPublicPriceBreakdown: nextValue },
+        'Customer Price Breakdown Visibility'
+      );
+      addToast(
+        nextValue
+          ? 'Detailed Event Price Breakdown is now VISIBLE on the Customer Inquiry Form.'
+          : 'Detailed Event Price Breakdown is now HIDDEN on the Customer Inquiry Form (Default).',
+        'success'
+      );
+    } finally {
+      setIsUpdatingVisibility(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -377,10 +425,22 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={() => setShowAdminBreakdownTable((prev) => !prev)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+          >
+            <Calculator className="w-4 h-4 text-slate-700" />
+            <span>
+              {showAdminBreakdownTable
+                ? 'Hide Detailed Event Price Breakdown'
+                : 'View Detailed Event Price Breakdown'}
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={() => setShowBuilder((prev) => !prev)}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
           >
-            <Calculator className="w-4 h-4 text-amber-600" />
+            <Layers className="w-4 h-4 text-amber-600" />
             <span>
               {showBuilder
                 ? 'Hide Custom Day & Mixed-Tier Builder'
@@ -398,6 +458,87 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
           )}
         </div>
       </div>
+
+      {/* CUSTOMER & ADMIN PRICE BREAKDOWN VIEW MANAGEMENT PANEL */}
+      <div className="p-4 bg-white rounded-2xl border border-gray-200 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-gray-900">
+              Real-Time Equipment &amp; Crew Pricing Engine — View Management
+            </span>
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                profile?.showPublicPriceBreakdown
+                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  : 'bg-slate-100 text-slate-700 border border-slate-300'
+              }`}
+            >
+              {profile?.showPublicPriceBreakdown
+                ? 'Visible on Customer Website'
+                : 'Hidden on Customer Website (Default)'}
+            </span>
+          </div>
+          <p className="text-xs text-gray-500">
+            By default, the Detailed Event Price Breakdown table &amp; unit rates are hidden on the customer-facing booking form and managed exclusively from the Admin side.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {isAdmin && (
+            <button
+              type="button"
+              disabled={isUpdatingVisibility}
+              onClick={handleToggleCustomerBreakdownVisibility}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors cursor-pointer border ${
+                profile?.showPublicPriceBreakdown
+                  ? 'bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200'
+                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200'
+              }`}
+            >
+              {profile?.showPublicPriceBreakdown ? (
+                <>
+                  <EyeOff className="w-3.5 h-3.5" />
+                  <span>Hide on Customer Side (Default)</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Show on Customer Side</span>
+                </>
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowAdminBreakdownTable((prev) => !prev)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+          >
+            <Calculator className="w-3.5 h-3.5" />
+            <span>
+              {showAdminBreakdownTable
+                ? 'Hide Admin Breakdown Table'
+                : 'View Admin Breakdown Table'}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* ADMIN-SIDE DETAILED EVENT PRICE BREAKDOWN ENGINE (Default Hidden) */}
+      {showAdminBreakdownTable && (
+        <div className="space-y-3">
+          <PriceBreakdownTable
+            quote={builderQuote}
+            selectedAddons={
+              builderExtraDeliverablesFee > 0 ? ['Extra Album / Deliverables'] : []
+            }
+            compact={false}
+            onOpenModal={() => setIsBreakdownModalOpen(true)}
+            studioWhatsapp={
+              profile?.publicWhatsappNumber || profile?.whatsapp || '923084877073'
+            }
+          />
+        </div>
+      )}
 
       {/* UNIFIED CATEGORY + TIER MULTI-DAY & MIXED-TIER BUILDER */}
       {showBuilder && (
@@ -694,6 +835,14 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
                   {formatPKR(builderQuote.grandTotal)}
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsBreakdownModalOpen(true)}
+                className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold rounded-xl whitespace-nowrap cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <Calculator className="w-3.5 h-3.5 text-amber-700" />
+                <span>View Breakdown Table</span>
+              </button>
               {isAdmin && (
                 <div className="flex items-center gap-2">
                   <input
@@ -1064,6 +1213,15 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
         onConfirm={handleDeleteConfirm}
         title="Delete Package Template?"
         message="Are you sure you want to delete this package template from the studio system?"
+      />
+
+      <PriceBreakdownModal
+        isOpen={isBreakdownModalOpen}
+        onClose={() => setIsBreakdownModalOpen(false)}
+        quote={builderQuote}
+        selectedAddons={
+          builderExtraDeliverablesFee > 0 ? ['Extra Album / Deliverables'] : []
+        }
       />
     </div>
   );

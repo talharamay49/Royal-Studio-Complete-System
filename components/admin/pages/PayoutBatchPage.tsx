@@ -38,48 +38,76 @@ export const PayoutBatchPage: React.FC<PayoutBatchPageProps> = ({ navigate }) =>
   const [isProcessing, setIsProcessing] = useState(false);
   const [batchResult, setBatchResult] = useState<any | null>(null);
 
+  const getMemberDefaultState = (mId: string) => {
+    const member = teamMembers.find(tm => tm.id === mId);
+    return {
+      selected: false,
+      amount: member?.eventRate || 10000,
+      method: 'Bank Transfer',
+      type: 'Event Payment',
+    };
+  };
+
   const toggleSelect = (id: string) => {
-    setSelectedMembers(prev => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        selected: !prev[id]?.selected
-      }
-    }));
+    setSelectedMembers(prev => {
+      const current = prev[id] || getMemberDefaultState(id);
+      return {
+        ...prev,
+        [id]: {
+          ...current,
+          selected: !current.selected
+        }
+      };
+    });
   };
 
   const updateAmount = (id: string, amount: number) => {
-    setSelectedMembers(prev => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        amount
-      }
-    }));
+    setSelectedMembers(prev => {
+      const current = prev[id] || getMemberDefaultState(id);
+      return {
+        ...prev,
+        [id]: {
+          ...current,
+          amount
+        }
+      };
+    });
   };
 
   const updateMethod = (id: string, method: string) => {
-    setSelectedMembers(prev => ({
-      ...prev,
-      [id]: {
-        ...prev[id],
-        method
-      }
-    }));
+    setSelectedMembers(prev => {
+      const current = prev[id] || getMemberDefaultState(id);
+      return {
+        ...prev,
+        [id]: {
+          ...current,
+          method
+        }
+      };
+    });
   };
 
   const selectAll = (select: boolean) => {
     setSelectedMembers(prev => {
       const updated = { ...prev };
-      Object.keys(updated).forEach(id => {
-        updated[id].selected = select;
+      teamMembers.forEach(m => {
+        const current = updated[m.id] || {
+          selected: false,
+          amount: m.eventRate || 10000,
+          method: 'Bank Transfer',
+          type: 'Event Payment',
+        };
+        updated[m.id] = {
+          ...current,
+          selected: select,
+        };
       });
       return updated;
     });
   };
 
-  const selectedList = Object.entries(selectedMembers).filter(([_, val]) => val.selected);
-  const totalBatchAmount = selectedList.reduce((sum, [_, val]) => sum + val.amount, 0);
+  const selectedList = Object.entries(selectedMembers).filter(([_, val]) => val && val.selected);
+  const totalBatchAmount = selectedList.reduce((sum, [_, val]) => sum + Number(val.amount || 0), 0);
 
   const handleProcessBatch = async () => {
     if (selectedList.length === 0) {
