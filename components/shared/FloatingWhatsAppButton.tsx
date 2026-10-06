@@ -83,7 +83,7 @@ export default function FloatingWhatsAppButton() {
   return (
     <div
       ref={containerRef}
-      className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 2xl:bottom-8 2xl:right-8 z-40"
+      className="no-print fixed bottom-4 left-4 sm:bottom-6 sm:left-6 2xl:bottom-8 2xl:left-8 z-40"
     >
       <AnimatePresence>
         {isOpen && (
@@ -92,7 +92,7 @@ export default function FloatingWhatsAppButton() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.18 }}
-            className="absolute bottom-12 sm:bottom-14 right-0 w-64 sm:w-72 overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-premium-lg"
+            className="absolute bottom-12 sm:bottom-14 left-0 w-64 sm:w-72 overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-premium-lg"
           >
             <div className="flex items-center justify-between bg-[#25D366] px-3.5 py-2.5 text-white">
               <div className="flex items-center gap-2 min-w-0">

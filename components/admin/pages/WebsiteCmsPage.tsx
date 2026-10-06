@@ -32,6 +32,7 @@ import {
   Video,
   Play,
   Youtube,
+  Bot,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { useStudioData } from '../context/StudioDataContext';
@@ -39,6 +40,7 @@ import { Modal } from '../components/common/Modal';
 import { ConfirmationDialog } from '../components/common/ConfirmationDialog';
 import { CompleteWebsiteCustomizer } from '../components/cms/CompleteWebsiteCustomizer';
 import { SocialMediaPortfolioSelector } from '../components/cms/SocialMediaPortfolioSelector';
+import { ChatbotManagerPage } from './ChatbotManagerPage';
 import type {
   PortfolioItem,
   PortfolioCategory,
@@ -89,6 +91,7 @@ interface WebsiteCMSState {
 
 type CmsTab =
   | 'WEBSITE_CUSTOMIZER'
+  | 'CHATBOT_MANAGER'
   | 'PORTFOLIO'
   | 'SOCIAL_PORTFOLIO'
   | 'PACKAGES'
@@ -932,6 +935,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
       <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3">
         {[
           { id: 'WEBSITE_CUSTOMIZER', label: 'Complete Website Customizer', icon: Sliders },
+          { id: 'CHATBOT_MANAGER', label: 'Chatbot Manager', icon: Bot },
           { id: 'PORTFOLIO', label: `Portfolio Gallery (${cmsData.portfolioItems.length})`, icon: ImageIcon },
           {
             id: 'SOCIAL_PORTFOLIO',
@@ -966,6 +970,11 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
           );
         })}
       </div>
+
+      {/* ================= TAB: CHATBOT MANAGER ================= */}
+      {activeTab === 'CHATBOT_MANAGER' && (
+        <ChatbotManagerPage navigate={navigate} />
+      )}
 
       {/* ================= TAB 0: COMPLETE WEBSITE CUSTOMIZER ================= */}
       {activeTab === 'WEBSITE_CUSTOMIZER' && (

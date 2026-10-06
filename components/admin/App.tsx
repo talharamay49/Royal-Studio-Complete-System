@@ -23,6 +23,7 @@ import { ReportsPage } from './pages/ReportsPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { WebsiteCmsPage } from './pages/WebsiteCmsPage';
 import { ThemeCustomizerPage } from './pages/ThemeCustomizerPage';
+import { ChatbotManagerPage } from './pages/ChatbotManagerPage';
 import { LoadingState } from './components/common/LoadingState';
 import { AdminErrorBoundary } from './components/common/AdminErrorBoundary';
 import { ShieldAlert } from 'lucide-react';
@@ -188,6 +189,11 @@ const MainContent: React.FC = () => {
 
     if (currentPath === '/profile') {
       return <ProfilePage />;
+    }
+
+    if (currentPath === '/chatbot-manager' || currentPath === '/chatbot') {
+      if (!isAdmin) return renderRestricted('Chatbot Manager & AI Training Center');
+      return <ChatbotManagerPage navigate={navigate} />;
     }
 
     if (currentPath === '/website-cms' || currentPath === '/portfolio-cms' || currentPath === '/portfolio') {

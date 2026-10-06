@@ -24,7 +24,8 @@ import {
   Globe,
   Sun,
   Moon,
-  Palette
+  Palette,
+  Bot
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudioData } from '../../context/StudioDataContext';
@@ -55,6 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const adminNavItems = [
     { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    { label: 'Chatbot Manager', path: '/chatbot-manager', icon: Bot },
     { label: 'Website & Portfolio CMS', path: '/website-cms', icon: Globe },
     { label: 'Finance', path: '/finance', icon: DollarSign },
     { label: 'Events', path: '/events', icon: CalendarDays },

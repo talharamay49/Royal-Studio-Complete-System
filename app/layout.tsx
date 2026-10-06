@@ -4,6 +4,7 @@ import Footer from "@/components/layout/Footer";
 import PageTransitionWrapper from "@/components/layout/PageTransitionWrapper";
 import TopLoadingBar from "@/components/layout/TopLoadingBar";
 import FloatingWhatsAppButton from "@/components/shared/FloatingWhatsAppButton";
+import RoyalChatbotWidget from "@/components/shared/RoyalChatbotWidget";
 import { StudioProfileProvider } from "@/components/shared/StudioProfileContext";
 import { pageKeywords, siteConfig } from "@/lib/data";
 import { getLocalBusinessSchema, getWebsiteSchema } from "@/lib/seo";
@@ -62,6 +63,7 @@ export default function RootLayout({
           <Navbar />
           <PageTransitionWrapper>{children}</PageTransitionWrapper>
           <FloatingWhatsAppButton />
+          <RoyalChatbotWidget />
           <Footer />
         </StudioProfileProvider>
       </body>
