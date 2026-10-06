@@ -55,7 +55,15 @@ export default function OptimizedThumbnail({
 }: OptimizedThumbnailProps) {
   const [hasError, setHasError] = useState(false);
   const resolvedSrc = hasError ? "/portfolio/bridal-03-outdoor-tree.jpg" : src;
-  const isRawImg = resolvedSrc.startsWith("data:");
+  const isRawImg =
+    resolvedSrc.startsWith("data:") ||
+    (/^https?:\/\//i.test(resolvedSrc) &&
+      !resolvedSrc.includes("res.cloudinary.com") &&
+      !resolvedSrc.includes("storage.googleapis.com") &&
+      !resolvedSrc.includes("images.unsplash.com") &&
+      !resolvedSrc.includes("picsum.photos") &&
+      !resolvedSrc.includes("i.ytimg.com") &&
+      !resolvedSrc.includes("img.youtube.com"));
 
   return (
     <div

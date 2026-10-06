@@ -14,7 +14,7 @@ export interface DateAvailabilityInfo {
 
 export async function GET(req: NextRequest) {
   try {
-    const db = await dbInstance.getData();
+    const db = await dbInstance.ensureHydrated();
     const { searchParams } = new URL(req.url);
     const datesParam = searchParams.get("dates") || "";
     const requestedDates = datesParam

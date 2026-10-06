@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { heroPoster, heroVideoId, siteConfig } from "@/lib/data";
+import { heroPoster, heroVideoId, siteConfig, extractYoutubeId } from "@/lib/data";
 import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import { Button } from "@/components/ui/button";
 
@@ -16,7 +16,7 @@ export default function Hero() {
   }
 
   const poster = heroCfg?.posterImage || heroPoster;
-  const videoId = heroCfg?.youtubeVideoId || heroVideoId;
+  const videoId = extractYoutubeId(heroCfg?.youtubeVideoId || heroVideoId);
   const showVideo = heroCfg?.showBackgroundVideo !== false;
   const eyebrow = heroCfg?.eyebrowText || `${siteConfig.name} · Since ${siteConfig.established}`;
   const headline =

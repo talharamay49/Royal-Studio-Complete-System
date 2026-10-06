@@ -12,9 +12,9 @@ import { dbInstance } from "@/lib/admin/db";
  * live blog articles (/blog/[slug]), portfolio categories, and portfolio items
  * to maximize search engine crawling and indexing.
  */
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = getBaseUrl();
-  const db = dbInstance.getData();
+  const db = await dbInstance.ensureHydrated();
 
   const liveBlogPosts =
     db.cms?.blogPosts && db.cms.blogPosts.length > 0

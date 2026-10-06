@@ -12,6 +12,7 @@ import {
   Clock,
   CreditCard,
   ShieldCheck,
+  FileCheck,
   FileText,
 } from "lucide-react";
 import {
@@ -239,11 +240,14 @@ export default function ProposalPrintPreviewModal({
                   {profile.studioName || "Royal Studio"}
                 </h1>
                 <div className="text-[11px] text-slate-600 mt-0.5 space-y-0.5">
-                  <p>{profile.address || "Main Multan Road, Burewala, Punjab, Pakistan"}</p>
+                  <p>
+                    {profile.address ||
+                      "Al Jannat Town Entrance, Canal Bungalow Road, Opposite Habib Mall, Burewala, Punjab 61010, Pakistan"}
+                  </p>
                   <p>
                     Tel: {profile.phone || "0308-4877073"}{" "}
                     {profile.phone2 ? ` / ${profile.phone2}` : ""} · Email:{" "}
-                    {profile.email || "shakesurger@gmail.com"}
+                    {profile.email || "royalstudio089@gmail.com"}
                   </p>
                 </div>
               </div>
@@ -317,7 +321,10 @@ export default function ProposalPrintPreviewModal({
                       : "bg-emerald-50/70 border-emerald-200 text-emerald-900 font-semibold"
                   }`}
                 >
-                  <span>1. Pending (Issued)</span>
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-amber-600" />
+                    <span>1. Pending (Issued)</span>
+                  </span>
                   <span className="uppercase text-[9px]">
                     {stage === "PENDING" ? "Current" : "Done"}
                   </span>
@@ -331,7 +338,10 @@ export default function ProposalPrintPreviewModal({
                       : "bg-white border-slate-200 text-slate-400"
                   }`}
                 >
-                  <span>2. Approved (Signed)</span>
+                  <span className="inline-flex items-center gap-1">
+                    <FileCheck className="w-3 h-3 text-amber-600" />
+                    <span>2. Approved (Signed)</span>
+                  </span>
                   <span className="uppercase text-[9px]">
                     {stage === "APPROVED"
                       ? "Current"
@@ -347,7 +357,10 @@ export default function ProposalPrintPreviewModal({
                       : "bg-white border-slate-200 text-slate-400"
                   }`}
                 >
-                  <span>3. Confirmed (Locked)</span>
+                  <span className="inline-flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3 text-emerald-700" />
+                    <span>3. Confirmed (Locked)</span>
+                  </span>
                   <span className="uppercase text-[9px]">
                     {stage === "CONFIRMED" ? "Confirmed" : "Upcoming"}
                   </span>

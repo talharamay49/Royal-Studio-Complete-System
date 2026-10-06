@@ -10,7 +10,7 @@ import {
 import { dbInstance } from "@/lib/admin/db";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const db = dbInstance.getData();
+  const db = await dbInstance.ensureHydrated();
   const liveServices =
     db.cms?.detailedServices && db.cms.detailedServices.length > 0
       ? db.cms.detailedServices
@@ -44,8 +44,8 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function ServicesPage() {
-  const db = dbInstance.getData();
+export default async function ServicesPage() {
+  const db = await dbInstance.ensureHydrated();
   const liveServices =
     db.cms?.detailedServices && db.cms.detailedServices.length > 0
       ? db.cms.detailedServices

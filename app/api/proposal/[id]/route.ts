@@ -9,7 +9,7 @@ export async function GET(
   try {
     const { id } = await context.params;
     const decodedId = decodeURIComponent(id).trim();
-    const db = await dbInstance.getData();
+    const db = await dbInstance.ensureHydrated();
 
     // Find event by eventId, quotationId/quotationNumber, invoiceId/invoiceNumber, or lead reference
     let event = db.events.find((e) => e.id === decodedId);
@@ -188,7 +188,7 @@ export async function POST(
     const { id } = await context.params;
     const decodedId = decodeURIComponent(id).trim();
     const body = await req.json();
-    const db = await dbInstance.getData();
+    const db = await dbInstance.ensureHydrated();
 
     let event = db.events.find((e) => e.id === decodedId);
     if (!event) {

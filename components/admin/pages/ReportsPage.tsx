@@ -29,6 +29,14 @@ export const ReportsPage: React.FC = () => {
 
   const [selectedYear, setSelectedYear] = useState('ALL');
 
+  const availableYears = Array.from(
+    new Set([
+      new Date().getFullYear().toString(),
+      ...events.map((e) => (e.eventDate || '').slice(0, 4)).filter((y) => /^\d{4}$/.test(y)),
+      ...studioExpenses.map((se) => (se.date || '').slice(0, 4)).filter((y) => /^\d{4}$/.test(y)),
+    ])
+  ).sort((a, b) => Number(b) - Number(a));
+
   // Filter events for the year (excluding cancelled)
   const yearEvents = events.filter(e => {
     if (e.status === 'Cancelled') return false;
@@ -113,9 +121,11 @@ export const ReportsPage: React.FC = () => {
             className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-900 shadow-xs"
           >
             <option value="ALL">All Years (Cumulative)</option>
-            <option value="2026">Financial Year 2026</option>
-            <option value="2025">Financial Year 2025</option>
-            <option value="2024">Financial Year 2024</option>
+            {availableYears.map((yr) => (
+              <option key={yr} value={yr}>
+                Financial Year {yr}
+              </option>
+            ))}
           </select>
         </div>
       </div>

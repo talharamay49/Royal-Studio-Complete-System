@@ -18,7 +18,7 @@ export async function generateMetadata({
   const activeCategory = resolvedParams?.category;
   const activeCity = resolvedParams?.city;
 
-  const db = dbInstance.getData();
+  const db = await dbInstance.ensureHydrated();
   const liveItems =
     db.cms?.portfolioItems && db.cms.portfolioItems.length > 0
       ? db.cms.portfolioItems
@@ -79,8 +79,8 @@ export async function generateMetadata({
   };
 }
 
-export default function PortfolioPage() {
-  const db = dbInstance.getData();
+export default async function PortfolioPage() {
+  const db = await dbInstance.ensureHydrated();
   const liveItems =
     db.cms?.portfolioItems && db.cms.portfolioItems.length > 0
       ? db.cms.portfolioItems

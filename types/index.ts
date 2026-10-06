@@ -24,6 +24,14 @@ export interface PortfolioItem {
   aspect: "tall" | "wide" | "square";
   location?: string;
   visible?: boolean;
+  mediaType?: "image" | "video";
+  videoUrl?: string;
+  youtubeId?: string;
+  duration?: string;
+  caption?: string;
+  likesCount?: number;
+  viewsCount?: string;
+  postedAt?: string;
   sourcePlatform?: "upload" | "instagram" | "facebook" | "tiktok" | "youtube";
   socialPermalink?: string;
   socialHandle?: string;
@@ -51,6 +59,10 @@ export interface ConnectedSocialAccount {
   accessTokenHint?: string;
   lastSyncedAt?: string;
   followersLabel?: string;
+  channelId?: string;
+  bio?: string;
+  postsCount?: number;
+  videosCount?: number;
 }
 
 export interface SocialMediaPostItem {
@@ -64,9 +76,17 @@ export interface SocialMediaPostItem {
   postedAt: string;
   location?: string;
   likesCount?: number;
+  commentsCount?: number;
+  viewsCount?: string;
+  mediaType?: "image" | "video";
+  videoUrl?: string;
+  youtubeId?: string;
+  duration?: string;
   category: Exclude<PortfolioCategory, "all">;
   aspect: "tall" | "wide" | "square";
   selectedForPortfolio: boolean;
+  selectedForWeddingFilms?: boolean;
+  selectedAsShowreel?: boolean;
 }
 
 export interface WebsiteCustomizationConfig {
@@ -132,12 +152,21 @@ export interface WebsiteCustomizationConfig {
     featuredDescription: string;
     pageTitle: string;
     pageDescription: string;
+    connectedYoutubeChannelHandle?: string;
+    connectedYoutubeChannelUrl?: string;
     weddingFilms: {
       id: number;
       title: string;
       youtubeId: string;
       location: string;
       duration: string;
+      description?: string;
+      channelHandle?: string;
+      viewsCount?: string;
+      publishedAt?: string;
+      thumbnailUrl?: string;
+      sourceSocialPostId?: string;
+      youtubeUrl?: string;
     }[];
   };
   sections: {

@@ -15,17 +15,49 @@ import {
   Eye,
   EyeOff,
   CheckCircle2,
+  Youtube,
+  Share2,
+  RefreshCw,
+  Play,
+  ExternalLink,
+  Link2,
+  X,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
-import type { WebsiteCustomizationConfig } from '@/types';
-import { defaultWebsiteCustomization } from '@/lib/data';
+import type {
+  WebsiteCustomizationConfig,
+  ConnectedSocialAccount,
+  SocialMediaPostItem,
+  PortfolioItem,
+} from '@/types';
+import {
+  defaultWebsiteCustomization,
+  defaultConnectedSocialAccounts,
+  defaultSocialMediaPosts,
+  extractYoutubeId,
+} from '@/lib/data';
+import { apiRequest } from '../../services/api';
+import { Modal } from '../common/Modal';
+import { SocialMediaPortfolioSelector } from './SocialMediaPortfolioSelector';
 
 interface CompleteWebsiteCustomizerProps {
   value: WebsiteCustomizationConfig;
+  connectedAccounts?: ConnectedSocialAccount[];
+  socialPosts?: SocialMediaPostItem[];
+  portfolioItems?: PortfolioItem[];
   isSaving: boolean;
   onSave: (updated: WebsiteCustomizationConfig, sectionLabel: string) => Promise<void>;
+  onSaveSocialState?: (
+    nextAccounts: ConnectedSocialAccount[],
+    nextPosts: SocialMediaPostItem[],
+    nextPortfolio: PortfolioItem[],
+    toastMessage: string,
+    nextWebsiteCustomization?: WebsiteCustomizationConfig
+  ) => Promise<void>;
   onUploadImage: (
     e: React.ChangeEvent<HTMLInputElement>,
-    onLoaded: (url: string) => void
+    onLoaded: (url: string, aspect?: 'tall' | 'wide' | 'square') => void
   ) => void;
 }
 
@@ -34,14 +66,19 @@ type CustomizerSectionTab =
   | 'HERO'
   | 'ABOUT'
   | 'FILMS'
+  | 'SOCIAL_CONNECTED'
   | 'SECTIONS_PROCESS'
   | 'FAQ_CTA'
   | 'NAV_FOOTER';
 
 export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps> = ({
   value,
+  connectedAccounts = defaultConnectedSocialAccounts,
+  socialPosts = defaultSocialMediaPosts,
+  portfolioItems = [],
   isSaving,
   onSave,
+  onSaveSocialState,
   onUploadImage,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<CustomizerSectionTab>('VISIBILITY');
@@ -50,6 +87,25 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
     ...value,
   }));
   const [newCityInput, setNewCityInput] = useState('');
+
+  // YouTube Channel & Video Linker State for Wedding Films & Showreel
+  const [channelInput, setChannelInput] = useState(
+    value?.films?.connectedYoutubeChannelUrl ||
+      value?.films?.connectedYoutubeChannelHandle ||
+      'https://www.youtube.com/@royalstudio089'
+  );
+  const [quickYoutubeUrl, setQuickYoutubeUrl] = useState('');
+  const [quickYoutubeLocation, setQuickYoutubeLocation] = useState('Burewala');
+  const [isSyncingYoutube, setIsSyncingYoutube] = useState(false);
+  const [isLinkingVideo, setIsLinkingVideo] = useState(false);
+  const [playingYoutubeId, setPlayingYoutubeId] = useState<string | null>(null);
+  const [ytPickerTarget, setYtPickerTarget] = useState<
+    | { mode: 'SHOWREEL' }
+    | { mode: 'HERO' }
+    | { mode: 'NEW_WEDDING_FILM' }
+    | { mode: 'REPLACE_WEDDING_FILM'; index: number }
+    | null
+  >(null);
 
   useEffect(() => {
     if (value) {
@@ -137,10 +193,11 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
           { id: 'VISIBILITY', label: '1. Section Visibility & Layout', icon: Layout },
           { id: 'HERO', label: '2. Hero Banner & Video', icon: Video },
           { id: 'ABOUT', label: '3. About Story & Founders', icon: Users },
-          { id: 'FILMS', label: '4. Wedding Films & Showreel', icon: Film },
-          { id: 'SECTIONS_PROCESS', label: '5. Services, Process & Stats', icon: ListChecks },
-          { id: 'FAQ_CTA', label: '6. FAQs & Contact CTA', icon: HelpCircle },
-          { id: 'NAV_FOOTER', label: '7. Navbar, Footer & Cities', icon: Navigation },
+          { id: 'FILMS', label: '4. Wedding Films & Showreel (YouTube)', icon: Film },
+          { id: 'SOCIAL_CONNECTED', label: '5. Social Media Connected & Portfolio', icon: Share2 },
+          { id: 'SECTIONS_PROCESS', label: '6. Services, Process & Stats', icon: ListChecks },
+          { id: 'FAQ_CTA', label: '7. FAQs & Contact CTA', icon: HelpCircle },
+          { id: 'NAV_FOOTER', label: '8. Navbar, Footer & Cities', icon: Navigation },
         ].map((t) => {
           const Icon = t.icon;
           const active = activeSubTab === t.id;
@@ -270,21 +327,29 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
 
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1">
-                Background YouTube Video ID
+                Background YouTube Video ID or Link
               </label>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="text"
                   value={draft.hero.youtubeVideoId}
                   onChange={(e) =>
                     setDraft((p) => ({
                       ...p,
-                      hero: { ...p.hero, youtubeVideoId: e.target.value.trim() },
+                      hero: { ...p.hero, youtubeVideoId: extractYoutubeId(e.target.value) },
                     }))
                   }
-                  placeholder="QF3BmojTrKQ"
+                  placeholder="QF3BmojTrKQ or YouTube URL"
                   className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-mono"
                 />
+                <button
+                  type="button"
+                  onClick={() => setYtPickerTarget({ mode: 'HERO' })}
+                  className="inline-flex items-center gap-1 px-2.5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg text-[11px] font-bold cursor-pointer shrink-0"
+                >
+                  <Youtube className="w-3.5 h-3.5" />
+                  <span>Select from YouTube</span>
+                </button>
                 <label className="inline-flex items-center gap-1.5 text-xs font-bold text-gray-700 cursor-pointer">
                   <input
                     type="checkbox"
@@ -808,185 +873,879 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
         </div>
       )}
 
-      {/* ================= 4. WEDDING FILMS & FEATURED SHOWREEL ================= */}
+      {/* ================= 4. WEDDING FILMS & FEATURED SHOWREEL (YOUTUBE CHANNEL LINKER) ================= */}
       {activeSubTab === 'FILMS' && (
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 space-y-6">
-          <h4 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-3">
-            Featured Film (Home) &amp; /wedding-films Page Showcase
-          </h4>
+        <div className="space-y-6">
+          {/* Card 1: Connected YouTube Channel & Instant Video Linker */}
+          <div className="bg-white p-6 rounded-2xl border border-gray-200 space-y-5 shadow-xs">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600 text-white text-[11px] font-bold mb-1.5">
+                  <Youtube className="w-3.5 h-3.5" />
+                  <span>Connected YouTube Channel Integration</span>
+                </div>
+                <h4 className="text-base font-bold text-gray-900">
+                  Select &amp; Link Videos from Your YouTube Channel to Wedding Films &amp; Showreel
+                </h4>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Select any video from your connected YouTube channel below (or paste any YouTube video URL) to link and display it on your <strong>Featured Showreel</strong> and <strong>/wedding-films</strong> page.
+                </p>
+              </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">
-                Featured Film Section Title
-              </label>
-              <input
-                type="text"
-                value={draft.films.featuredSectionTitle}
-                onChange={(e) =>
-                  setDraft((p) => ({
-                    ...p,
-                    films: { ...p.films, featuredSectionTitle: e.target.value },
-                  }))
-                }
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-bold"
-              />
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <input
+                  type="text"
+                  value={channelInput}
+                  onChange={(e) => setChannelInput(e.target.value)}
+                  placeholder="https://www.youtube.com/@royalstudio089"
+                  className="px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-xs font-mono w-64"
+                />
+                <button
+                  type="button"
+                  disabled={isSyncingYoutube || isSaving}
+                  onClick={async () => {
+                    setIsSyncingYoutube(true);
+                    try {
+                      const res = await apiRequest<{
+                        channelHandle: string;
+                        discoveredCount: number;
+                        socialMediaPosts: SocialMediaPostItem[];
+                        connectedSocialAccounts: ConnectedSocialAccount[];
+                      }>('/cms/youtube/resolve', {
+                        method: 'POST',
+                        body: JSON.stringify({ channelUrlOrHandle: channelInput }),
+                      });
+                      const nextCustom: WebsiteCustomizationConfig = {
+                        ...draft,
+                        films: {
+                          ...draft.films,
+                          connectedYoutubeChannelHandle: res.channelHandle || '@royalstudio089',
+                          connectedYoutubeChannelUrl: channelInput.startsWith('http')
+                            ? channelInput
+                            : `https://www.youtube.com/${channelInput.startsWith('@') ? channelInput : `@${channelInput}`}`,
+                        },
+                      };
+                      setDraft(nextCustom);
+                      if (onSaveSocialState && res.socialMediaPosts) {
+                        await onSaveSocialState(
+                          res.connectedSocialAccounts || connectedAccounts,
+                          res.socialMediaPosts,
+                          portfolioItems,
+                          `Synced YouTube Channel (${res.channelHandle}) videos!`,
+                          nextCustom
+                        );
+                      } else {
+                        await onSave(nextCustom, 'Connected YouTube Channel');
+                      }
+                    } finally {
+                      setIsSyncingYoutube(false);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingYoutube ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingYoutube ? 'Syncing Channel...' : 'Sync YouTube Channel'}</span>
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">
-                Featured Film Caption Title
-              </label>
-              <input
-                type="text"
-                value={draft.films.featuredFilmTitle}
-                onChange={(e) =>
-                  setDraft((p) => ({
-                    ...p,
-                    films: { ...p.films, featuredFilmTitle: e.target.value },
-                  }))
-                }
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs"
-              />
+            {/* Quick Link by YouTube Video URL Bar */}
+            <div className="p-4 bg-slate-950 text-white rounded-2xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="inline-flex items-center gap-2 text-xs font-bold text-amber-400">
+                  <Link2 className="w-4 h-4" />
+                  <span>Quick Link Video from YouTube URL or Video ID</span>
+                </div>
+                <span className="text-[11px] text-slate-400">
+                  Supports youtube.com/watch?v=..., youtu.be/..., youtube.com/shorts/..., or 11-char ID
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
+                <input
+                  type="text"
+                  value={quickYoutubeUrl}
+                  onChange={(e) => setQuickYoutubeUrl(e.target.value)}
+                  placeholder="Paste YouTube video link (e.g. https://www.youtube.com/watch?v=QF3BmojTrKQ)..."
+                  className="md:col-span-6 px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder:text-slate-500"
+                />
+                <input
+                  type="text"
+                  value={quickYoutubeLocation}
+                  onChange={(e) => setQuickYoutubeLocation(e.target.value)}
+                  placeholder="Location (e.g. Burewala, Lahore)"
+                  className="md:col-span-2 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder:text-slate-500"
+                />
+                <button
+                  type="button"
+                  disabled={!quickYoutubeUrl.trim() || isLinkingVideo || isSaving}
+                  onClick={async () => {
+                    if (!quickYoutubeUrl.trim()) return;
+                    setIsLinkingVideo(true);
+                    try {
+                      const cleanId = extractYoutubeId(quickYoutubeUrl);
+                      const resolved = await apiRequest<{
+                        youtubeId: string;
+                        title: string;
+                        authorName: string;
+                        thumbnailUrl: string;
+                        permalink: string;
+                        duration: string;
+                      }>('/cms/youtube/resolve', {
+                        method: 'POST',
+                        body: JSON.stringify({ urlOrId: quickYoutubeUrl }),
+                      }).catch(() => ({
+                        youtubeId: cleanId,
+                        title: `Royal Studio 4K Wedding Film (${cleanId})`,
+                        authorName: '@royalstudio089',
+                        thumbnailUrl: `https://i.ytimg.com/vi/${cleanId}/hqdefault.jpg`,
+                        permalink: `https://www.youtube.com/watch?v=${cleanId}`,
+                        duration: '2:15',
+                      }));
+
+                      const newFilmItem = {
+                        id: Date.now(),
+                        title: resolved.title || `Royal Studio Wedding Film (${resolved.youtubeId})`,
+                        youtubeId: resolved.youtubeId,
+                        location: quickYoutubeLocation.trim() || 'Burewala',
+                        duration: resolved.duration || '2:15',
+                        channelHandle: resolved.authorName || '@royalstudio089',
+                        youtubeUrl: `https://www.youtube.com/watch?v=${resolved.youtubeId}`,
+                        thumbnailUrl: resolved.thumbnailUrl,
+                      };
+
+                      const nextFilmsList = [newFilmItem, ...(draft.films.weddingFilms || [])];
+                      const nextDraft: WebsiteCustomizationConfig = {
+                        ...draft,
+                        films: {
+                          ...draft.films,
+                          weddingFilms: nextFilmsList,
+                        },
+                      };
+                      setDraft(nextDraft);
+
+                      // Also ensure it is in socialPosts under YouTube channel
+                      const existsInSocial = socialPosts.some(
+                        (p) => (p.youtubeId || extractYoutubeId(p.permalink)) === resolved.youtubeId
+                      );
+                      const nextSocialPosts: SocialMediaPostItem[] = existsInSocial
+                        ? socialPosts.map((p) =>
+                            (p.youtubeId || extractYoutubeId(p.permalink)) === resolved.youtubeId
+                              ? { ...p, selectedForWeddingFilms: true }
+                              : p
+                          )
+                        : [
+                            {
+                              id: `yt-post-${resolved.youtubeId}`,
+                              platform: 'youtube',
+                              accountHandle: resolved.authorName || '@royalstudio089',
+                              title: newFilmItem.title,
+                              caption: `${newFilmItem.title} — Linked from YouTube channel`,
+                              image: resolved.thumbnailUrl,
+                              permalink: `https://www.youtube.com/watch?v=${resolved.youtubeId}`,
+                              postedAt: new Date().toISOString().split('T')[0],
+                              location: newFilmItem.location,
+                              likesCount: 1850,
+                              viewsCount: '24.5K',
+                              mediaType: 'video',
+                              youtubeId: resolved.youtubeId,
+                              duration: newFilmItem.duration,
+                              category: 'walima',
+                              aspect: 'wide',
+                              selectedForPortfolio: false,
+                              selectedForWeddingFilms: true,
+                            },
+                            ...socialPosts,
+                          ];
+
+                      setQuickYoutubeUrl('');
+                      if (onSaveSocialState) {
+                        await onSaveSocialState(
+                          connectedAccounts,
+                          nextSocialPosts,
+                          portfolioItems,
+                          `Linked YouTube video "${newFilmItem.title}" and published to Wedding Films!`,
+                          nextDraft
+                        );
+                      } else {
+                        await onSave(nextDraft, 'Wedding Films YouTube Link');
+                      }
+                    } finally {
+                      setIsLinkingVideo(false);
+                    }
+                  }}
+                  className="md:col-span-2 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>{isLinkingVideo ? 'Linking...' : 'Link to Wedding Films'}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!quickYoutubeUrl.trim() || isLinkingVideo || isSaving}
+                  onClick={async () => {
+                    if (!quickYoutubeUrl.trim()) return;
+                    setIsLinkingVideo(true);
+                    try {
+                      const cleanId = extractYoutubeId(quickYoutubeUrl);
+                      const resolved = await apiRequest<{
+                        youtubeId: string;
+                        title: string;
+                      }>('/cms/youtube/resolve', {
+                        method: 'POST',
+                        body: JSON.stringify({ urlOrId: quickYoutubeUrl }),
+                      }).catch(() => ({
+                        youtubeId: cleanId,
+                        title: draft.films.featuredFilmTitle,
+                      }));
+
+                      const nextDraft: WebsiteCustomizationConfig = {
+                        ...draft,
+                        films: {
+                          ...draft.films,
+                          featuredYoutubeId: resolved.youtubeId,
+                          featuredFilmTitle: resolved.title || draft.films.featuredFilmTitle,
+                        },
+                      };
+                      setDraft(nextDraft);
+                      setQuickYoutubeUrl('');
+                      await onSave(
+                        nextDraft,
+                        `Linked "${resolved.title}" as Featured Showreel`
+                      );
+                    } finally {
+                      setIsLinkingVideo(false);
+                    }
+                  }}
+                  className="md:col-span-2 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  <Youtube className="w-3.5 h-3.5" />
+                  <span>Link as Showreel</span>
+                </button>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-gray-700 mb-1">
-                Featured YouTube Video ID
-              </label>
-              <input
-                type="text"
-                value={draft.films.featuredYoutubeId}
-                onChange={(e) =>
-                  setDraft((p) => ({
-                    ...p,
-                    films: { ...p.films, featuredYoutubeId: e.target.value.trim() },
-                  }))
-                }
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-mono"
-              />
-            </div>
+            {/* Connected YouTube Channel Video Selector Grid */}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Youtube className="w-4 h-4 text-red-600" />
+                    <span>
+                      Connected YouTube Channel Videos (Click to Link to Showreel or Wedding Films)
+                    </span>
+                  </h5>
+                  <p className="text-[11px] text-gray-500">
+                    Select any video from your connected YouTube channel to immediately link and show it on your Featured Showreel, Wedding Films page, or Portfolio.
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-slate-700 bg-gray-100 px-3 py-1 rounded-full">
+                  {
+                    socialPosts.filter(
+                      (p) => p.platform === 'youtube' || p.mediaType === 'video' || Boolean(p.youtubeId)
+                    ).length
+                  }{' '}
+                  Channel Videos Available
+                </span>
+              </div>
 
-            <div className="md:col-span-3">
-              <label className="block text-xs font-bold text-gray-700 mb-1">
-                Featured Film Description
-              </label>
-              <textarea
-                rows={2}
-                value={draft.films.featuredDescription}
-                onChange={(e) =>
-                  setDraft((p) => ({
-                    ...p,
-                    films: { ...p.films, featuredDescription: e.target.value },
-                  }))
-                }
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs"
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+                {socialPosts
+                  .filter(
+                    (p) => p.platform === 'youtube' || p.mediaType === 'video' || Boolean(p.youtubeId)
+                  )
+                  .map((videoPost) => {
+                    const ytId = videoPost.youtubeId || extractYoutubeId(videoPost.permalink);
+                    const isFeaturedShowreel =
+                      extractYoutubeId(draft.films.featuredYoutubeId) === ytId;
+                    const isInWeddingFilms = (draft.films.weddingFilms || []).some(
+                      (f) => extractYoutubeId(f.youtubeId) === ytId
+                    );
+                    const isPlaying = playingYoutubeId === ytId;
+
+                    return (
+                      <div
+                        key={videoPost.id}
+                        className={`rounded-2xl border overflow-hidden transition-all flex flex-col justify-between ${
+                          isFeaturedShowreel
+                            ? 'bg-red-50/30 border-red-400 ring-2 ring-red-500/15'
+                            : isInWeddingFilms
+                            ? 'bg-amber-50/20 border-amber-400 ring-2 ring-amber-500/15'
+                            : 'bg-gray-50/70 border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <div>
+                          <div className="relative aspect-video bg-slate-950 overflow-hidden group">
+                            {isPlaying ? (
+                              <div className="relative w-full h-full">
+                                <iframe
+                                  src={`https://www.youtube.com/embed/${ytId}?autoplay=1&rel=0`}
+                                  title={videoPost.title}
+                                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                  allowFullScreen
+                                  className="w-full h-full"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setPlayingYoutubeId(null)}
+                                  className="absolute top-2 right-2 p-1 rounded-full bg-slate-950/85 text-white hover:bg-rose-600 cursor-pointer z-10"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <img
+                                  src={`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`}
+                                  alt={videoPost.title}
+                                  referrerPolicy="no-referrer"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setPlayingYoutubeId(ytId)}
+                                  className="absolute inset-0 flex items-center justify-center bg-slate-950/30 group-hover:bg-slate-950/45 transition-colors cursor-pointer"
+                                  title="Preview YouTube video"
+                                >
+                                  <span className="w-11 h-11 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                    <Play className="w-5 h-5 fill-white ml-0.5" />
+                                  </span>
+                                </button>
+                                <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+                                  <span className="px-2 py-0.5 rounded bg-slate-950/85 text-white text-[10px] font-mono font-bold">
+                                    {videoPost.duration || '2:15'}
+                                  </span>
+                                  <span className="px-2 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">
+                                    {videoPost.accountHandle}
+                                  </span>
+                                </div>
+                                <div className="absolute top-2 right-2 flex flex-col items-end gap-1">
+                                  {isFeaturedShowreel && (
+                                    <span className="px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-bold shadow-xs">
+                                      ★ Active Showreel
+                                    </span>
+                                  )}
+                                  {isInWeddingFilms && (
+                                    <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold shadow-xs">
+                                      ✓ In Wedding Films
+                                    </span>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="p-3 space-y-1">
+                            <div className="font-bold text-xs text-gray-900 line-clamp-1">
+                              {videoPost.title}
+                            </div>
+                            <div className="flex items-center justify-between text-[11px] text-gray-500">
+                              <span>{videoPost.location || 'Burewala'}</span>
+                              <span className="font-mono text-[10px]">ID: {ytId}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="p-3 pt-0 grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            disabled={isSaving}
+                            onClick={async () => {
+                              let nextWeddingFilms = [...(draft.films.weddingFilms || [])];
+                              if (isInWeddingFilms) {
+                                nextWeddingFilms = nextWeddingFilms.filter(
+                                  (f) => extractYoutubeId(f.youtubeId) !== ytId
+                                );
+                              } else {
+                                nextWeddingFilms = [
+                                  {
+                                    id: Date.now(),
+                                    title: videoPost.title,
+                                    youtubeId: ytId,
+                                    location: videoPost.location || 'Burewala',
+                                    duration: videoPost.duration || '2:15',
+                                    description: videoPost.caption,
+                                    channelHandle: videoPost.accountHandle,
+                                    youtubeUrl: `https://www.youtube.com/watch?v=${ytId}`,
+                                  },
+                                  ...nextWeddingFilms,
+                                ];
+                              }
+                              const nextDraft: WebsiteCustomizationConfig = {
+                                ...draft,
+                                films: {
+                                  ...draft.films,
+                                  weddingFilms: nextWeddingFilms,
+                                },
+                              };
+                              setDraft(nextDraft);
+                              await onSave(
+                                nextDraft,
+                                !isInWeddingFilms
+                                  ? `Linked "${videoPost.title}" to Wedding Films (/wedding-films)`
+                                  : `Removed "${videoPost.title}" from Wedding Films`
+                              );
+                            }}
+                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                              isInWeddingFilms
+                                ? 'bg-emerald-600 text-white hover:bg-rose-600'
+                                : 'bg-slate-900 text-amber-400 hover:bg-amber-500 hover:text-slate-950'
+                            }`}
+                          >
+                            <Film className="w-3 h-3" />
+                            <span>
+                              {isInWeddingFilms ? 'Shown on Wedding Films ✓' : 'Link to Wedding Films'}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isSaving || isFeaturedShowreel}
+                            onClick={async () => {
+                              const nextDraft: WebsiteCustomizationConfig = {
+                                ...draft,
+                                films: {
+                                  ...draft.films,
+                                  featuredYoutubeId: ytId,
+                                  featuredFilmTitle: videoPost.title,
+                                  featuredDescription:
+                                    videoPost.caption || draft.films.featuredDescription,
+                                },
+                              };
+                              setDraft(nextDraft);
+                              await onSave(
+                                nextDraft,
+                                `Linked "${videoPost.title}" as Featured Showreel`
+                              );
+                            }}
+                            className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                              isFeaturedShowreel
+                                ? 'bg-red-600 text-white'
+                                : 'bg-white hover:bg-red-50 text-red-700 border border-red-200'
+                            }`}
+                          >
+                            <Youtube className="w-3 h-3" />
+                            <span>{isFeaturedShowreel ? 'Active Showreel ✓' : 'Set as Showreel'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-gray-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
-                Wedding Films Gallery (/wedding-films)
-              </h5>
+          {/* Card 2: Featured Showreel (Homepage) & Currently Linked Wedding Films (/wedding-films) */}
+          <div className="bg-white p-6 rounded-2xl border border-gray-200 space-y-6 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+              <div>
+                <h4 className="text-sm font-bold text-gray-900">
+                  Featured Showreel (Home) &amp; Linked Wedding Films (/wedding-films)
+                </h4>
+                <p className="text-xs text-gray-500">
+                  Customize the main Featured Showreel and reorder or edit the linked videos displayed on the Wedding Films page.
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={() =>
-                  setDraft((p) => ({
-                    ...p,
-                    films: {
-                      ...p.films,
-                      weddingFilms: [
-                        ...(p.films.weddingFilms || []),
-                        {
-                          id: Date.now(),
-                          title: 'New Royal Wedding Highlight Film',
-                          youtubeId: 'QF3BmojTrKQ',
-                          location: 'Burewala',
-                          duration: '5:30',
-                        },
-                      ],
-                    },
-                  }))
-                }
-                className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-500 text-slate-950 rounded-lg text-xs font-bold cursor-pointer"
+                disabled={isSaving}
+                onClick={() => handleSaveCurrent('Wedding Films & Showreel')}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded-xl text-xs font-bold cursor-pointer shrink-0"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Wedding Film</span>
+                <Save className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : 'Save Showreel & Wedding Films'}</span>
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {(draft.films.weddingFilms || []).map((film, idx) => (
-                <div
-                  key={film.id || idx}
-                  className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 space-y-2"
-                >
-                  <div className="flex items-center justify-between gap-2">
+            {/* Featured Showreel Configuration + Live Preview */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start p-4 bg-slate-50 rounded-2xl border border-slate-200">
+              <div className="lg:col-span-7 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-red-700">
+                    <Video className="w-4 h-4" />
+                    <span>Featured Showreel Configuration (Homepage Cinema Player)</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setYtPickerTarget({ mode: 'SHOWREEL' })}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-bold cursor-pointer"
+                  >
+                    <Youtube className="w-3.5 h-3.5" />
+                    <span>Select Video from YouTube Channel</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Showreel Section Heading
+                    </label>
                     <input
                       type="text"
-                      value={film.title}
-                      onChange={(e) => {
-                        const next = [...draft.films.weddingFilms];
-                        next[idx] = { ...next[idx], title: e.target.value };
-                        setDraft((p) => ({ ...p, films: { ...p.films, weddingFilms: next } }));
-                      }}
-                      placeholder="Film Title"
-                      className="flex-1 px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold"
+                      value={draft.films.featuredSectionTitle}
+                      onChange={(e) =>
+                        setDraft((p) => ({
+                          ...p,
+                          films: { ...p.films, featuredSectionTitle: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs font-bold"
                     />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = draft.films.weddingFilms.filter((_, i) => i !== idx);
-                        setDraft((p) => ({ ...p, films: { ...p.films, weddingFilms: next } }));
-                      }}
-                      className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Showreel Film Title
+                    </label>
                     <input
                       type="text"
-                      value={film.youtubeId}
-                      onChange={(e) => {
-                        const next = [...draft.films.weddingFilms];
-                        next[idx] = { ...next[idx], youtubeId: e.target.value.trim() };
-                        setDraft((p) => ({ ...p, films: { ...p.films, weddingFilms: next } }));
-                      }}
-                      placeholder="YouTube ID"
-                      className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-mono"
+                      value={draft.films.featuredFilmTitle}
+                      onChange={(e) =>
+                        setDraft((p) => ({
+                          ...p,
+                          films: { ...p.films, featuredFilmTitle: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs"
                     />
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Linked YouTube Video URL or ID
+                    </label>
                     <input
                       type="text"
-                      value={film.location}
-                      onChange={(e) => {
-                        const next = [...draft.films.weddingFilms];
-                        next[idx] = { ...next[idx], location: e.target.value };
-                        setDraft((p) => ({ ...p, films: { ...p.films, weddingFilms: next } }));
-                      }}
-                      placeholder="City"
-                      className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs"
+                      value={draft.films.featuredYoutubeId}
+                      onChange={(e) =>
+                        setDraft((p) => ({
+                          ...p,
+                          films: {
+                            ...p.films,
+                            featuredYoutubeId: extractYoutubeId(e.target.value),
+                          },
+                        }))
+                      }
+                      placeholder="Paste YouTube URL or Video ID (e.g. QF3BmojTrKQ)"
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs font-mono"
                     />
-                    <input
-                      type="text"
-                      value={film.duration}
-                      onChange={(e) => {
-                        const next = [...draft.films.weddingFilms];
-                        next[idx] = { ...next[idx], duration: e.target.value };
-                        setDraft((p) => ({ ...p, films: { ...p.films, weddingFilms: next } }));
-                      }}
-                      placeholder="4:45"
-                      className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs"
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Showreel Description
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={draft.films.featuredDescription}
+                      onChange={(e) =>
+                        setDraft((p) => ({
+                          ...p,
+                          films: { ...p.films, featuredDescription: e.target.value },
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-xs"
                     />
                   </div>
                 </div>
-              ))}
+              </div>
+
+              {/* Live Showreel Video Player Preview */}
+              <div className="lg:col-span-5 space-y-2">
+                <div className="text-[11px] font-bold text-gray-600 uppercase tracking-wider">
+                  Live Linked Showreel Preview
+                </div>
+                <div className="relative aspect-video rounded-xl overflow-hidden bg-slate-950 border border-gray-300 shadow-sm">
+                  <iframe
+                    src={`https://www.youtube.com/embed/${extractYoutubeId(
+                      draft.films.featuredYoutubeId
+                    )}?rel=0`}
+                    title={draft.films.featuredFilmTitle}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                    className="w-full h-full"
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-gray-500">
+                  <span className="font-semibold text-gray-800 truncate">
+                    {draft.films.featuredFilmTitle}
+                  </span>
+                  <a
+                    href={`https://www.youtube.com/watch?v=${extractYoutubeId(
+                      draft.films.featuredYoutubeId
+                    )}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-red-600 font-bold hover:underline shrink-0"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Open on YouTube</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Wedding Films Showcase List (/wedding-films) */}
+            <div className="pt-2 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h5 className="text-xs font-bold text-gray-900 uppercase tracking-wider">
+                    Wedding Films Gallery (/wedding-films) — {(draft.films.weddingFilms || []).length} Linked Films
+                  </h5>
+                  <p className="text-[11px] text-gray-500">
+                    Each film below is linked to a YouTube video and shown on the public <strong>/wedding-films</strong> page.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setYtPickerTarget({ mode: 'NEW_WEDDING_FILM' })}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-bold cursor-pointer shadow-2xs"
+                  >
+                    <Youtube className="w-3.5 h-3.5" />
+                    <span>Select Video from YouTube Channel</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDraft((p) => ({
+                        ...p,
+                        films: {
+                          ...p.films,
+                          weddingFilms: [
+                            {
+                              id: Date.now(),
+                              title: 'New Royal Wedding Highlight Film',
+                              youtubeId: 'QF3BmojTrKQ',
+                              location: 'Burewala',
+                              duration: '5:30',
+                              channelHandle: '@royalstudio089',
+                            },
+                            ...(p.films.weddingFilms || []),
+                          ],
+                        },
+                      }))
+                    }
+                    className="inline-flex items-center gap-1 px-3 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Custom Film Slot</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {(draft.films.weddingFilms || []).map((film, idx) => {
+                  const cleanFilmYtId = extractYoutubeId(film.youtubeId);
+                  return (
+                    <div
+                      key={film.id || idx}
+                      className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-3"
+                    >
+                      <div className="flex gap-3">
+                        <div className="relative w-36 aspect-video rounded-xl overflow-hidden bg-slate-950 shrink-0 border border-gray-300">
+                          <img
+                            src={`https://i.ytimg.com/vi/${cleanFilmYtId}/hqdefault.jpg`}
+                            alt={film.title}
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover"
+                          />
+                          <a
+                            href={`https://www.youtube.com/watch?v=${cleanFilmYtId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="absolute inset-0 flex items-center justify-center bg-slate-950/30 hover:bg-slate-950/50 transition-colors"
+                            title="Watch on YouTube"
+                          >
+                            <span className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shadow">
+                              <Play className="w-3.5 h-3.5 fill-white ml-0.5" />
+                            </span>
+                          </a>
+                        </div>
+
+                        <div className="flex-1 min-w-0 space-y-2">
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="px-2 py-0.5 rounded bg-slate-900 text-amber-400 text-[10px] font-bold font-mono">
+                              Film #{idx + 1}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setYtPickerTarget({ mode: 'REPLACE_WEDDING_FILM', index: idx })
+                                }
+                                className="inline-flex items-center gap-1 px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded-md text-[10px] font-bold cursor-pointer"
+                                title="Pick a video from your connected YouTube channel"
+                              >
+                                <Youtube className="w-3 h-3" />
+                                <span>Pick Channel Video</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === 0}
+                                onClick={() => {
+                                  const next = [...draft.films.weddingFilms];
+                                  const [moved] = next.splice(idx, 1);
+                                  next.splice(idx - 1, 0, moved);
+                                  setDraft((p) => ({
+                                    ...p,
+                                    films: { ...p.films, weddingFilms: next },
+                                  }));
+                                }}
+                                className="p-1 text-gray-500 hover:text-slate-900 disabled:opacity-30 cursor-pointer"
+                                title="Move Up"
+                              >
+                                <ArrowUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                disabled={idx === draft.films.weddingFilms.length - 1}
+                                onClick={() => {
+                                  const next = [...draft.films.weddingFilms];
+                                  const [moved] = next.splice(idx, 1);
+                                  next.splice(idx + 1, 0, moved);
+                                  setDraft((p) => ({
+                                    ...p,
+                                    films: { ...p.films, weddingFilms: next },
+                                  }));
+                                }}
+                                className="p-1 text-gray-500 hover:text-slate-900 disabled:opacity-30 cursor-pointer"
+                                title="Move Down"
+                              >
+                                <ArrowDown className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = draft.films.weddingFilms.filter((_, i) => i !== idx);
+                                  setDraft((p) => ({
+                                    ...p,
+                                    films: { ...p.films, weddingFilms: next },
+                                  }));
+                                }}
+                                className="p-1 text-rose-500 hover:text-rose-700 cursor-pointer"
+                                title="Remove Film"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            value={film.title}
+                            onChange={(e) => {
+                              const next = [...draft.films.weddingFilms];
+                              next[idx] = { ...next[idx], title: e.target.value };
+                              setDraft((p) => ({
+                                ...p,
+                                films: { ...p.films, weddingFilms: next },
+                              }));
+                            }}
+                            placeholder="Film Title"
+                            className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-gray-400 mb-0.5">
+                            YouTube URL or Video ID
+                          </label>
+                          <input
+                            type="text"
+                            value={film.youtubeId}
+                            onChange={(e) => {
+                              const next = [...draft.films.weddingFilms];
+                              next[idx] = {
+                                ...next[idx],
+                                youtubeId: extractYoutubeId(e.target.value),
+                              };
+                              setDraft((p) => ({
+                                ...p,
+                                films: { ...p.films, weddingFilms: next },
+                              }));
+                            }}
+                            placeholder="YouTube URL or ID"
+                            className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-mono"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-gray-400 mb-0.5">
+                            Wedding Location / City
+                          </label>
+                          <input
+                            type="text"
+                            value={film.location}
+                            onChange={(e) => {
+                              const next = [...draft.films.weddingFilms];
+                              next[idx] = { ...next[idx], location: e.target.value };
+                              setDraft((p) => ({
+                                ...p,
+                                films: { ...p.films, weddingFilms: next },
+                              }));
+                            }}
+                            placeholder="City"
+                            className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase text-gray-400 mb-0.5">
+                            Duration
+                          </label>
+                          <input
+                            type="text"
+                            value={film.duration}
+                            onChange={(e) => {
+                              const next = [...draft.films.weddingFilms];
+                              next[idx] = { ...next[idx], duration: e.target.value };
+                              setDraft((p) => ({
+                                ...p,
+                                films: { ...p.films, weddingFilms: next },
+                              }));
+                            }}
+                            placeholder="4:45"
+                            className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ================= 5. CONNECTED SOCIAL MEDIA & PORTFOLIO SELECTOR ================= */}
+      {activeSubTab === 'SOCIAL_CONNECTED' && onSaveSocialState && (
+        <SocialMediaPortfolioSelector
+          connectedAccounts={connectedAccounts}
+          socialPosts={socialPosts}
+          portfolioItems={portfolioItems}
+          websiteCustomization={draft}
+          isSaving={isSaving}
+          onSaveSocialState={async (
+            nextAccounts,
+            nextPosts,
+            nextPortfolio,
+            toastMsg,
+            nextCustom
+          ) => {
+            if (nextCustom) {
+              setDraft(nextCustom);
+            }
+            await onSaveSocialState(
+              nextAccounts,
+              nextPosts,
+              nextPortfolio,
+              toastMsg,
+              nextCustom
+            );
+          }}
+          onUploadImage={onUploadImage}
+        />
       )}
 
       {/* ================= 5. SERVICES CARDS, WEDDING PROCESS & STATISTICS ================= */}
@@ -1686,6 +2445,149 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
           </div>
         </div>
       )}
+
+      {/* Modal: Select Video from Connected YouTube Channel */}
+      <Modal
+        isOpen={Boolean(ytPickerTarget)}
+        onClose={() => setYtPickerTarget(null)}
+        title={
+          ytPickerTarget?.mode === 'SHOWREEL'
+            ? 'Select Video from YouTube Channel for Featured Showreel'
+            : ytPickerTarget?.mode === 'HERO'
+            ? 'Select Video from YouTube Channel for Hero Background'
+            : 'Select Video from Connected YouTube Channel for Wedding Films'
+        }
+      >
+        <div className="space-y-4">
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 font-bold text-red-900">
+              <Youtube className="w-4 h-4 text-red-600" />
+              <span>
+                Connected Channel: {draft.films.connectedYoutubeChannelHandle || '@royalstudio089'}
+              </span>
+            </div>
+            <span className="text-[11px] text-red-700 font-semibold">
+              Click any video below to link it immediately
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+            {socialPosts
+              .filter(
+                (p) => p.platform === 'youtube' || p.mediaType === 'video' || Boolean(p.youtubeId)
+              )
+              .map((vid) => {
+                const ytId = vid.youtubeId || extractYoutubeId(vid.permalink);
+                return (
+                  <div
+                    key={vid.id}
+                    className="p-3 rounded-xl border border-gray-200 hover:border-red-400 bg-white flex flex-col justify-between gap-2.5 transition-all"
+                  >
+                    <div className="space-y-2">
+                      <div className="relative aspect-video rounded-lg overflow-hidden bg-slate-950">
+                        <img
+                          src={`https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`}
+                          alt={vid.title}
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                        <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-slate-950/85 text-white text-[10px] font-mono">
+                          {vid.duration || '2:15'}
+                        </span>
+                      </div>
+                      <div className="font-bold text-xs text-gray-900 line-clamp-1">{vid.title}</div>
+                      <div className="text-[11px] text-gray-500 flex items-center justify-between">
+                        <span>{vid.location || 'Burewala'}</span>
+                        <span className="font-mono text-[10px]">{ytId}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!ytPickerTarget) return;
+                        let nextDraft = { ...draft };
+                        let label = 'YouTube Video Linked';
+
+                        if (ytPickerTarget.mode === 'SHOWREEL') {
+                          nextDraft = {
+                            ...draft,
+                            films: {
+                              ...draft.films,
+                              featuredYoutubeId: ytId,
+                              featuredFilmTitle: vid.title,
+                              featuredDescription: vid.caption || draft.films.featuredDescription,
+                            },
+                          };
+                          label = `Linked "${vid.title}" as Featured Showreel`;
+                        } else if (ytPickerTarget.mode === 'HERO') {
+                          nextDraft = {
+                            ...draft,
+                            hero: {
+                              ...draft.hero,
+                              youtubeVideoId: ytId,
+                              showBackgroundVideo: true,
+                            },
+                          };
+                          label = `Linked "${vid.title}" as Hero Background Video`;
+                        } else if (ytPickerTarget.mode === 'NEW_WEDDING_FILM') {
+                          nextDraft = {
+                            ...draft,
+                            films: {
+                              ...draft.films,
+                              weddingFilms: [
+                                {
+                                  id: Date.now(),
+                                  title: vid.title,
+                                  youtubeId: ytId,
+                                  location: vid.location || 'Burewala',
+                                  duration: vid.duration || '2:15',
+                                  description: vid.caption,
+                                  channelHandle: vid.accountHandle,
+                                  youtubeUrl: `https://www.youtube.com/watch?v=${ytId}`,
+                                },
+                                ...(draft.films.weddingFilms || []),
+                              ],
+                            },
+                          };
+                          label = `Added "${vid.title}" to Wedding Films (/wedding-films)`;
+                        } else if (ytPickerTarget.mode === 'REPLACE_WEDDING_FILM') {
+                          const nextList = [...(draft.films.weddingFilms || [])];
+                          if (nextList[ytPickerTarget.index]) {
+                            nextList[ytPickerTarget.index] = {
+                              ...nextList[ytPickerTarget.index],
+                              title: vid.title,
+                              youtubeId: ytId,
+                              location: vid.location || nextList[ytPickerTarget.index].location,
+                              duration: vid.duration || nextList[ytPickerTarget.index].duration,
+                              channelHandle: vid.accountHandle,
+                              youtubeUrl: `https://www.youtube.com/watch?v=${ytId}`,
+                            };
+                          }
+                          nextDraft = {
+                            ...draft,
+                            films: {
+                              ...draft.films,
+                              weddingFilms: nextList,
+                            },
+                          };
+                          label = `Linked "${vid.title}" to Wedding Film #${ytPickerTarget.index + 1}`;
+                        }
+
+                        setDraft(nextDraft);
+                        setYtPickerTarget(null);
+                        await onSave(nextDraft, label);
+                      }}
+                      className="w-full py-2 bg-slate-900 hover:bg-red-600 text-amber-400 hover:text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Select &amp; Link This Video
+                    </button>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

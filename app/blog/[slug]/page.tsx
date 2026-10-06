@@ -17,7 +17,7 @@ interface Props {
 }
 
 export async function generateStaticParams() {
-  const db = dbInstance.getData();
+  const db = await dbInstance.ensureHydrated();
   const posts =
     db.cms?.blogPosts && db.cms.blogPosts.length > 0
       ? db.cms.blogPosts
@@ -27,7 +27,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
-  const db = dbInstance.getData();
+  const db = await dbInstance.ensureHydrated();
   const posts =
     db.cms?.blogPosts && db.cms.blogPosts.length > 0
       ? db.cms.blogPosts
@@ -54,7 +54,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function BlogPostPage({ params }: Props) {
   const { slug } = await params;
-  const db = dbInstance.getData();
+  const db = await dbInstance.ensureHydrated();
   const posts =
     db.cms?.blogPosts && db.cms.blogPosts.length > 0
       ? db.cms.blogPosts
@@ -80,17 +80,26 @@ export default async function BlogPostPage({ params }: Props) {
 
       <article className="pt-24">
         <div className="relative h-[50vh] min-h-[320px]">
-          <Image
-            src={post.image}
-            alt={post.title}
-            fill
-            priority
-            placeholder="blur"
-            blurDataURL={ROYAL_BLUR_DATA_URL}
-            referrerPolicy="no-referrer"
-            className="object-cover"
-            sizes="100vw"
-          />
+          {post.image?.startsWith("data:") ? (
+            <img
+              src={post.image}
+              alt={post.title}
+              referrerPolicy="no-referrer"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <Image
+              src={post.image}
+              alt={post.title}
+              fill
+              priority
+              placeholder="blur"
+              blurDataURL={ROYAL_BLUR_DATA_URL}
+              referrerPolicy="no-referrer"
+              className="object-cover"
+              sizes="100vw"
+            />
+          )}
           <div className="absolute inset-0 bg-primary/50" />
           <div className="absolute inset-0 flex items-end">
             <div className="mx-auto w-full max-w-3xl 2xl:max-w-4xl px-4 sm:px-6 pb-12 md:px-12">

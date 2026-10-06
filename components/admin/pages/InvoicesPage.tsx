@@ -14,7 +14,9 @@ import {
   Copy,
   ExternalLink,
   CheckCircle2,
+  QrCode,
 } from 'lucide-react';
+import ProposalQrShareModal from '@/components/proposal/ProposalQrShareModal';
 import { useStudioData } from '../context/StudioDataContext';
 import { useAuth } from '../context/AuthContext';
 import { formatPKR, formatDate } from '../utils/calculations';
@@ -39,6 +41,7 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
   const [mainTab, setMainTab] = useState<'invoices' | 'quotations' | 'receipts'>('invoices');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [qrShareQuotation, setQrShareQuotation] = useState<Quotation | null>(null);
 
   // Preview Document Modal state
   const [previewDocData, setPreviewDocData] = useState<{
@@ -537,6 +540,15 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
+                            onClick={() => setQrShareQuotation(quo)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 rounded text-[11px] font-bold transition-colors cursor-pointer"
+                            title="Send Digital Proposal to Customer via Link & QR Code"
+                          >
+                            <QrCode className="w-3 h-3 text-amber-700" />
+                            <span>Share QR &amp; Link</span>
+                          </button>
+
+                          <button
                             onClick={() => {
                               const url = `${window.location.origin}/proposal/${quo.id}`;
                               navigator.clipboard.writeText(url);
@@ -748,6 +760,30 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
           onClose={() => setPreviewDocData(null)}
         />
       )}
+
+      {/* DIGITAL PROPOSAL LINK & QR SHARE MODAL */}
+      {qrShareQuotation && (() => {
+        const evt = events.find(e => e.id === qrShareQuotation.eventId);
+        const cli = clients.find(c => c.id === qrShareQuotation.clientId);
+        const propUrl =
+          typeof window !== 'undefined'
+            ? `${window.location.origin}/proposal/${qrShareQuotation.id}`
+            : `/proposal/${qrShareQuotation.id}`;
+        return (
+          <ProposalQrShareModal
+            isOpen={true}
+            onClose={() => setQrShareQuotation(null)}
+            proposalUrl={propUrl}
+            quotationNumber={qrShareQuotation.quotationNumber}
+            eventTitle={evt?.title || 'Wedding Celebration'}
+            eventDate={evt?.eventDate || qrShareQuotation.issueDate}
+            clientName={cli?.name || 'Valued Client'}
+            clientPhone={cli?.whatsapp || cli?.phone}
+            studioName={profile?.studioName || 'Royal Studio'}
+            totalAmountText={formatPKR(qrShareQuotation.total)}
+          />
+        );
+      })()}
     </div>
   );
 };

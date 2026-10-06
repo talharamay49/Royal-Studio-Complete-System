@@ -29,6 +29,9 @@ import {
   ChevronsUp,
   LayoutGrid,
   Star,
+  Video,
+  Play,
+  Youtube,
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { useStudioData } from '../context/StudioDataContext';
@@ -52,6 +55,7 @@ import {
   defaultWebsiteCustomization,
   defaultConnectedSocialAccounts,
   defaultSocialMediaPosts,
+  extractYoutubeId,
 } from '@/lib/data';
 
 interface WebsiteLead {
@@ -180,7 +184,10 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
   const [portfolioForm, setPortfolioForm] = useState<{
     title: string;
     category: Exclude<PortfolioCategory, 'all'>;
+    mediaType: 'image' | 'video';
     image: string;
+    videoUrl: string;
+    duration: string;
     aspect: 'tall' | 'wide' | 'square';
     location: string;
     camera: string;
@@ -191,7 +198,10 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
   }>({
     title: '',
     category: 'bridal',
+    mediaType: 'image',
     image: '/portfolio/bridal-01-crimson-lehenga.jpg',
+    videoUrl: '',
+    duration: '',
     aspect: 'tall',
     location: 'Burewala',
     camera: 'Sony A7R V',
@@ -400,7 +410,10 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
     setPortfolioForm({
       title: '',
       category: categoryFilter !== 'all' ? categoryFilter : 'bridal',
+      mediaType: 'image',
       image: '/portfolio/bridal-01-crimson-lehenga.jpg',
+      videoUrl: '',
+      duration: '',
       aspect: 'tall',
       location: 'Burewala',
       camera: 'Sony A7R V',
@@ -417,7 +430,10 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
     setPortfolioForm({
       title: item.title,
       category: item.category,
+      mediaType: item.mediaType || 'image',
       image: item.image,
+      videoUrl: item.videoUrl || '',
+      duration: item.duration || '',
       aspect: item.aspect,
       location: item.location || 'Burewala',
       camera: item.exif?.camera || 'Sony A7R V',
@@ -432,17 +448,29 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
   const handleSavePortfolioItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!portfolioForm.title.trim() || !portfolioForm.image.trim()) {
-      addToast('Title and image are required for portfolio items.', 'error');
+      addToast('Title and cover image are required for portfolio items.', 'error');
       return;
     }
 
+    const ytId =
+      portfolioForm.mediaType === 'video' && portfolioForm.videoUrl
+        ? extractYoutubeId(portfolioForm.videoUrl)
+        : undefined;
+
     const newItem: PortfolioItem = {
+      ...(editingPortfolioItem || {}),
       id: editingPortfolioItem
         ? editingPortfolioItem.id
         : Math.max(0, ...cmsData.portfolioItems.map((i) => i.id)) + 1,
       title: portfolioForm.title.trim(),
       category: portfolioForm.category,
+      mediaType: portfolioForm.mediaType,
       image: portfolioForm.image.trim(),
+      videoUrl:
+        portfolioForm.mediaType === 'video'
+          ? portfolioForm.videoUrl.trim() || (ytId ? `https://www.youtube.com/embed/${ytId}` : undefined)
+          : undefined,
+      duration: portfolioForm.mediaType === 'video' ? portfolioForm.duration.trim() || undefined : undefined,
       aspect: portfolioForm.aspect,
       location: portfolioForm.location.trim() || 'Burewala',
       exif: {
@@ -943,11 +971,33 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
       {activeTab === 'WEBSITE_CUSTOMIZER' && (
         <CompleteWebsiteCustomizer
           value={cmsData.websiteCustomization || defaultWebsiteCustomization}
+          connectedAccounts={cmsData.connectedSocialAccounts || defaultConnectedSocialAccounts}
+          socialPosts={cmsData.socialMediaPosts || defaultSocialMediaPosts}
+          portfolioItems={cmsData.portfolioItems}
           isSaving={isSaving}
           onSave={async (updatedConfig, sectionLabel) => {
             await persistCmsUpdate(
               { websiteCustomization: updatedConfig },
               `${sectionLabel} saved and published to the live website!`
+            );
+          }}
+          onSaveSocialState={async (
+            nextAccounts,
+            nextPosts,
+            nextPortfolio,
+            toastMessage,
+            nextWebsiteCustomization
+          ) => {
+            await persistCmsUpdate(
+              {
+                connectedSocialAccounts: nextAccounts,
+                socialMediaPosts: nextPosts,
+                portfolioItems: nextPortfolio,
+                ...(nextWebsiteCustomization
+                  ? { websiteCustomization: nextWebsiteCustomization }
+                  : {}),
+              },
+              toastMessage
             );
           }}
           onUploadImage={(e, onLoaded) =>
@@ -962,13 +1012,23 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
           connectedAccounts={cmsData.connectedSocialAccounts || defaultConnectedSocialAccounts}
           socialPosts={cmsData.socialMediaPosts || defaultSocialMediaPosts}
           portfolioItems={cmsData.portfolioItems}
+          websiteCustomization={cmsData.websiteCustomization || defaultWebsiteCustomization}
           isSaving={isSaving}
-          onSaveSocialState={async (nextAccounts, nextPosts, nextPortfolio, toastMessage) => {
+          onSaveSocialState={async (
+            nextAccounts,
+            nextPosts,
+            nextPortfolio,
+            toastMessage,
+            nextWebsiteCustomization
+          ) => {
             await persistCmsUpdate(
               {
                 connectedSocialAccounts: nextAccounts,
                 socialMediaPosts: nextPosts,
                 portfolioItems: nextPortfolio,
+                ...(nextWebsiteCustomization
+                  ? { websiteCustomization: nextWebsiteCustomization }
+                  : {}),
               },
               toastMessage
             );
@@ -1204,9 +1264,15 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
                           <span className="px-2 py-0.5 rounded-md bg-slate-950/85 text-amber-400 text-[10px] font-bold uppercase tracking-wider backdrop-blur-xs">
                             {item.category}
                           </span>
-                          {portfolioViewMode === 'DETAILED' && item.socialSource && (
+                          {item.mediaType === 'video' && (
+                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-bold uppercase">
+                              <Play className="w-2.5 h-2.5 fill-white" />
+                              <span>Video{item.duration ? ` · ${item.duration}` : ''}</span>
+                            </span>
+                          )}
+                          {portfolioViewMode === 'DETAILED' && (item.sourcePlatform && item.sourcePlatform !== 'upload') && (
                             <span className="px-2 py-0.5 rounded-md bg-emerald-500/95 text-slate-950 text-[10px] font-bold uppercase">
-                              {item.socialSource}
+                              {item.sourcePlatform} {item.socialHandle ? `(${item.socialHandle})` : ''}
                             </span>
                           )}
                         </div>
@@ -1869,6 +1935,84 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
                 <option value="square">Square Editorial (1:1)</option>
               </select>
             </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-bold text-gray-700 mb-1">Media Type *</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPortfolioForm((p) => ({ ...p, mediaType: 'image' }))}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 cursor-pointer ${
+                    portfolioForm.mediaType === 'image'
+                      ? 'bg-slate-900 text-amber-400 border-slate-900'
+                      : 'bg-gray-50 text-gray-700 border-gray-200'
+                  }`}
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>Photo / Editorial Image</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPortfolioForm((p) => ({
+                      ...p,
+                      mediaType: 'video',
+                      aspect: 'wide',
+                    }))
+                  }
+                  className={`py-2 px-3 rounded-lg text-xs font-bold border flex items-center justify-center gap-1.5 cursor-pointer ${
+                    portfolioForm.mediaType === 'video'
+                      ? 'bg-rose-600 text-white border-rose-600'
+                      : 'bg-gray-50 text-gray-700 border-gray-200'
+                  }`}
+                >
+                  <Video className="w-3.5 h-3.5" />
+                  <span>Video / YouTube Film / Reel</span>
+                </button>
+              </div>
+            </div>
+
+            {portfolioForm.mediaType === 'video' && (
+              <div className="sm:col-span-2 p-3 rounded-xl bg-rose-50/70 border border-rose-200 space-y-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-rose-950 mb-1">
+                      YouTube Video URL / ID or Direct Video Embed URL *
+                    </label>
+                    <input
+                      type="text"
+                      value={portfolioForm.videoUrl}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        const ytId = extractYoutubeId(raw);
+                        setPortfolioForm((p) => ({
+                          ...p,
+                          videoUrl: raw,
+                          image:
+                            raw.includes('youtu') || /^[a-zA-Z0-9_-]{11}$/.test(raw.trim())
+                              ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`
+                              : p.image,
+                        }));
+                      }}
+                      placeholder="https://www.youtube.com/watch?v=QF3BmojTrKQ"
+                      className="w-full px-3 py-2 bg-white border border-rose-300 rounded-lg text-xs font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-rose-950 mb-1">
+                      Video Duration
+                    </label>
+                    <input
+                      type="text"
+                      value={portfolioForm.duration}
+                      onChange={(e) => setPortfolioForm((p) => ({ ...p, duration: e.target.value }))}
+                      placeholder="4:12"
+                      className="w-full px-3 py-2 bg-white border border-rose-300 rounded-lg text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="sm:col-span-2">
               <div className="flex items-center justify-between mb-1">

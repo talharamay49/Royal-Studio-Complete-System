@@ -31,6 +31,7 @@ import { Modal } from '../components/common/Modal';
 import { EventQrModal } from '../components/common/EventQrModal';
 import { IntegratedBookingModal } from '../components/common/IntegratedBookingModal';
 import { Event, EventStatus } from '../types';
+import { LUXURY_ADDON_CATALOG } from '@/lib/pricing/unifiedPricing';
 
 interface CalendarPageProps {
   navigate: (path: string) => void;
@@ -56,12 +57,15 @@ const HOURS_SLOTS = [
   '23:00',
 ];
 
-const BOOKING_ADDONS = [
-  { id: 'addon-drone', name: '4K Drone Aerial Coverage', price: 25000 },
-  { id: 'addon-sde', name: 'Same-Day Edit (SDE) Highlight Reel', price: 30000 },
-  { id: 'addon-gimbal', name: 'Ronin 4D / Crane Cinema Rig', price: 20000 },
-  { id: 'addon-album', name: 'Luxury Italian Acrylic Album', price: 35000 },
-];
+const BOOKING_ADDONS = LUXURY_ADDONS_FOR_CALENDAR();
+
+function LUXURY_ADDONS_FOR_CALENDAR() {
+  return LUXURY_ADDON_CATALOG.map((item) => ({
+    id: item.id,
+    name: item.label,
+    price: item.price,
+  }));
+}
 
 function toDateStr(d: Date): string {
   const y = d.getFullYear();
@@ -88,9 +92,19 @@ export const CalendarPage: React.FC<CalendarPageProps> = ({ navigate }) => {
     addToast,
   } = useStudioData();
 
-  // Initialize calendar to current month
-  const [currentDate, setCurrentDate] = useState<Date>(() => new Date('2026-10-15T12:00:00'));
-  const [selectedDateStr, setSelectedDateStr] = useState<string>('2026-10-25');
+  // Initialize calendar dynamically to first upcoming active event month or current month
+  const [currentDate, setCurrentDate] = useState<Date>(() => {
+    const firstActive = events.find((e) => e.status !== 'Cancelled' && e.eventDate);
+    if (firstActive?.eventDate) {
+      const parsed = new Date(`${firstActive.eventDate}T12:00:00`);
+      if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    return new Date();
+  });
+  const [selectedDateStr, setSelectedDateStr] = useState<string>(() => {
+    const firstActive = events.find((e) => e.status !== 'Cancelled' && e.eventDate);
+    return firstActive?.eventDate || toDateStr(new Date());
+  });
   const [viewMode, setViewMode] = useState<CalendarViewMode>('MONTH');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('ALL');

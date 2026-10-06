@@ -31,7 +31,9 @@ import {
   BookOpen,
   Film,
   QrCode,
+  FileText,
 } from "lucide-react";
+import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
 import { generateQuotationPDF } from "@/components/admin/utils/pdfGenerator";
 import ProposalPrintPreviewModal from "@/components/proposal/ProposalPrintPreviewModal";
@@ -357,6 +359,264 @@ export default function ClientProposalPage() {
     navigator.clipboard.writeText(window.location.href);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2500);
+  }
+
+  function buildAuditTrailRecords() {
+    if (!data) return [];
+    const { event: evt, client: cli, quotation: quo, profile: prof } = data;
+    const nowIso = new Date().toISOString();
+    if (Array.isArray(evt.approvalHistory) && evt.approvalHistory.length > 0) {
+      return evt.approvalHistory;
+    }
+    const fallbackEntries = [
+      {
+        id: `hist-issued-${evt.id}`,
+        action: "ISSUED" as const,
+        timestamp: quo.issueDate ? `${quo.issueDate}T09:00:00.000Z` : evt.createdDate || nowIso,
+        actorName: prof.studioName || "Royal Studio",
+        details: `Official Proposal ${quo.quotationNumber} generated & issued to ${cli.name}`,
+      },
+      {
+        id: `hist-viewed-${evt.id}`,
+        action: "VIEWED" as const,
+        timestamp: evt.proposalFirstViewedAt || nowIso,
+        actorName: cli.name,
+        signatureName: evt.approvedByClient || signatureName || cli.name,
+        details: `Proposal opened and reviewed online by ${cli.name}`,
+      },
+    ];
+    if (evt.approvedByClient || evt.approvedAt) {
+      fallbackEntries.push({
+        id: `hist-accepted-${evt.id}`,
+        action: "ACCEPTED" as any,
+        timestamp: evt.approvedAt || evt.updatedDate || nowIso,
+        actorName: evt.approvedByClient || cli.name,
+        signatureName: evt.approvedByClient || cli.name,
+        details: `Digitally signed & accepted proposal terms as "${evt.approvedByClient || cli.name}"`,
+      });
+    }
+    return fallbackEntries;
+  }
+
+  function handleExportAuditTrailText() {
+    if (!data || typeof window === "undefined") return;
+    const { event: evt, client: cli, quotation: quo, profile: prof } = data;
+    const signer =
+      evt.approvedByClient ||
+      (Boolean(evt.approvedByClient) || approvalSuccess ? signatureName || cli.name : "Not signed yet");
+    const firstViewed = formatDateTimeStamp(evt.proposalFirstViewedAt || new Date().toISOString());
+    const lastViewed = evt.proposalLastViewedAt
+      ? formatDateTimeStamp(evt.proposalLastViewedAt)
+      : firstViewed;
+    const acceptedStamp = evt.approvedAt
+      ? formatDateTimeStamp(evt.approvedAt)
+      : Boolean(evt.approvedByClient) || approvalSuccess
+      ? formatDateTimeStamp(evt.updatedDate || evt.createdDate)
+      : "Pending client sign-off";
+
+    const records = buildAuditTrailRecords();
+
+    const lines = [
+      "======================================================================",
+      `${(prof.studioName || "ROYAL STUDIO").toUpperCase()} — PROPOSAL VIEW & DIGITAL APPROVAL AUDIT TRAIL`,
+      "======================================================================",
+      `Proposal Reference : ${quo.quotationNumber}`,
+      `Event / Celebration: ${evt.title}`,
+      `Primary Event Date : ${evt.eventDate}`,
+      `Venue & City       : ${evt.venue}, ${evt.city}`,
+      `Prepared For Client: ${cli.name} (${cli.phone || cli.whatsapp || "N/A"})`,
+      `Proposal Total     : ${formatPKR(liveGrandTotal)}`,
+      `Current Status     : ${evt.status}`,
+      `Exported Timestamp : ${formatDateTimeStamp(new Date().toISOString())}`,
+      "----------------------------------------------------------------------",
+      "1. PROPOSAL VIEW VERIFICATION",
+      `   Viewer / Client Name : ${evt.approvedByClient || signatureName || cli.name}`,
+      `   First Viewed At      : ${firstViewed}`,
+      `   Latest Activity At   : ${lastViewed}`,
+      `   Total View Sessions  : ${evt.proposalViewCount || 1}`,
+      "",
+      "2. DIGITAL ACCEPTANCE & SIGNATURE RECORD",
+      `   Approval Status      : ${evt.approvedAt || evt.approvedByClient || approvalSuccess ? "DIGITALLY SIGNED & ACCEPTED" : "AWAITING CLIENT SIGN-OFF"}`,
+      `   Digital Signature    : ${signer}`,
+      `   Accepted Timestamp   : ${acceptedStamp}`,
+      "----------------------------------------------------------------------",
+      "3. CHRONOLOGICAL AUDIT LOG",
+      ...records.map(
+        (r, i) =>
+          `   [${i + 1}] ${r.action.padEnd(14, " ")} | ${formatDateTimeStamp(r.timestamp)} | ${r.details || ""}${
+            r.signatureName ? ` (Signer: ${r.signatureName})` : ""
+          }`
+      ),
+      "======================================================================",
+      `${prof.studioName || "Royal Studio"} · ${prof.address || "Burewala, Punjab, Pakistan"} · Tel: ${prof.phone || "0308-4877073"}`,
+    ];
+
+    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Royal-Studio-Audit-Trail-${quo.quotationNumber}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportAuditTrailPDF() {
+    if (!data || typeof window === "undefined") return;
+    const { event: evt, client: cli, quotation: quo, profile: prof } = data;
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const signer =
+      evt.approvedByClient ||
+      (Boolean(evt.approvedByClient) || approvalSuccess ? signatureName || cli.name : "Not signed yet");
+    const firstViewed = formatDateTimeStamp(evt.proposalFirstViewedAt || new Date().toISOString());
+    const lastViewed = evt.proposalLastViewedAt
+      ? formatDateTimeStamp(evt.proposalLastViewedAt)
+      : firstViewed;
+    const acceptedStamp = evt.approvedAt
+      ? formatDateTimeStamp(evt.approvedAt)
+      : Boolean(evt.approvedByClient) || approvalSuccess
+      ? formatDateTimeStamp(evt.updatedDate || evt.createdDate)
+      : "Pending client sign-off";
+
+    // Header bar
+    doc.setFillColor(18, 18, 22);
+    doc.rect(0, 0, 210, 38, "F");
+    doc.setDrawColor(212, 175, 55);
+    doc.setLineWidth(0.7);
+    doc.line(0, 38, 210, 38);
+
+    doc.setTextColor(212, 175, 55);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(15);
+    doc.text((prof.studioName || "ROYAL STUDIO").toUpperCase(), 14, 15);
+
+    doc.setTextColor(245, 242, 235);
+    doc.setFontSize(10);
+    doc.text("OFFICIAL PROPOSAL VIEW & DIGITAL APPROVAL AUDIT RECORD", 14, 23);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.setTextColor(180, 175, 165);
+    doc.text(
+      `Ref: ${quo.quotationNumber}  |  Exported: ${formatDateTimeStamp(new Date().toISOString())}`,
+      14,
+      31
+    );
+
+    // Event & Client Metadata Box
+    let y = 48;
+    doc.setDrawColor(212, 175, 55);
+    doc.setFillColor(249, 248, 245);
+    doc.roundedRect(14, y, 182, 34, 2, 2, "FD");
+
+    doc.setTextColor(25, 25, 30);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.text("1. PROPOSAL & CELEBRATION SUMMARY", 19, y + 8);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(`Client Name: ${cli.name}`, 19, y + 16);
+    doc.text(`Celebration: ${evt.title}`, 19, y + 22);
+    doc.text(`Venue & City: ${evt.venue}, ${evt.city}`, 19, y + 28);
+
+    doc.text(`Quotation Ref: ${quo.quotationNumber}`, 115, y + 16);
+    doc.text(`Primary Date: ${evt.eventDate}`, 115, y + 22);
+    doc.setFont("helvetica", "bold");
+    doc.text(`Proposal Total: ${formatPKR(liveGrandTotal)}`, 115, y + 28);
+
+    // Viewed & Accepted Summary Cards
+    y += 42;
+    doc.setDrawColor(200, 200, 205);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, y, 88, 36, 2, 2, "FD");
+    doc.roundedRect(108, y, 88, 36, 2, 2, "FD");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(165, 129, 55);
+    doc.text("PROPOSAL VIEWED BY CLIENT", 18, y + 8);
+    doc.setTextColor(30, 30, 35);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.text(`Viewer Name: ${evt.approvedByClient || signatureName || cli.name}`, 18, y + 16);
+    doc.text(`First Viewed: ${firstViewed}`, 18, y + 23);
+    doc.text(
+      `Latest View: ${lastViewed} (${evt.proposalViewCount || 1} session(s))`,
+      18,
+      y + 30
+    );
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9.5);
+    doc.setTextColor(16, 120, 80);
+    doc.text("DIGITAL ACCEPTANCE & SIGNATURE", 112, y + 8);
+    doc.setTextColor(30, 30, 35);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    doc.text(
+      `Status: ${evt.approvedAt || evt.approvedByClient || approvalSuccess ? "Digitally Signed & Confirmed" : "Awaiting Client Sign-Off"}`,
+      112,
+      y + 16
+    );
+    doc.setFont("helvetica", "bolditalic");
+    doc.text(`Signature Name: ${signer}`, 112, y + 23);
+    doc.setFont("helvetica", "normal");
+    doc.text(`Accepted At: ${acceptedStamp}`, 112, y + 30);
+
+    // Chronological Audit Trail
+    y += 46;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10.5);
+    doc.setTextColor(25, 25, 30);
+    doc.text("2. CHRONOLOGICAL AUDIT TRAIL", 14, y);
+
+    y += 5;
+    const records = buildAuditTrailRecords();
+    records.forEach((entry, idx) => {
+      if (y > 265) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.setDrawColor(225, 225, 230);
+      doc.setFillColor(idx % 2 === 0 ? 250 : 244, idx % 2 === 0 ? 250 : 245, idx % 2 === 0 ? 252 : 248);
+      doc.roundedRect(14, y, 182, 14, 1.5, 1.5, "FD");
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(165, 129, 55);
+      doc.text(`[${entry.action}]`, 18, y + 6);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 30, 35);
+      const cleanDetails = (entry.details || "").slice(0, 88);
+      doc.text(cleanDetails, 46, y + 6);
+
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 100, 110);
+      doc.text(
+        `Timestamp: ${formatDateTimeStamp(entry.timestamp)}${
+          entry.signatureName ? `   |   Signer: ${entry.signatureName}` : ""
+        }`,
+        46,
+        y + 11.5
+      );
+      y += 17;
+    });
+
+    // Footer
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8);
+    doc.setTextColor(120, 120, 125);
+    doc.text(
+      `${prof.studioName || "Royal Studio"} · ${prof.address || "Burewala, Punjab, Pakistan"} · Tel: ${prof.phone || "0308-4877073"}`,
+      14,
+      286
+    );
+
+    doc.save(`Royal-Studio-Approval-Audit-${quo.quotationNumber}.pdf`);
   }
 
   if (loading) {
@@ -700,6 +960,16 @@ export default function ClientProposalPage() {
 
                 <button
                   type="button"
+                  onClick={handleExportAuditTrailPDF}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#D4AF37]/35 bg-[#151519] hover:border-[#D4AF37] text-[11px] font-semibold text-[#F5F2EB] transition-colors cursor-pointer"
+                  title="Export Approval History & Audit Trail as PDF Record"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#D4AF37]" />
+                  <span>Export Audit PDF</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setIsQrModalOpen(true)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 bg-white/5 hover:border-[#D4AF37] text-[11px] font-semibold text-[#F5F2EB] transition-colors cursor-pointer"
                 >
@@ -709,19 +979,43 @@ export default function ClientProposalPage() {
               </div>
             </div>
 
-            {/* Collapsible Approval History Panel (Displays Viewed & Accepted Timestamps + Signature Name) */}
+            {/* Collapsible Approval History Panel (Displays Viewed & Accepted Timestamps + Signature Name + Audit Trail Export) */}
             {showApprovalHistory && (
-              <div className="rounded-xl border border-[#D4AF37]/35 bg-[#0D0D0F]/95 p-4 sm:p-5 space-y-4 transition-all">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
+              <div className="rounded-xl border border-[#D4AF37]/35 bg-[#0D0D0F]/95 p-4 sm:p-5 space-y-4 transition-all animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
                   <div className="flex items-center gap-2">
                     <History className="w-4 h-4 text-[#D4AF37]" />
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">
-                      Proposal View &amp; Digital Approval History
-                    </h3>
+                    <div>
+                      <h3 className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">
+                        Proposal View &amp; Digital Approval History
+                      </h3>
+                      <p className="text-[10px] text-[#A39E93] font-mono">
+                        Ref: {quotation.quotationNumber} · Official Client &amp; Admin Audit Trail
+                      </p>
+                    </div>
                   </div>
-                  <span className="text-[11px] text-[#A39E93] font-mono">
-                    Ref: {quotation.quotationNumber}
-                  </span>
+
+                  {/* Audit Trail Export Buttons (Text File & PDF Record) */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleExportAuditTrailText}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/15 bg-[#151519] hover:border-[#D4AF37] text-[#F5F2EB] text-[11px] font-semibold transition-colors cursor-pointer"
+                      title="Export view & sign timestamps as a plain text (.txt) audit file"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-[#D4AF37]" />
+                      <span>Export Audit (.TXT)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportAuditTrailPDF}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#D4AF37] hover:opacity-90 text-[#111111] text-[11px] font-bold transition-opacity cursor-pointer"
+                      title="Download official PDF Audit Trail record with view & signature timestamps"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Export Audit PDF Record</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Primary Viewed & Accepted Summary Cards */}
@@ -906,17 +1200,49 @@ export default function ClientProposalPage() {
 
               return (
                 <div className="rounded-xl border border-white/10 bg-[#0D0D0F]/80 p-4 space-y-3">
-                  {/* Interactive Stepper Nodes + Progress Track */}
-                  <div className="relative pt-1 pb-2">
-                    <div className="h-2.5 w-full rounded-full bg-white/10 overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          lifecycleStage === "CONFIRMED"
-                            ? "bg-gradient-to-r from-[#D4AF37] via-amber-400 to-emerald-400"
-                            : "bg-gradient-to-r from-[#D4AF37] to-amber-400"
-                        }`}
-                        style={{ width: `${inspectPercent}%` }}
-                      />
+                  {/* Interactive Stepper Nodes + Progress Track with Distinct Stage Icons (Pending: Clock, Approved: FileCheck, Confirmed: ShieldCheck) */}
+                  <div className="relative pt-2 pb-2">
+                    <div className="relative">
+                      <div className="h-3 w-full rounded-full bg-white/10 overflow-hidden p-0.5">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            lifecycleStage === "CONFIRMED"
+                              ? "bg-gradient-to-r from-[#D4AF37] via-amber-400 to-emerald-400"
+                              : "bg-gradient-to-r from-[#D4AF37] to-amber-400"
+                          }`}
+                          style={{ width: `${inspectPercent}%` }}
+                        />
+                      </div>
+
+                      {/* Distinct Stage Icon Nodes Positioned Along the Progress Track */}
+                      <div className="grid grid-cols-3 pointer-events-none -mt-5">
+                        {steps.map((st) => {
+                          const isLiveCurrent = lifecycleStage === st.id;
+                          const isReached =
+                            st.id === "PENDING" ||
+                            (st.id === "APPROVED" &&
+                              (lifecycleStage === "APPROVED" ||
+                                lifecycleStage === "CONFIRMED")) ||
+                            (st.id === "CONFIRMED" && lifecycleStage === "CONFIRMED");
+                          return (
+                            <div key={`node-${st.id}`} className="flex justify-center">
+                              <span
+                                className={`w-7 h-7 rounded-full border-2 flex items-center justify-center shadow-md transition-all duration-300 ${
+                                  isLiveCurrent
+                                    ? "border-[#D4AF37] bg-[#D4AF37] text-[#111111] scale-110"
+                                    : isReached
+                                    ? "border-emerald-400 bg-[#121216] text-emerald-400"
+                                    : "border-white/20 bg-[#121216] text-[#A39E93]"
+                                }`}
+                              >
+                                {st.id === "PENDING" && <Clock className="w-3.5 h-3.5" />}
+                                {st.id === "APPROVED" && <FileCheck className="w-3.5 h-3.5" />}
+                                {st.id === "CONFIRMED" && <ShieldCheck className="w-3.5 h-3.5" />}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 mt-3">
@@ -937,7 +1263,7 @@ export default function ClientProposalPage() {
                             onClick={() => setInspectedStage(st.id)}
                             onMouseEnter={() => setInspectedStage(st.id)}
                             onMouseLeave={() => setInspectedStage(null)}
-                            className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-left transition-all cursor-pointer ${
+                            className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                               isSelected
                                 ? "border-[#D4AF37] bg-[#D4AF37]/15 shadow-sm"
                                 : isReached
@@ -945,37 +1271,29 @@ export default function ClientProposalPage() {
                                 : "border-white/10 bg-[#151519]/70 opacity-75 hover:opacity-100"
                             }`}
                           >
-                            <div className="flex items-center gap-2 min-w-0">
+                            <div className="flex items-center gap-2.5 min-w-0">
                               <span
-                                className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                                className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-transform ${
                                   isLiveCurrent
                                     ? "bg-[#D4AF37] text-[#111111]"
                                     : isReached
-                                    ? "bg-emerald-500 text-slate-950"
+                                    ? "bg-emerald-500/20 border border-emerald-400/50 text-emerald-300"
                                     : "bg-white/10 text-[#A39E93]"
                                 }`}
+                                title={`${st.label} Stage Icon`}
                               >
-                                {st.id === "PENDING" &&
-                                  (lifecycleStage !== "PENDING" ? (
-                                    <Check className="w-3.5 h-3.5" />
-                                  ) : (
-                                    <Clock className="w-3.5 h-3.5" />
-                                  ))}
-                                {st.id === "APPROVED" &&
-                                  (lifecycleStage === "CONFIRMED" ? (
-                                    <Check className="w-3.5 h-3.5" />
-                                  ) : (
-                                    <FileCheck className="w-3.5 h-3.5" />
-                                  ))}
-                                {st.id === "CONFIRMED" && (
-                                  <ShieldCheck className="w-3.5 h-3.5" />
-                                )}
+                                {st.id === "PENDING" && <Clock className="w-3.5 h-3.5" />}
+                                {st.id === "APPROVED" && <FileCheck className="w-3.5 h-3.5" />}
+                                {st.id === "CONFIRMED" && <ShieldCheck className="w-3.5 h-3.5" />}
                               </span>
                               <div className="truncate">
-                                <div className="text-xs font-bold text-[#F5F2EB] flex items-center gap-1">
+                                <div className="text-xs font-bold text-[#F5F2EB] flex items-center gap-1.5">
                                   <span>
                                     {st.stepNum}. {st.label}
                                   </span>
+                                  {isReached && !isLiveCurrent && (
+                                    <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                                  )}
                                 </div>
                                 <div className="text-[10px] text-[#A39E93] truncate">
                                   {st.shortStatus}
@@ -994,20 +1312,28 @@ export default function ClientProposalPage() {
                   {/* Interactive Stage Status Callout Bar */}
                   <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#151519] border border-white/5 text-xs">
                     <div className="flex items-center gap-2 text-[#F5F2EB]">
-                      <Sparkles className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                      {activeInspect === "PENDING" && (
+                        <Clock className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                      )}
+                      {activeInspect === "APPROVED" && (
+                        <FileCheck className="w-3.5 h-3.5 text-[#D4AF37] shrink-0" />
+                      )}
+                      {activeInspect === "CONFIRMED" && (
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      )}
                       <span>
                         {steps.find((s) => s.id === activeInspect)?.summary}
                       </span>
                     </div>
                     <span className="text-[10px] font-mono text-[#D4AF37] shrink-0">
-                      Click or hover any step above to inspect
+                      Click or hover any stage above to inspect
                     </span>
                   </div>
                 </div>
               );
             })()}
 
-            {/* 3 Lifecycle Stage Cards: Pending, Approved, Confirmed */}
+            {/* 3 Lifecycle Stage Cards: Pending (Clock), Approved (FileCheck), Confirmed (ShieldCheck) */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               {/* Stage 1: Pending */}
               {(() => {
@@ -1035,11 +1361,7 @@ export default function ClientProposalPage() {
                               : "bg-white/10 text-[#A39E93]"
                           }`}
                         >
-                          {isCompleted ? (
-                            <Check className="w-3.5 h-3.5" />
-                          ) : (
-                            <Clock className="w-3.5 h-3.5" />
-                          )}
+                          <Clock className="w-3.5 h-3.5" />
                         </div>
                         <span className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">
                           1. Pending
@@ -1091,11 +1413,7 @@ export default function ClientProposalPage() {
                               : "bg-white/10 text-[#A39E93]"
                           }`}
                         >
-                          {isCompleted ? (
-                            <Check className="w-3.5 h-3.5" />
-                          ) : (
-                            <FileCheck className="w-3.5 h-3.5" />
-                          )}
+                          <FileCheck className="w-3.5 h-3.5" />
                         </div>
                         <span className="text-xs font-bold uppercase tracking-wider text-[#F5F2EB]">
                           2. Approved
@@ -1459,11 +1777,12 @@ export default function ClientProposalPage() {
                     onFocus={() => setHoveredMilestoneIdx(idx)}
                     onBlur={() => setHoveredMilestoneIdx(null)}
                     tabIndex={0}
-                    className="group relative rounded-xl border border-white/10 hover:border-[#D4AF37]/60 bg-[#0D0D0F] p-4 transition-all focus:outline-none focus:border-[#D4AF37]"
+                    className="group relative rounded-xl border border-white/10 hover:border-[#D4AF37]/60 bg-[#0D0D0F] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_24px_rgba(212,175,55,0.16)] focus:outline-none focus:border-[#D4AF37]"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="space-y-1">
                         <div className="text-xs font-bold text-[#F5F2EB] flex flex-wrap items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-[#D4AF37]/70 group-hover:bg-[#D4AF37] group-hover:animate-ping shrink-0" />
                           <span>{m.stage}</span>
                           <span className="text-[#A39E93] font-normal">·</span>
                           <span
@@ -1473,31 +1792,31 @@ export default function ClientProposalPage() {
                           >
                             {m.isPaid ? "Completed" : `Due: ${m.dueDate}`}
                           </span>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] font-semibold text-[#D4AF37]">
-                            <Sparkles className="w-2.5 h-2.5" />
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white/5 border border-white/10 group-hover:border-[#D4AF37]/50 group-hover:bg-[#D4AF37]/10 text-[10px] font-semibold text-[#D4AF37] transition-all">
+                            <Sparkles className="w-2.5 h-2.5 group-hover:animate-pulse" />
                             <span>{m.workflowBadge}</span>
                             <Info className="w-3 h-3 text-[#A39E93] group-hover:text-[#D4AF37]" />
                           </span>
                         </div>
                         <p className="text-[11px] text-[#A39E93]">{m.description}</p>
                       </div>
-                      <div className="font-mono text-sm font-bold text-[#F5F2EB] shrink-0">
+                      <div className="font-mono text-sm font-bold text-[#F5F2EB] group-hover:text-[#D4AF37] transition-colors shrink-0">
                         {formatPKR(m.amount)}
                       </div>
                     </div>
 
-                    {/* Interactive Hover-Based Tooltip for Editing & Album Design Stage Summary */}
+                    {/* Interactive Hover-Based Tooltip for Editing & Album Design Stage Summary with Entrance Animation */}
                     <div
                       role="tooltip"
-                      className={`mt-3 pt-3 border-t border-[#D4AF37]/35 bg-gradient-to-b from-[#1A1A22] to-[#141419] rounded-xl p-3.5 text-xs space-y-2.5 shadow-xl transition-all duration-200 ${
+                      className={`mt-3 pt-3 border-t border-[#D4AF37]/35 bg-gradient-to-b from-[#1A1A22] to-[#141419] rounded-xl p-3.5 text-xs space-y-2.5 shadow-xl transition-all duration-300 ${
                         isTooltipOpen
-                          ? "block opacity-100 translate-y-0"
-                          : "hidden group-hover:block opacity-0 group-hover:opacity-100"
+                          ? "block opacity-100 translate-y-0 animate-in fade-in zoom-in-95 slide-in-from-top-2 duration-300"
+                          : "hidden group-hover:block opacity-0 group-hover:opacity-100 group-hover:animate-in group-hover:fade-in group-hover:slide-in-from-top-2"
                       }`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <span className="font-bold text-[#D4AF37] flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5" />
+                          <Sparkles className="w-3.5 h-3.5 animate-pulse" />
                           <span>{m.tooltipTitle}</span>
                         </span>
                         <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded">
