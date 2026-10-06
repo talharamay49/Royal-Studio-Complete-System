@@ -1,0 +1,42 @@
+{
+  "name": "Royal Studio — Luxury Wedding Photography & Production ERP",
+  "short_name": "Royal Studio",
+  "description": "Royal Studio Pakistan — Luxury Wedding Photography, Cinematography, Client Proofing Portal & Offline Field Crew ERP.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0A0A0A",
+  "theme_color": "#D4AF37",
+  "categories": ["photography", "business", "productivity", "lifestyle"],
+  "icons": [
+    {
+      "src": "/RoyalLogo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/RoyalLogo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Client & Crew Portal",
+      "short_name": "Portal Login",
+      "description": "Sign in to Client Portal, Staff Field Crew Mode, or Admin ERP",
+      "url": "/admin",
+      "icons": [{ "src": "/RoyalLogo.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Wedding Packages",
+      "short_name": "Packages",
+      "description": "Explore Royal Studio wedding photography & film packages",
+      "url": "/pricing",
+      "icons": [{ "src": "/RoyalLogo.png", "sizes": "192x192" }]
+    }
+  ]
+}

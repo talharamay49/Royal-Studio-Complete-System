@@ -5,7 +5,8 @@ import {
   Clock,
   AlertCircle,
   ShieldAlert,
-  Palette
+  Palette,
+  Smartphone,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useStudioData } from '../../context/StudioDataContext';
@@ -26,6 +27,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   const {
     user,
     isAdmin,
+    isClient,
     idleRemainingSeconds,
     idleTimeoutMinutes,
     setIdleTimeoutMinutes,
@@ -43,6 +45,12 @@ export const Topbar: React.FC<TopbarProps> = ({
   const isWarningSoon = idleRemainingSeconds <= 120;
 
   const formatPathTitle = (path: string): string => {
+    if (isClient) {
+      if (path === '/invoices' || path === '/finance' || path === '/client-payments') return 'My Payments & Invoices';
+      if (path === '/client-gallery' || path === '/gallery') return 'Private Photo Proofing & Album Selection';
+      if (path === '/profile') return 'My Client Profile & Account';
+      return 'Booked Client Portal';
+    }
     if (path === '/' || path === '/dashboard') return 'Studio Overview';
     if (path === '/website-cms' || path === '/portfolio-cms') return 'Website & Portfolio CMS';
     if (path === '/theme-customizer' || path === '/theme' || path === '/appearance') return 'Admin Theme Customizer';
@@ -145,6 +153,21 @@ export const Topbar: React.FC<TopbarProps> = ({
             <option value={60} className="bg-surface text-primary">60m Idle</option>
           </select>
         </div>
+
+        {/* Install PWA & Offline Crew App Quick Button */}
+        <button
+          type="button"
+          onClick={() => {
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('royal-studio-install-pwa'));
+            }
+          }}
+          className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background hover:bg-accent/10 border border-border hover:border-accent text-xs font-semibold text-primary transition-all cursor-pointer"
+          title="Install Royal Studio PWA App (Offline Field Crew Mode & Client Portal)"
+        >
+          <Smartphone className="w-3.5 h-3.5 text-accent" />
+          <span>Install App</span>
+        </button>
 
         {/* Admin Theme Customizer Quick Button */}
         {isAdmin && (

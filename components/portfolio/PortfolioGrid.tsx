@@ -19,8 +19,16 @@ import {
   ChevronLeft,
   ChevronRight,
   RotateCcw,
+  Search,
+  LayoutGrid,
+  Columns3,
 } from "lucide-react";
-import { portfolioCategories, extractYoutubeId, resolveAboutImageSrc } from "@/lib/data";
+import {
+  portfolioCategories,
+  weddingFilms,
+  extractYoutubeId,
+  resolveAboutImageSrc,
+} from "@/lib/data";
 import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import type { PortfolioCategory, PortfolioItem } from "@/types";
 import BreadcrumbNav from "@/components/layout/BreadcrumbNav";
@@ -45,6 +53,8 @@ export default function PortfolioGrid({
   const { portfolioItems, websiteCustomization, isLoading } = usePublicWebsiteCMS();
   const [activeFilter, setActiveFilter] = useState<PortfolioCategory>("all");
   const [mediaFilter, setMediaFilter] = useState<"all" | "image" | "video">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [layoutMode, setLayoutMode] = useState<"masonry" | "grid">("masonry");
   const [lightbox, setLightbox] = useState<PortfolioItem | null>(null);
   const [lightboxImgError, setLightboxImgError] = useState(false);
 
@@ -52,7 +62,7 @@ export default function PortfolioGrid({
     showHeading && websiteCustomization?.sectionVisibility?.homePortfolioLimit
       ? websiteCustomization.sectionVisibility.homePortfolioLimit
       : limit;
-  const [visibleCount, setVisibleCount] = useState(effectiveLimit ?? 12);
+  const [visibleCount, setVisibleCount] = useState(effectiveLimit ?? 16);
 
   const portfolioLabel = websiteCustomization?.sections?.portfolioLabel || "Portfolio";
   const portfolioTitle = websiteCustomization?.sections?.portfolioTitle || "Stories We've Told";
@@ -70,10 +80,52 @@ export default function PortfolioGrid({
     }
   }, []);
 
-  const visiblePortfolioItems = useMemo(
-    () => portfolioItems.filter((item) => item.visible !== false),
-    [portfolioItems]
-  );
+  // Merge CMS portfolio items with curated 4K Wedding Films so the "Films" filter and categories are rich
+  const visiblePortfolioItems = useMemo(() => {
+    const baseItems = portfolioItems.filter((item) => item.visible !== false);
+    const existingIds = new Set(baseItems.map((i) => i.id));
+    const existingYoutubeIds = new Set(
+      baseItems
+        .filter((i) => i.videoUrl)
+        .map((i) => extractYoutubeId(i.videoUrl))
+    );
+
+    const filmItems: PortfolioItem[] = weddingFilms
+      .filter(
+        (film) =>
+          !existingIds.has(9000 + Number(film.id)) &&
+          !existingYoutubeIds.has(film.youtubeId)
+      )
+      .map((film, idx) => {
+        const titleLower = film.title.toLowerCase();
+        let cat: Exclude<PortfolioCategory, "all"> = "barat";
+        if (titleLower.includes("mehndi") || titleLower.includes("mayoun")) {
+          cat = "mehndi";
+        } else if (titleLower.includes("walima")) {
+          cat = "walima";
+        } else if (titleLower.includes("nikah")) {
+          cat = "nikah";
+        } else if (titleLower.includes("groom")) {
+          cat = "groom";
+        }
+        return {
+          id: 9000 + (Number(film.id) || idx + 1),
+          title: film.title,
+          category: cat,
+          image: `https://i.ytimg.com/vi/${film.youtubeId}/hqdefault.jpg`,
+          aspect: "wide",
+          location: film.location,
+          mediaType: "video",
+          videoUrl: `https://www.youtube.com/watch?v=${film.youtubeId}`,
+          duration: film.duration,
+          sourcePlatform: "youtube",
+          socialHandle: "@royalstudio089",
+          visible: true,
+        };
+      });
+
+    return [...baseItems, ...filmItems];
+  }, [portfolioItems]);
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = { all: visiblePortfolioItems.length };
@@ -83,15 +135,32 @@ export default function PortfolioGrid({
     return counts;
   }, [visiblePortfolioItems]);
 
+  // Show categories that have items (or are currently selected) to keep the filter bar clean & uncluttered
+  const displayedCategories = useMemo(() => {
+    return portfolioCategories.filter(
+      (cat) =>
+        cat.id === "all" ||
+        (categoryCounts[cat.id] ?? 0) > 0 ||
+        activeFilter === cat.id
+    );
+  }, [categoryCounts, activeFilter]);
+
   const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
     return visiblePortfolioItems.filter((item) => {
       const catMatch = activeFilter === "all" || item.category === activeFilter;
       const typeMatch =
         mediaFilter === "all" ||
         (mediaFilter === "video" ? item.mediaType === "video" : item.mediaType !== "video");
-      return catMatch && typeMatch;
+      const queryMatch =
+        !q ||
+        item.title.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q) ||
+        (item.location && item.location.toLowerCase().includes(q)) ||
+        (item.caption && item.caption.toLowerCase().includes(q));
+      return catMatch && typeMatch && queryMatch;
     });
-  }, [visiblePortfolioItems, activeFilter, mediaFilter]);
+  }, [visiblePortfolioItems, activeFilter, mediaFilter, searchQuery]);
 
   const displayed = effectiveLimit
     ? filtered.slice(0, effectiveLimit)
@@ -192,13 +261,14 @@ export default function PortfolioGrid({
                 Showing <strong className="text-primary">{displayed.length}</strong> of{" "}
                 <strong className="text-primary">{filtered.length}</strong> works
               </span>
-              {(activeFilter !== "all" || mediaFilter !== "all") && (
+              {(activeFilter !== "all" || mediaFilter !== "all" || searchQuery.trim() !== "") && (
                 <button
                   type="button"
                   onClick={() => {
                     setActiveFilter("all");
                     setMediaFilter("all");
-                    setVisibleCount(limit ?? 12);
+                    setSearchQuery("");
+                    setVisibleCount(limit ?? 16);
                   }}
                   className="inline-flex items-center gap-1 text-accent hover:underline cursor-pointer"
                 >
@@ -210,13 +280,13 @@ export default function PortfolioGrid({
           </div>
         )}
 
-        {/* Unified Editorial Filter & Media Control Bar */}
+        {/* Unified Editorial Filter, Search & Layout Control Bar */}
         <AnimatedSection>
-          <div className="mb-8 rounded-xl border border-border bg-background/80 p-3 sm:p-4 shadow-2xs">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="mb-8 rounded-2xl border border-border bg-background/90 p-3.5 sm:p-4 shadow-2xs space-y-3">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
               {/* Category Filter Tabs */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 lg:flex-wrap no-scrollbar">
-                {portfolioCategories.map((cat) => {
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 xl:pb-0 xl:flex-wrap no-scrollbar">
+                {displayedCategories.map((cat) => {
                   const count = categoryCounts[cat.id] ?? 0;
                   const isActive = activeFilter === cat.id;
                   return (
@@ -225,7 +295,7 @@ export default function PortfolioGrid({
                       type="button"
                       onClick={() => {
                         setActiveFilter(cat.id);
-                        setVisibleCount(limit ?? 12);
+                        setVisibleCount(limit ?? 16);
                       }}
                       className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-medium tracking-wider uppercase whitespace-nowrap transition-all duration-200 cursor-pointer ${
                         isActive
@@ -248,31 +318,93 @@ export default function PortfolioGrid({
                 })}
               </div>
 
-              {/* Media Type Switcher */}
-              {hasVideosInPortfolio && (
-                <div className="flex items-center gap-1.5 self-start lg:self-auto shrink-0 border-t lg:border-t-0 lg:border-l border-border pt-2.5 lg:pt-0 lg:pl-3 w-full lg:w-auto">
-                  {(
-                    [
-                      { id: "all", label: "All Media" },
-                      { id: "image", label: "Photos" },
-                      { id: "video", label: "Films" },
-                    ] as const
-                  ).map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setMediaFilter(tab.id)}
-                      className={`rounded-lg px-3 py-1.5 text-[11px] font-medium tracking-wider uppercase transition-all cursor-pointer ${
-                        mediaFilter === tab.id
-                          ? "bg-accent text-[#111111] font-semibold shadow-2xs"
-                          : "border border-border/70 bg-surface text-text-muted hover:border-accent hover:text-primary"
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
+              {/* Right Controls: Search + Media Type + Layout Mode */}
+              <div className="flex flex-wrap items-center justify-between xl:justify-end gap-2 border-t xl:border-t-0 border-border pt-2.5 xl:pt-0 shrink-0">
+                {!showHeading && (
+                  <div className="relative flex-1 sm:flex-initial sm:w-52">
+                    <Search
+                      size={13}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+                    />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search venue, city, style..."
+                      className="w-full rounded-lg border border-border/80 bg-surface pl-8 pr-7 py-1.5 text-xs text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+                    />
+                    {searchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSearchQuery("")}
+                        aria-label="Clear search"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary cursor-pointer"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {hasVideosInPortfolio && (
+                  <div className="flex items-center gap-1 rounded-lg border border-border/80 bg-surface p-0.5">
+                    {(
+                      [
+                        { id: "all", label: "All Media" },
+                        { id: "image", label: "Photos" },
+                        { id: "video", label: "4K Films" },
+                      ] as const
+                    ).map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setMediaFilter(tab.id)}
+                        className={`rounded-md px-2.5 py-1 text-[11px] font-medium tracking-wider uppercase transition-all cursor-pointer ${
+                          mediaFilter === tab.id
+                            ? "bg-accent text-[#111111] font-semibold shadow-2xs"
+                            : "text-text-muted hover:text-primary"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Masonry vs Uniform Grid Switcher */}
+                <div
+                  className="hidden sm:flex items-center gap-0.5 rounded-lg border border-border/80 bg-surface p-0.5"
+                  role="group"
+                  aria-label="Gallery layout mode"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setLayoutMode("masonry")}
+                    title="Editorial Masonry (True Aspect Ratio)"
+                    className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${
+                      layoutMode === "masonry"
+                        ? "bg-primary text-secondary"
+                        : "text-text-muted hover:text-primary"
+                    }`}
+                  >
+                    <Columns3 size={13} />
+                    <span className="hidden md:inline">Masonry</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLayoutMode("grid")}
+                    title="Uniform Cinema Grid"
+                    className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all cursor-pointer ${
+                      layoutMode === "grid"
+                        ? "bg-primary text-secondary"
+                        : "text-text-muted hover:text-primary"
+                    }`}
+                  >
+                    <LayoutGrid size={13} />
+                    <span className="hidden md:inline">Grid</span>
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
           </div>
         </AnimatedSection>
@@ -281,14 +413,13 @@ export default function PortfolioGrid({
           <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-background px-6 py-20 text-center">
             <Camera size={32} className="mb-4 text-accent/60" strokeWidth={1.5} />
             <h3 className="font-display text-2xl text-primary">
-              {portfolioCategories.find((cat) => cat.id === activeFilter)?.label}{" "}
-              Stories Are on the Way
+              {searchQuery.trim()
+                ? `No matches for "${searchQuery}"`
+                : `${portfolioCategories.find((cat) => cat.id === activeFilter)?.label || "Selected"} Stories Are on the Way`}
             </h3>
             <p className="mt-2 max-w-md text-sm text-text-muted">
-              We&apos;re adding new work to this category soon. In the meantime,
-              browse our full portfolio or reach out to see recent{" "}
-              {portfolioCategories.find((cat) => cat.id === activeFilter)?.label.toLowerCase()}{" "}
-              coverage.
+              We&apos;re curating new work for this selection. Reset filters to explore our
+              complete gallery of weddings, bridal portraits, and 4K cinema films.
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <Button
@@ -296,6 +427,7 @@ export default function PortfolioGrid({
                 onClick={() => {
                   setActiveFilter("all");
                   setMediaFilter("all");
+                  setSearchQuery("");
                 }}
               >
                 View Full Portfolio
@@ -307,11 +439,21 @@ export default function PortfolioGrid({
           </div>
         ) : (
           <div
-            key={`${activeFilter}-${mediaFilter}`}
-            className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+            key={`${activeFilter}-${mediaFilter}-${layoutMode}`}
+            className={
+              layoutMode === "masonry"
+                ? "columns-1 sm:columns-2 lg:columns-3 2xl:columns-4 gap-6 space-y-6"
+                : "grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+            }
           >
             {displayed.map((item, i) => {
               const isVideo = item.mediaType === "video";
+              const cardAspect =
+                layoutMode === "masonry"
+                  ? isVideo
+                    ? "wide"
+                    : item.aspect || "tall"
+                  : "wide";
               return (
                 <motion.button
                   key={item.id}
@@ -323,12 +465,14 @@ export default function PortfolioGrid({
                     setLightboxImgError(false);
                     setLightbox(item);
                   }}
-                  className="group relative flex flex-col overflow-hidden rounded-xl border border-border/70 bg-background text-left shadow-premium transition-all duration-300 hover:-translate-y-1 hover:border-accent/60 hover:shadow-premium-lg cursor-pointer"
+                  className={`group relative flex w-full flex-col overflow-hidden rounded-xl border border-border/70 bg-background text-left shadow-premium transition-all duration-300 hover:-translate-y-1 hover:border-accent/60 hover:shadow-premium-lg cursor-pointer ${
+                    layoutMode === "masonry" ? "break-inside-avoid mb-6" : ""
+                  }`}
                 >
                   <OptimizedThumbnail
                     src={item.image}
                     alt={item.title}
-                    aspect="wide"
+                    aspect={cardAspect}
                     focalPoint={
                       item.aspect === "tall" ||
                       item.category === "bridal" ||
@@ -365,7 +509,7 @@ export default function PortfolioGrid({
                         {isVideo && (
                           <span className="inline-flex items-center gap-1 rounded-md bg-red-600/90 px-2.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase text-white backdrop-blur-xs">
                             <Play size={9} className="fill-white" />
-                            <span>{item.duration || "Video"}</span>
+                            <span>{item.duration || "4K Film"}</span>
                           </span>
                         )}
                       </div>
@@ -375,7 +519,7 @@ export default function PortfolioGrid({
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#111111]/95 via-[#111111]/55 to-transparent p-4 pt-12 text-[#f5f2eb] transition-all duration-300">
                       <div className="flex items-center justify-between gap-2">
                         <span className="text-[10px] font-semibold tracking-[0.2em] uppercase text-accent">
-                          {item.category} {isVideo ? "· Film" : ""}
+                          {item.category} {isVideo ? "· 4K Film" : ""}
                         </span>
                         {(item.likesCount || item.viewsCount) && (
                           <div className="flex items-center gap-2.5 text-[10px] text-[#f5f2eb]/80">

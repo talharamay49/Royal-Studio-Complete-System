@@ -204,17 +204,13 @@ export default function GlobalSearchModal({
         aria-label="Search portfolio, services, and journal"
         title="Search (Ctrl+K)"
         className={cn(
-          "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-all cursor-pointer",
+          "inline-flex h-9 w-9 items-center justify-center rounded-full border transition-all cursor-pointer shrink-0",
           scrolled
-            ? "border-border bg-surface/80 text-primary hover:border-accent hover:text-accent"
-            : "border-white/25 bg-black/30 text-white hover:border-accent hover:text-accent"
+            ? "border-border bg-surface/90 text-primary hover:border-accent hover:text-accent"
+            : "border-white/20 bg-black/40 text-white hover:border-accent hover:text-accent"
         )}
       >
-        <Search size={14} />
-        <span className="hidden xl:inline">Search</span>
-        <kbd className="hidden xl:inline-block rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-mono opacity-75">
-          ⌘K
-        </kbd>
+        <Search size={15} />
       </button>
 
       <AnimatePresence>

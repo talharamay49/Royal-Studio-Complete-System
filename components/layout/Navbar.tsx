@@ -116,59 +116,86 @@ export default function Navbar() {
       <motion.header
         initial={{ y: -100 }}
         animate={{ y: 0 }}
-        transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
         className={cn(
-          "fixed top-0 right-0 left-0 z-50 transition-all duration-500",
+          "fixed top-0 right-0 left-0 z-50 transition-all duration-300",
           scrolled
-            ? "glass border-b border-border shadow-premium"
-            : "bg-transparent"
+            ? "bg-surface/95 backdrop-blur-xl border-b border-border shadow-[0_8px_30px_rgba(0,0,0,0.12)] py-2.5"
+            : "bg-gradient-to-b from-black/80 via-black/45 to-transparent py-4"
         )}
       >
-        <nav className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 md:px-12">
-          <Logo />
+        <nav className="mx-auto flex max-w-7xl 2xl:max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-10">
+          {/* Left Zone: Brand Logo */}
+          <div className="flex items-center shrink-0">
+            <Logo />
+          </div>
 
-          <ul className="hidden items-center gap-7 lg:flex">
+          {/* Center Zone: Crisp Single-Line Editorial Navigation */}
+          <ul className="hidden xl:flex items-center justify-center gap-6 2xl:gap-8">
             {activeNavLinks.map((link) => {
-              const isActive = pathname === link.href;
+              const isActive =
+                link.href === "/"
+                  ? pathname === "/"
+                  : pathname === link.href || pathname?.startsWith(`${link.href}/`);
               return (
-                <li key={link.href}>
+                <li key={link.href} className="shrink-0">
                   <Link
                     href={link.href}
                     onClick={(e) => handleNavLinkClick(e, link.href)}
                     className={cn(
-                      "text-xs font-medium tracking-widest uppercase transition-colors duration-300",
+                      "relative py-1.5 text-[11px] font-semibold tracking-[0.18em] uppercase whitespace-nowrap transition-colors duration-200",
                       isActive
-                        ? "text-accent font-semibold"
+                        ? "text-accent"
                         : scrolled
-                        ? "text-text hover:text-accent"
-                        : "text-secondary/90 hover:text-accent"
+                        ? "text-primary/85 hover:text-accent"
+                        : "text-white/90 hover:text-accent"
                     )}
                   >
                     {link.label}
+                    {isActive && (
+                      <motion.span
+                        layoutId="navbar-active-indicator"
+                        className="absolute inset-x-0 -bottom-0.5 h-[2px] rounded-full bg-accent"
+                      />
+                    )}
                   </Link>
                 </li>
               );
             })}
           </ul>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          {/* Right Zone: Search, Theme, Client Portal & Primary Booking CTA */}
+          <div className="flex items-center gap-2 shrink-0">
             <GlobalSearchModal scrolled={scrolled} />
 
             <ThemeToggle
               variant="icon"
               className={cn(
-                "rounded-full",
+                "h-9 w-9 rounded-full shrink-0",
                 scrolled
-                  ? "border-border bg-surface/80 text-primary hover:border-accent hover:text-accent"
-                  : "border-white/25 bg-black/30 text-white hover:border-accent hover:text-accent"
+                  ? "border-border bg-surface/90 text-primary hover:border-accent hover:text-accent"
+                  : "border-white/20 bg-black/40 text-white hover:border-accent hover:text-accent"
               )}
             />
+
+            <Link
+              href="/admin"
+              className={cn(
+                "hidden md:inline-flex h-9 items-center justify-center rounded-full border px-3.5 text-[11px] font-semibold tracking-[0.14em] uppercase whitespace-nowrap transition-all shrink-0",
+                scrolled
+                  ? "border-border bg-surface/90 text-primary hover:border-accent hover:text-accent"
+                  : "border-white/25 bg-black/40 text-white hover:border-accent hover:text-accent"
+              )}
+              title="Client Portal & Studio Login"
+            >
+              <span>Client Portal</span>
+            </Link>
 
             <Button
               asChild
               variant="accent"
               size="sm"
-              className="hidden sm:inline-flex"
+              className="hidden sm:inline-flex h-9 rounded-full px-4 text-[11px] font-bold tracking-[0.14em] uppercase whitespace-nowrap shrink-0 shadow-sm"
             >
               <Link
                 href={headerCtaHref}
@@ -177,15 +204,19 @@ export default function Navbar() {
                 {headerCtaLabel}
               </Link>
             </Button>
+
             <button
+              type="button"
               onClick={() => setMobileOpen(!mobileOpen)}
               className={cn(
-                "relative z-50 p-2 lg:hidden transition-colors cursor-pointer",
-                scrolled || mobileOpen ? "text-primary" : "text-secondary"
+                "relative z-50 inline-flex h-9 w-9 items-center justify-center rounded-full border xl:hidden transition-colors cursor-pointer shrink-0",
+                scrolled || mobileOpen
+                  ? "border-border bg-surface/90 text-primary hover:border-accent"
+                  : "border-white/20 bg-black/40 text-white hover:border-accent"
               )}
               aria-label={mobileOpen ? "Close menu" : "Open menu"}
             >
-              {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+              {mobileOpen ? <X size={18} /> : <Menu size={18} />}
             </button>
           </div>
         </nav>
@@ -197,22 +228,22 @@ export default function Navbar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-y-auto bg-surface px-6 py-20 lg:hidden"
+            className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-y-auto bg-surface/98 backdrop-blur-xl px-6 py-24 xl:hidden"
           >
-            <ul className="flex flex-col items-center gap-5 sm:gap-7">
+            <ul className="flex flex-col items-center gap-5">
               {activeNavLinks.map((link, i) => (
                 <motion.li
                   key={link.href}
-                  initial={{ opacity: 0, y: 16 }}
+                  initial={{ opacity: 0, y: 12 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
+                  transition={{ delay: i * 0.04 }}
                 >
                   <Link
                     href={link.href}
                     onClick={(e) => handleNavLinkClick(e, link.href)}
                     className={cn(
-                      "font-display text-2xl sm:text-3xl transition-colors hover:text-accent",
-                      pathname === link.href ? "text-accent" : "text-primary"
+                      "font-display text-2xl sm:text-3xl tracking-wide transition-colors hover:text-accent",
+                      pathname === link.href ? "text-accent font-semibold" : "text-primary"
                     )}
                   >
                     {link.label}
@@ -220,12 +251,12 @@ export default function Navbar() {
                 </motion.li>
               ))}
               <motion.li
-                initial={{ opacity: 0, y: 16 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: activeNavLinks.length * 0.05 }}
-                className="flex flex-col items-center gap-3 pt-2"
+                transition={{ delay: activeNavLinks.length * 0.04 }}
+                className="flex flex-col items-center gap-3 pt-4 w-full max-w-xs border-t border-border mt-2"
               >
-                <Button asChild variant="accent">
+                <Button asChild variant="accent" className="w-full rounded-full">
                   <Link
                     href={headerCtaHref}
                     onClick={(e) => handleNavLinkClick(e, headerCtaHref)}
@@ -233,13 +264,12 @@ export default function Navbar() {
                     {headerCtaLabel}
                   </Link>
                 </Button>
-                <ThemeToggle className="rounded-full px-4 py-2" />
                 <Link
                   href="/admin"
                   onClick={() => setMobileOpen(false)}
-                  className="text-xs font-medium tracking-widest uppercase text-text-muted hover:text-accent pt-2"
+                  className="inline-flex w-full items-center justify-center rounded-full border border-border bg-background px-5 py-2.5 text-xs font-semibold tracking-widest uppercase text-primary hover:border-accent hover:text-accent transition-colors"
                 >
-                  Studio Admin Portal
+                  Client &amp; Studio Portal
                 </Link>
               </motion.li>
             </ul>
@@ -247,7 +277,7 @@ export default function Navbar() {
         )}
       </AnimatePresence>
 
-      {/* Smooth Back-to-Top Floating Button */}
+      {/* Smooth Back-to-Top Floating Button — Strictly Aligned Above Bottom-Left WhatsApp Button */}
       <AnimatePresence>
         {scrolled && (
           <motion.button
@@ -258,9 +288,9 @@ export default function Navbar() {
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             aria-label="Smooth scroll to top"
             title="Scroll to top"
-            className="fixed bottom-6 left-6 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-surface/90 text-primary shadow-premium backdrop-blur-md transition-all hover:border-accent hover:text-accent cursor-pointer"
+            className="no-print fixed bottom-20 left-5 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface/95 text-primary shadow-premium backdrop-blur-md transition-all hover:border-accent hover:text-accent cursor-pointer"
           >
-            <ArrowUp size={18} />
+            <ArrowUp size={16} />
           </motion.button>
         )}
       </AnimatePresence>

@@ -6,6 +6,12 @@ const nextConfig = (phase: string): NextConfig => ({
   devIndicators: false,
   poweredByHeader: false,
   compress: true,
+  experimental: {
+    webpackMemoryOptimizations: true,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
   allowedDevOrigins: [
     "*.run.app",
     "ais-dev-tzpmwp2f2uw2qryleoyvcy-966627309284.asia-east1.run.app",

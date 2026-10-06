@@ -269,6 +269,51 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     return NextResponse.json(safeUser, { status: 201 });
   }
 
+  if (pathStr === 'users/client-login' && method === 'POST') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    const { clientId, email, password, name, phone } = await parseJsonBody(req);
+    if (!clientId || !email || !password) {
+      return NextResponse.json({ error: 'Client, email, and password are required.' }, { status: 400 });
+    }
+    const cleanEmail = String(email).toLowerCase().trim();
+    if (db.users.some(u => u.email.toLowerCase() === cleanEmail && u.linkedClientId !== clientId)) {
+      return NextResponse.json({ error: 'A login account with this email address already exists.' }, { status: 400 });
+    }
+    const client = db.clients.find(c => c.id === clientId);
+    if (!client) {
+      return NextResponse.json({ error: 'Target client not found.' }, { status: 404 });
+    }
+
+    // Remove any existing login for this client if recreating
+    db.users = db.users.filter(u => u.linkedClientId !== client.id);
+
+    const newUser: User = {
+      id: `usr-cli-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      name: name || client.name,
+      email: cleanEmail,
+      role: 'CLIENT',
+      status: 'ACTIVE',
+      linkedClientId: client.id,
+      phone: phone || client.phone,
+      password: hashPassword(String(password).trim()),
+      createdDate: new Date().toISOString(),
+    };
+    db.users.push(newUser);
+    client.hasLogin = true;
+    client.userId = newUser.id;
+    client.loginStatus = 'ACTIVE';
+    if (!client.email) client.email = cleanEmail;
+    recordAdminAudit(
+      'Client Portal Access',
+      ['hasLogin', 'email'],
+      `Created Client Portal login for "${client.name}" (${cleanEmail}).`
+    );
+    dbInstance.save();
+    const { password: _, ...safeUser } = newUser;
+    return NextResponse.json(safeUser, { status: 201 });
+  }
+
   if (slug[0] === 'users' && slug[2] === 'status' && method === 'PUT') {
     const err = requireAdminCheck();
     if (err) return err;
@@ -288,6 +333,10 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     if (targetUser.linkedTeamMemberId) {
       const tm = db.teamMembers.find(t => t.id === targetUser.linkedTeamMemberId);
       if (tm) tm.loginStatus = targetUser.status;
+    }
+    if (targetUser.linkedClientId) {
+      const cli = db.clients.find(c => c.id === targetUser.linkedClientId);
+      if (cli) cli.loginStatus = targetUser.status;
     }
     dbInstance.save();
     const { password: _, ...safeUser } = targetUser;
@@ -332,11 +381,19 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         delete tm.loginStatus;
       }
     }
+    if (deletedUser.linkedClientId) {
+      const cli = db.clients.find(c => c.id === deletedUser.linkedClientId);
+      if (cli) {
+        cli.hasLogin = false;
+        delete cli.userId;
+        delete cli.loginStatus;
+      }
+    }
     dbInstance.save();
     return NextResponse.json({ success: true, message: 'User account removed.' });
   }
 
-  // ================= STAFF OWN PROFILE UPDATE =================
+  // ================= STAFF & CLIENT OWN PROFILE UPDATE =================
   if (pathStr === 'me/profile' && method === 'PUT') {
     const err = requireAuthCheck();
     if (err) return err;
@@ -347,6 +404,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       name,
       phone,
       whatsapp,
+      address,
+      city,
       specialization,
       availabilityStatus,
       notes,
@@ -410,8 +469,28 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       }
     }
 
+    const linkedCli = db.clients.find(
+      c => c.id === targetUser.linkedClientId || c.userId === targetUser.id
+    );
+    if (linkedCli) {
+      if (typeof name === 'string' && name.trim()) linkedCli.name = name.trim();
+      if (typeof phone === 'string') linkedCli.phone = phone.trim();
+      if (typeof whatsapp === 'string') {
+        linkedCli.whatsapp = whatsapp.trim();
+        updatedFields.push('whatsapp');
+      }
+      if (typeof address === 'string') {
+        linkedCli.address = address.trim();
+        updatedFields.push('address');
+      }
+      if (typeof city === 'string') {
+        linkedCli.city = city.trim();
+        updatedFields.push('city');
+      }
+    }
+
     recordAdminAudit(
-      'Staff Profile',
+      targetUser.role === 'CLIENT' ? 'Client Profile' : 'Staff Profile',
       updatedFields.length ? updatedFields : ['profile'],
       `${targetUser.name} (${targetUser.role}) updated their personal profile (${updatedFields.join(', ') || 'details'}).`
     );
@@ -421,6 +500,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     return NextResponse.json({
       user: safeUser,
       teamMember: linkedTm ? { ...linkedTm, dailyRate: 0, eventRate: 0 } : null,
+      client: linkedCli || null,
     });
   }
 
@@ -428,6 +508,62 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
   if (pathStr === 'db/all' && method === 'GET') {
     const err = requireAuthCheck();
     if (err) return err;
+
+    const isClient = user?.role === 'CLIENT';
+    if (isClient && user) {
+      const linkedClient = db.clients.find(
+        c =>
+          c.id === user.linkedClientId ||
+          c.userId === user.id ||
+          (c.email && c.email.toLowerCase() === user.email.toLowerCase())
+      );
+      const clientId = linkedClient?.id || user.linkedClientId || '';
+      const myClientEvents = db.events
+        .filter(e => e.clientId === clientId && e.status !== 'Cancelled')
+        .map(e => ({
+          ...e,
+          staffCost: 0,
+          rentalCost: 0,
+          eventExpenses: 0,
+          netProfit: 0,
+          netMargin: 0,
+        }));
+      const myEventIds = new Set(myClientEvents.map(e => e.id));
+      const myDaySchedules = db.daySchedules.filter(ds => myEventIds.has(ds.eventId));
+      const myInvoices = db.invoices.filter(
+        inv => inv.clientId === clientId || myEventIds.has(inv.eventId)
+      );
+      const myPayments = db.payments.filter(p => myEventIds.has(p.eventId));
+      const myQuotations = db.quotations.filter(
+        q => q.clientId === clientId || myEventIds.has(q.eventId)
+      );
+
+      return NextResponse.json({
+        profile: {
+          ...db.profile,
+          bankAccounts: (db.profile.bankAccounts || []).filter(b => b.showPublicly && b.isActive),
+          paymentMethods: (db.profile.paymentMethods || []).filter(m => m.showPublicly && m.isActive),
+        },
+        users: [],
+        clients: linkedClient ? [linkedClient] : [],
+        events: myClientEvents,
+        daySchedules: myDaySchedules,
+        packages: db.packages,
+        teamMembers: [],
+        teamAssignments: [],
+        teamPayments: [],
+        equipment: [],
+        equipmentAssignments: [],
+        maintenanceLogs: [],
+        eventExpenses: [],
+        studioExpenses: [],
+        invoices: myInvoices,
+        payments: myPayments,
+        quotations: myQuotations,
+        tasks: [],
+        tempHireRecommendations: [],
+      });
+    }
 
     const isStaff = user?.role === 'STAFF';
     if (isStaff && user) {
@@ -461,7 +597,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         ...myTasks.map(t => t.eventId),
       ]);
 
-      // Strictly expose ONLY event name, date, location (venue & city), and time to Staff
+      // Strictly expose event name, date, location (venue & city), time, and field crew checklists to Staff
       const myEvents = db.events
         .filter(e => myEventIds.has(e.id) && e.status !== 'Cancelled')
         .map(e => ({
@@ -479,11 +615,14 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
           advancePaid: 0,
           discount: 0,
           tax: 0,
-          notes: '',
+          notes: e.notes || '',
           createdBy: '',
           createdDate: '',
           updatedDate: '',
-          isMultiDay: false,
+          isMultiDay: e.isMultiDay,
+          fieldCheckIns: e.fieldCheckIns || [],
+          fieldShotListCompleted: e.fieldShotListCompleted || [],
+          fieldGearVerifiedIds: e.fieldGearVerifiedIds || [],
           staffCost: 0,
           rentalCost: 0,
           eventExpenses: 0,
@@ -491,6 +630,13 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
           netMargin: 0,
           totalClientPayments: 0,
           remainingBalance: 0,
+        }));
+
+      const myDaySchedules = db.daySchedules
+        .filter(ds => myEventIds.has(ds.eventId))
+        .map(ds => ({
+          ...ds,
+          customPrice: 0,
         }));
 
       const myEquipmentAssignments = db.equipmentAssignments
@@ -521,7 +667,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         users: [],
         clients: [],
         events: myEvents,
-        daySchedules: [],
+        daySchedules: myDaySchedules,
         packages: [],
         teamMembers: linkedTm ? [{ ...linkedTm, dailyRate: 0, eventRate: 0 }] : [],
         teamAssignments: myAssignments,
@@ -552,12 +698,24 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       };
     });
 
+    const enrichedClients = db.clients.map(c => {
+      const linkedUser = db.users.find(
+        u => u.linkedClientId === c.id || (u.role === 'CLIENT' && u.id === c.userId)
+      );
+      return {
+        ...c,
+        hasLogin: !!linkedUser,
+        userId: linkedUser?.id,
+        loginStatus: linkedUser?.status || (linkedUser ? 'ACTIVE' : undefined),
+      };
+    });
+
     return NextResponse.json({
       profile: db.profile,
       profileAuditLogs: db.profileAuditLogs || [],
       cms: db.cms,
       users: db.users.map(({ password: _, ...u }) => u),
-      clients: db.clients,
+      clients: enrichedClients,
       events: db.events,
       daySchedules: db.daySchedules,
       packages: db.packages,
@@ -2602,16 +2760,35 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
 
   // ================= PAYMENTS =================
   if (pathStr === 'payments' && method === 'POST') {
-    const err = requireAdminCheck();
+    const err = requireAuthCheck();
     if (err) return err;
+    const isClientUser = user?.role === 'CLIENT';
+    if (!isAdmin && !isClientUser) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
     const body = await parseJsonBody(req);
-    const { eventId, invoiceId, amount, paymentDate, method: payMethod, reference, notes } = body;
+    const {
+      eventId,
+      invoiceId,
+      amount,
+      paymentDate,
+      method: payMethod,
+      reference,
+      notes,
+      receiptImageDataUrl,
+      senderAccountTitle,
+      verificationStatus,
+    } = body;
     const amt = Number(amount || 0);
     if (amt <= 0) {
       return NextResponse.json({ error: 'Payment amount must be greater than zero.' }, { status: 400 });
     }
     const event = db.events.find(e => e.id === eventId);
     if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+
+    const statusToSet = isClientUser
+      ? 'Pending Verification'
+      : verificationStatus || 'Verified';
 
     const newPayment = {
       id: `pay-${Date.now().toString().slice(-6)}`,
@@ -2624,11 +2801,54 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       reference: reference || '',
       notes: notes || '',
       createdBy: user?.id || 'usr-admin',
+      verificationStatus: statusToSet,
+      receiptImageDataUrl: receiptImageDataUrl || undefined,
+      senderAccountTitle: senderAccountTitle || undefined,
+      submittedByClientAt: isClientUser ? new Date().toISOString() : undefined,
+      verifiedByAdminAt: !isClientUser && statusToSet === 'Verified' ? new Date().toISOString() : undefined,
     };
     db.payments.unshift(newPayment);
     await dbInstance.recalculateEvent(eventId);
     await dbInstance.save();
     return NextResponse.json(newPayment);
+  }
+
+  if (slug[0] === 'payments' && slug[2] === 'verify' && method === 'PUT') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    const id = slug[1];
+    const body = await parseJsonBody(req);
+    const { verificationStatus, notes } = body;
+    const payment = db.payments.find(p => p.id === id);
+    if (!payment) return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+
+    payment.verificationStatus =
+      verificationStatus === 'Rejected'
+        ? 'Rejected'
+        : verificationStatus === 'Pending Verification'
+        ? 'Pending Verification'
+        : 'Verified';
+    if (payment.verificationStatus === 'Verified') {
+      payment.verifiedByAdminAt = new Date().toISOString();
+    }
+    if (typeof notes === 'string' && notes.trim()) {
+      payment.notes = notes.trim();
+    }
+
+    const evt = db.events.find(e => e.id === payment.eventId);
+    if (evt && payment.verificationStatus === 'Verified' && evt.status === 'Quotation Sent') {
+      evt.status = 'Confirmed';
+    }
+
+    recordAdminAudit(
+      'Finance & Deposit Verification',
+      ['verificationStatus'],
+      `Marked deposit ${payment.paymentId} (PKR ${payment.amount.toLocaleString()} via ${payment.method}) as ${payment.verificationStatus}.`
+    );
+
+    await dbInstance.recalculateEvent(payment.eventId);
+    await dbInstance.save();
+    return NextResponse.json({ payment, event: evt });
   }
 
   if (slug[0] === 'payments' && slug.length === 2 && method === 'DELETE') {
@@ -2642,6 +2862,69 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     await dbInstance.recalculateEvent(eventId);
     await dbInstance.save();
     return NextResponse.json({ success: true });
+  }
+
+  // ================= FIELD CREW OFFLINE SYNC & QR CHECK-IN =================
+  if (slug[0] === 'events' && slug[2] === 'field-crew' && method === 'POST') {
+    const err = requireAuthCheck();
+    if (err) return err;
+    const eventId = slug[1];
+    const event = db.events.find(e => e.id === eventId);
+    if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+
+    const body = await parseJsonBody(req);
+    const { action, checkIn, fieldShotListCompleted, fieldGearVerifiedIds, offlineCheckIns } = body;
+
+    if (!Array.isArray(event.fieldCheckIns)) event.fieldCheckIns = [];
+    if (!Array.isArray(event.fieldShotListCompleted)) event.fieldShotListCompleted = [];
+    if (!Array.isArray(event.fieldGearVerifiedIds)) event.fieldGearVerifiedIds = [];
+
+    if (action === 'CHECK_IN' && checkIn) {
+      const record = {
+        id: checkIn.id || `chk-${Date.now().toString(36)}`,
+        eventId: event.id,
+        dayNumber: checkIn.dayNumber || 1,
+        crewMemberName: checkIn.crewMemberName || user?.name || 'Crew Member',
+        crewRole: checkIn.crewRole || 'Production Crew',
+        checkedInAt: checkIn.checkedInAt || new Date().toISOString(),
+        venuePin: checkIn.venuePin || event.venue,
+        syncStatus: 'Synced' as const,
+      };
+      const existingIdx = event.fieldCheckIns.findIndex(c => c.id === record.id);
+      if (existingIdx >= 0) {
+        event.fieldCheckIns[existingIdx] = record;
+      } else {
+        event.fieldCheckIns.unshift(record);
+      }
+    }
+
+    if (Array.isArray(offlineCheckIns)) {
+      for (const item of offlineCheckIns) {
+        if (!event.fieldCheckIns.some(c => c.id === item.id)) {
+          event.fieldCheckIns.unshift({
+            ...item,
+            eventId: event.id,
+            syncStatus: 'Synced',
+          });
+        }
+      }
+    }
+
+    if (Array.isArray(fieldShotListCompleted)) {
+      event.fieldShotListCompleted = fieldShotListCompleted;
+    }
+    if (Array.isArray(fieldGearVerifiedIds)) {
+      event.fieldGearVerifiedIds = fieldGearVerifiedIds;
+    }
+
+    event.updatedDate = new Date().toISOString();
+    await dbInstance.save();
+    return NextResponse.json({
+      success: true,
+      fieldCheckIns: event.fieldCheckIns,
+      fieldShotListCompleted: event.fieldShotListCompleted,
+      fieldGearVerifiedIds: event.fieldGearVerifiedIds,
+    });
   }
 
   // ================= QUOTATIONS =================

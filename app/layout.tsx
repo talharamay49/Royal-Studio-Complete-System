@@ -6,6 +6,7 @@ import TopLoadingBar from "@/components/layout/TopLoadingBar";
 import ScrollbarVisibilityManager from "@/components/layout/ScrollbarVisibilityManager";
 import FloatingWhatsAppButton from "@/components/shared/FloatingWhatsAppButton";
 import RoyalChatbotWidget from "@/components/shared/RoyalChatbotWidget";
+import PwaInstallAndOfflineManager from "@/components/shared/PwaInstallAndOfflineManager";
 import { StudioProfileProvider } from "@/components/shared/StudioProfileContext";
 import { pageKeywords, siteConfig } from "@/lib/data";
 import { getLocalBusinessSchema, getWebsiteSchema } from "@/lib/seo";
@@ -13,6 +14,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Royal Studio",
+  },
   title: {
     default: `${siteConfig.name} | Luxury Wedding Photography Pakistan`,
     template: `%s | ${siteConfig.name}`,
@@ -54,12 +61,18 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600&display=swap"
         />
         <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{if('caches' in window){caches.keys().then(function(keys){var stale=keys.filter(function(k){return k!=='royal-studio-pwa-v5';});if(stale.length>0){Promise.all(stale.map(function(k){return caches.delete(k);})).then(function(){if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(regs){Promise.all(regs.map(function(r){return r.unregister();})).then(function(){if(!sessionStorage.getItem('rs_sw_clean_v5')){sessionStorage.setItem('rs_sw_clean_v5','1');window.location.reload();}});});}});}});}catch(e){}})();`,
+          }}
+        />
+        <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
       <body className="bg-background text-text antialiased">
         <StudioProfileProvider>
+          <PwaInstallAndOfflineManager />
           <ScrollbarVisibilityManager />
           <TopLoadingBar />
           <Navbar />

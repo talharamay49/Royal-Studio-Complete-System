@@ -44,7 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
   setIsCollapsed
 }) => {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, isClient, logout } = useAuth();
   const { profile } = useStudioData();
   const { resolvedMode, toggleThemeMode, themeConfig } = useStudioTheme();
 
@@ -81,7 +81,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { label: 'My Profile', path: '/profile', icon: Settings }
   ];
 
-  const navItems = isAdmin ? adminNavItems : staffNavItems;
+  const clientNavItems = [
+    { label: 'My Events & Schedule', path: '/events', icon: CalendarDays },
+    { label: 'Payments & Invoices', path: '/invoices', icon: CreditCard },
+    { label: 'Photo Proofing Gallery', path: '/client-gallery', icon: Camera },
+    { label: 'My Client Profile', path: '/profile', icon: UserIcon }
+  ];
+
+  const navItems = isAdmin ? adminNavItems : isClient ? clientNavItems : staffNavItems;
 
   return (
     <aside
@@ -154,7 +161,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             isEditorialLight ? 'text-text-muted' : 'text-white/40'
           }`}
         >
-          {!isCollapsed && (isAdmin ? 'Studio Management' : 'Staff Workspace')}
+          {!isCollapsed &&
+            (isAdmin
+              ? 'Studio Management'
+              : isClient
+              ? 'Client Portal'
+              : 'Staff Workspace')}
         </div>
         {navItems.map((item) => {
           const isActive =

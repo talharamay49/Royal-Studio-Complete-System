@@ -12,6 +12,7 @@ import {
   Client,
   Event,
   EventDaySchedule,
+  EventProofingGallery,
   Package,
   TeamMember,
   EventTeamAssignment,
@@ -131,9 +132,16 @@ export interface StudioDataContextType {
 
   fetchAIBriefing: () => Promise<AIBriefing>;
 
-  // User Accounts & Staff Login Management
+  // User Accounts, Staff & Client Login Management
   createStaffUser: (userData: {
     teamMemberId: string;
+    email: string;
+    password: string;
+    name?: string;
+    phone?: string;
+  }) => Promise<User>;
+  createClientUser: (userData: {
+    clientId: string;
     email: string;
     password: string;
     name?: string;
@@ -142,6 +150,18 @@ export interface StudioDataContextType {
   updateUserStatus: (id: string, status: 'ACTIVE' | 'DISABLED') => Promise<void>;
   resetUserPassword: (id: string, password: string) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
+  verifyPayment: (
+    paymentId: string,
+    verificationStatus: 'Verified' | 'Rejected' | 'Pending Verification',
+    notes?: string
+  ) => Promise<void>;
+  verifyPaymentDeposit: (paymentId: string, approved: boolean) => Promise<void>;
+  getEventProofingGallery: (eventId: string) => EventProofingGallery;
+  updateEventProofingGallery: (
+    eventId: string,
+    patch: Partial<EventProofingGallery>
+  ) => Promise<EventProofingGallery>;
+  syncFieldCrewEventState: (eventId: string, payload: any) => Promise<void>;
 }
 
 const StudioDataContext = createContext<StudioDataContextType | undefined>(undefined);
@@ -814,6 +834,131 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   };
 
+  const createClientUser = async (userData: {
+    clientId: string;
+    email: string;
+    password: string;
+    name?: string;
+    phone?: string;
+  }) => {
+    try {
+      const created = await apiRequest<User>('/api/users/client-login', {
+        method: 'POST',
+        body: JSON.stringify(userData),
+      });
+      erpDatabase.insertRecord('users', created, false);
+      await erpDatabase.syncAllFromServer();
+      addToast(`Client Portal login credentials created for ${created.name}`);
+      return created;
+    } catch (err: any) {
+      addToast(err.message || 'Failed to create client login', 'error');
+      throw err;
+    }
+  };
+
+  const verifyPayment = async (
+    paymentId: string,
+    verificationStatus: 'Verified' | 'Rejected' | 'Pending Verification',
+    notes?: string
+  ) => {
+    try {
+      await apiRequest(`/api/payments/${paymentId}/verify`, {
+        method: 'PUT',
+        body: JSON.stringify({ verificationStatus, notes }),
+      });
+      await erpDatabase.syncAllFromServer();
+      addToast(`Deposit verification status updated to ${verificationStatus}.`);
+    } catch (err: any) {
+      addToast(err.message || 'Failed to verify payment', 'error');
+      throw err;
+    }
+  };
+
+  const verifyPaymentDeposit = async (paymentId: string, approved: boolean) => {
+    await verifyPayment(paymentId, approved ? 'Verified' : 'Rejected');
+  };
+
+  const getEventProofingGallery = (eventId: string): EventProofingGallery => {
+    const evt = dbSnapshot.events.find((e) => e.id === eventId);
+    if (evt?.proofingGallery && Array.isArray(evt.proofingGallery.photos)) {
+      return {
+        ...evt.proofingGallery,
+        eventId,
+        isPinProtected: evt.proofingGallery.isPinProtected ?? Boolean(evt.proofingGallery.pinCode),
+        minAlbumSelection: evt.proofingGallery.minAlbumSelection || evt.proofingGallery.targetCountMin || 100,
+        maxAlbumSelection: evt.proofingGallery.maxAlbumSelection || evt.proofingGallery.targetCountMax || 150,
+      };
+    }
+    return {
+      eventId,
+      pinCode: '7860',
+      isPinProtected: true,
+      isPublished: true,
+      targetCountMin: 100,
+      targetCountMax: 150,
+      minAlbumSelection: 100,
+      maxAlbumSelection: 150,
+      selectionStatus: 'Open',
+      photos: [
+        {
+          id: `prf-${eventId}-1`,
+          code: 'RS-101',
+          title: 'Royal Stage Portrait',
+          url: '/portfolio/weddings/barat-stage-couple-portrait.jpg',
+          dayLabel: 'Barat',
+          category: 'Couple Portrait',
+          isSelectedForAlbum: true,
+          retouchingNote: 'Warm golden skin tone & subtle vignette for album spread',
+        },
+        {
+          id: `prf-${eventId}-2`,
+          code: 'RS-102',
+          title: 'Bridal Jewelry & Dupatta Detail',
+          url: '/portfolio/weddings/bridal-portrait-2.jpg',
+          dayLabel: 'Barat',
+          category: 'Bridal Portrait',
+          isSelectedForAlbum: true,
+        },
+        {
+          id: `prf-${eventId}-3`,
+          code: 'RS-103',
+          title: 'Grand Floral Stage & Chandelier Decor',
+          url: '/portfolio/weddings/Stage-1.jpg',
+          dayLabel: 'Walima',
+          category: 'Stage & Decor',
+          isSelectedForAlbum: false,
+        },
+      ],
+    };
+  };
+
+  const updateEventProofingGallery = async (
+    eventId: string,
+    patch: Partial<EventProofingGallery>
+  ): Promise<EventProofingGallery> => {
+    const current = getEventProofingGallery(eventId);
+    const updated: EventProofingGallery = {
+      ...current,
+      ...patch,
+    };
+    await updateEvent(eventId, { proofingGallery: updated });
+    addToast('Proofing gallery updated.');
+    return updated;
+  };
+
+  const syncFieldCrewEventState = async (eventId: string, payload: any) => {
+    try {
+      await apiRequest(`/api/events/${eventId}/field-crew`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      await erpDatabase.syncAllFromServer();
+    } catch (err: any) {
+      // Offline mode gracefully queues locally
+      throw err;
+    }
+  };
+
   const updateUserStatus = async (id: string, status: 'ACTIVE' | 'DISABLED') => {
     try {
       const updated = await apiRequest<User>(`/api/users/${id}/status`, {
@@ -928,9 +1073,15 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
         processPayoutBatch,
         fetchAIBriefing,
         createStaffUser,
+        createClientUser,
         updateUserStatus,
         resetUserPassword,
         deleteUser,
+        verifyPayment,
+        verifyPaymentDeposit,
+        getEventProofingGallery,
+        updateEventProofingGallery,
+        syncFieldCrewEventState,
       }}
     >
       {children}

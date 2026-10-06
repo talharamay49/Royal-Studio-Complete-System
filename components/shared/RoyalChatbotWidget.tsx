@@ -61,129 +61,17 @@ export default function RoyalChatbotWidget() {
   const [preferredLang, setPreferredLang] = useState<"AUTO" | "EN" | "ROMAN_URDU">("AUTO");
   const [voiceTtsEnabled, setVoiceTtsEnabled] = useState(false);
   const [isListening, setIsListening] = useState(false);
-  const [pos, setPos] = useState<{ right: number; bottom: number }>({
-    right: 16,
-    bottom: 16,
-  });
-  const [viewport, setViewport] = useState<{ width: number; height: number }>({
-    width: 1200,
-    height: 800,
-  });
-  const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const dragStateRef = useRef<{
-    active: boolean;
-    moved: boolean;
-    startX: number;
-    startY: number;
-    startRight: number;
-    startBottom: number;
-  }>({
-    active: false,
-    moved: false,
-    startX: 0,
-    startY: 0,
-    startRight: 16,
-    startBottom: 16,
-  });
   const recognitionRef = useRef<any>(null);
-
-  const clampPositionToViewport = useCallback((rawRight: number, rawBottom: number) => {
-    if (typeof window === "undefined") return { right: 16, bottom: 16 };
-    const btnW = buttonRef.current?.offsetWidth || 44;
-    const btnH = buttonRef.current?.offsetHeight || 44;
-    const margin = 12;
-    const topSafeMargin = 72;
-    const maxRight = Math.max(margin, window.innerWidth - btnW - margin);
-    const maxBottom = Math.max(margin, window.innerHeight - btnH - topSafeMargin);
-    return {
-      right: clampVal(rawRight, margin, maxRight),
-      bottom: clampVal(rawBottom, margin, maxBottom),
-    };
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setViewport({ width: window.innerWidth, height: window.innerHeight });
     try {
-      // Remove legacy unconstrained offset key if present
       window.localStorage.removeItem("royal_chatbot_floating_pos_v1");
-      const saved = window.localStorage.getItem(CHATBOT_POS_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed?.right === "number" && typeof parsed?.bottom === "number") {
-          setPos(clampPositionToViewport(parsed.right, parsed.bottom));
-        }
-      }
+      window.localStorage.removeItem(CHATBOT_POS_STORAGE_KEY);
     } catch {
-      // Ignore
+      // Ignore storage cleanup error
     }
-
-    const handleResize = () => {
-      setViewport({ width: window.innerWidth, height: window.innerHeight });
-      setPos((prev) => clampPositionToViewport(prev.right, prev.bottom));
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [clampPositionToViewport]);
-
-  const handleResetPosition = () => {
-    const def = { right: 16, bottom: 16 };
-    setPos(def);
-    if (typeof window !== "undefined") {
-      try {
-        window.localStorage.removeItem(CHATBOT_POS_STORAGE_KEY);
-      } catch {
-        // Ignore
-      }
-    }
-  };
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
-    if (e.button !== 0 && e.pointerType === "mouse") return;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dragStateRef.current = {
-      active: true,
-      moved: false,
-      startX: e.clientX,
-      startY: e.clientY,
-      startRight: pos.right,
-      startBottom: pos.bottom,
-    };
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLElement>) => {
-    if (!dragStateRef.current.active) return;
-    const dx = e.clientX - dragStateRef.current.startX;
-    const dy = e.clientY - dragStateRef.current.startY;
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-      dragStateRef.current.moved = true;
-    }
-    if (dragStateRef.current.moved) {
-      const next = clampPositionToViewport(
-        dragStateRef.current.startRight - dx,
-        dragStateRef.current.startBottom - dy
-      );
-      setPos(next);
-    }
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLElement>) => {
-    if (!dragStateRef.current.active) return;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      // Ignore
-    }
-    const wasMoved = dragStateRef.current.moved;
-    dragStateRef.current.active = false;
-    if (wasMoved && typeof window !== "undefined") {
-      try {
-        window.localStorage.setItem(CHATBOT_POS_STORAGE_KEY, JSON.stringify(pos));
-      } catch {
-        // Ignore
-      }
-    }
-  };
+  }, []);
 
   // Inquiry draft state for the 4-step decision tree + auto-calculator
   const [draft, setDraft] = useState<ChatbotInquiryDraft>(() => ({
@@ -688,26 +576,9 @@ export default function RoyalChatbotWidget() {
     return null;
   }
 
-  const isMobileViewport = viewport.width < 640;
-  const btnHeight = buttonRef.current?.offsetHeight || (isMobileViewport ? 44 : 54);
-  const panelWidth = isMobileViewport
-    ? Math.max(280, viewport.width - 24)
-    : Math.min(420, viewport.width - 24);
-  const panelRight = isMobileViewport
-    ? 12
-    : clampVal(pos.right, 12, Math.max(12, viewport.width - panelWidth - 12));
-  const minPanelHeight = Math.min(480, Math.max(300, viewport.height - 96));
-  const rawPanelBottom = pos.bottom + btnHeight + 10;
-  const maxPanelBottom = Math.max(12, viewport.height - minPanelHeight - 16);
-  const panelBottom = clampVal(rawPanelBottom, 12, maxPanelBottom);
-  const panelMaxHeight = Math.max(
-    280,
-    Math.min(640, viewport.height - panelBottom - 16)
-  );
-
   return (
     <>
-      {/* Viewport-Clamped Chat Window Modal / Panel (never overflows screen) */}
+      {/* Strictly Corner-Anchored Chat Window Panel (Bottom-Right) */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -715,26 +586,10 @@ export default function RoyalChatbotWidget() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.96 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            style={{
-              right: `${panelRight}px`,
-              bottom: `${panelBottom}px`,
-              width: `${panelWidth}px`,
-              maxHeight: `${panelMaxHeight}px`,
-            }}
-            className="no-print fixed z-50 flex flex-col rounded-2xl border border-[#C9A76A]/35 bg-[#111113]/95 backdrop-blur-xl text-[#F5F2EB] shadow-[0_24px_70px_rgba(0,0,0,0.75)] overflow-hidden select-text"
+            className="no-print fixed bottom-20 right-5 z-50 flex w-[calc(100vw-2.5rem)] sm:w-[400px] max-h-[min(620px,calc(100vh-7rem))] flex-col rounded-2xl border border-[#C9A76A]/35 bg-[#111113]/95 backdrop-blur-xl text-[#F5F2EB] shadow-[0_24px_70px_rgba(0,0,0,0.75)] overflow-hidden select-text"
           >
-            {/* Luxury Charcoal & Brass Header (Also acts as drag handle) */}
-            <div
-              onPointerDown={(e) => {
-                if ((e.target as HTMLElement).closest("button")) return;
-                handlePointerDown(e);
-              }}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              style={{ touchAction: "none" }}
-              className="px-3.5 py-3 bg-gradient-to-r from-[#16161A] via-[#1C1A17] to-[#16161A] border-b border-[#C9A76A]/25 flex items-center justify-between gap-2 shrink-0 cursor-grab active:cursor-grabbing select-none"
-            >
+            {/* Luxury Charcoal & Brass Header */}
+            <div className="px-3.5 py-3 bg-gradient-to-r from-[#16161A] via-[#1C1A17] to-[#16161A] border-b border-[#C9A76A]/25 flex items-center justify-between gap-2 shrink-0 select-none">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#C9A76A]/15 border border-[#C9A76A]/40 text-[#C9A76A]">
                   <Bot className="w-4 h-4" />
@@ -798,17 +653,6 @@ export default function RoyalChatbotWidget() {
                     <VolumeX className="w-3.5 h-3.5" />
                   )}
                 </button>
-
-                {(pos.right !== 16 || pos.bottom !== 16) && (
-                  <button
-                    type="button"
-                    onClick={handleResetPosition}
-                    title="Reset floating button position"
-                    className="p-1.5 rounded-lg text-[#9E988E] hover:text-[#F5F2EB] hover:bg-white/10 transition-colors cursor-pointer"
-                  >
-                    <Move className="w-3.5 h-3.5" />
-                  </button>
-                )}
 
                 <button
                   type="button"
@@ -1366,35 +1210,20 @@ export default function RoyalChatbotWidget() {
         )}
       </AnimatePresence>
 
-      {/* Compact on Mobile, Viewport-Clamped Moveable Floating Chat Trigger Button */}
-      <div
-        style={{
-          right: `${pos.right}px`,
-          bottom: `${pos.bottom}px`,
-          touchAction: "none",
-        }}
-        className="no-print fixed z-50 select-none"
-      >
+      {/* Strictly Corner-Aligned Bottom-Right Floating Chat Trigger Button */}
+      <div className="no-print fixed bottom-5 right-5 z-50 select-none">
         <button
-          ref={buttonRef}
           type="button"
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          onClick={() => {
-            if (dragStateRef.current.moved) return;
-            setIsOpen((prev) => !prev);
-          }}
-          title="Royal Assistant AI — Drag to move within screen"
+          onClick={() => setIsOpen((prev) => !prev)}
+          title="Royal Assistant AI — Plan Wedding & Quote"
           aria-label={isOpen ? "Close Royal Assistant Chatbot" : "Open Royal Assistant Chatbot"}
-          className="group relative flex h-10 w-10 sm:h-auto sm:w-auto items-center justify-center sm:gap-2.5 rounded-full sm:rounded-2xl border border-[#C9A76A]/50 bg-[#111113]/95 backdrop-blur-xl p-0 sm:px-3.5 sm:py-2.5 text-left text-[#F5F2EB] shadow-[0_12px_32px_rgba(0,0,0,0.65)] hover:border-[#C9A76A] transition-colors cursor-grab active:cursor-grabbing"
+          className="group relative flex h-12 w-12 sm:h-12 sm:w-auto items-center justify-center sm:gap-2.5 rounded-full border border-[#C9A76A]/55 bg-[#111113]/95 backdrop-blur-xl p-0 sm:px-4 text-left text-[#F5F2EB] shadow-[0_12px_32px_rgba(0,0,0,0.65)] hover:border-[#C9A76A] hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
         >
-          <div className="relative flex h-7 w-7 sm:h-9 sm:w-9 items-center justify-center rounded-full sm:rounded-xl bg-gradient-to-br from-[#C9A76A] to-[#9E7B3E] text-[#111113] shadow-inner shrink-0">
+          <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#C9A76A] to-[#9E7B3E] text-[#111113] shadow-inner shrink-0">
             {isOpen ? (
-              <X className="w-3.5 h-3.5 sm:w-[18px] sm:h-[18px]" />
+              <X className="w-4 h-4" />
             ) : (
-              <MessageSquare className="w-3.5 h-3.5 sm:w-[18px] sm:h-[18px]" />
+              <MessageSquare className="w-4 h-4" />
             )}
             <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
@@ -1402,15 +1231,14 @@ export default function RoyalChatbotWidget() {
             </span>
           </div>
 
-          <div className="hidden sm:block pr-1">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] font-semibold tracking-wide text-[#C9A76A]">
+          <div className="hidden sm:block pr-0.5">
+            <div className="flex items-center gap-1.5 leading-none">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-[#C9A76A]">
                 {config.statusLabel}
               </span>
             </div>
-            <div className="font-display text-xs font-semibold text-[#F5F2EB] flex items-center gap-1.5">
-              <span>Plan Wedding &amp; Quote</span>
-              <Move className="w-3 h-3 text-[#9E988E] opacity-70 group-hover:opacity-100 transition-opacity" />
+            <div className="font-display text-xs font-semibold text-[#F5F2EB] leading-tight mt-0.5 whitespace-nowrap">
+              Plan Wedding &amp; Quote
             </div>
           </div>
         </button>

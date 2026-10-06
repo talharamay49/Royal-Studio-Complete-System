@@ -40,6 +40,7 @@ import {
 import { Modal } from '../components/common/Modal';
 import { ConfirmationDialog } from '../components/common/ConfirmationDialog';
 import { StaffProfilePage } from './StaffProfilePage';
+import { ClientPortalPage } from './ClientPortalPage';
 import { generateSampleStationeryPDF } from '../utils/pdfGenerator';
 import {
   User,
@@ -89,7 +90,7 @@ export const ProfilePage: React.FC = () => {
     deleteUser,
     addToast
   } = useStudioData();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isClient } = useAuth();
   const {
     themeConfig: liveThemeConfig,
     resolvedMode,
@@ -177,6 +178,9 @@ export const ProfilePage: React.FC = () => {
   }, [profile]);
 
   if (!isAdmin) {
+    if (isClient) {
+      return <ClientPortalPage initialTab="PROFILE" />;
+    }
     return <StaffProfilePage />;
   }
 
@@ -410,6 +414,7 @@ export const ProfilePage: React.FC = () => {
   // User Account Management
   const adminUsers = users.filter(u => u.role === 'ADMIN');
   const staffUsers = users.filter(u => u.role === 'STAFF');
+  const clientUsers = users.filter(u => u.role === 'CLIENT');
 
   const handleOpenResetPassword = (u: User) => {
     setTargetUser(u);
@@ -3089,6 +3094,78 @@ export const ProfilePage: React.FC = () => {
                         <button
                           onClick={() => {
                             setTargetUser(staff);
+                            setIsDeleteDialogOpen(true);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="p-6 bg-white rounded-2xl border border-gray-200 shadow-xs space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-2 text-slate-900 font-bold text-sm">
+                <Users className="w-4 h-4 text-amber-600" />
+                <span>Client Portal Login Accounts ({clientUsers.length})</span>
+              </div>
+              <div className="text-xs text-gray-500">Admin-Provisioned Only · No Public Sign-Up</div>
+            </div>
+
+            {clientUsers.length === 0 ? (
+              <div className="p-8 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200 text-xs text-gray-500">
+                No client portal accounts created yet. Visit the <strong>Clients</strong> tab to provision login credentials for any booked client.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {clientUsers.map(clientUsr => (
+                  <div
+                    key={clientUsr.id}
+                    className="p-4 bg-gray-50 rounded-xl border border-gray-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gray-900">{clientUsr.name}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            clientUsr.status === 'ACTIVE'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-rose-100 text-rose-800 border border-rose-200'
+                          }`}
+                        >
+                          {clientUsr.status}
+                        </span>
+                      </div>
+                      <div className="text-gray-500 font-mono text-[11px] mt-0.5">{clientUsr.email}</div>
+                    </div>
+
+                    {isAdmin && (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleOpenResetPassword(clientUsr)}
+                          className="py-1.5 px-3 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Reset Password</span>
+                        </button>
+                        <button
+                          onClick={() => handleToggleStatus(clientUsr)}
+                          className={`py-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer ${
+                            clientUsr.status === 'ACTIVE'
+                              ? 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200'
+                          }`}
+                        >
+                          {clientUsr.status === 'ACTIVE' ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setTargetUser(clientUsr);
                             setIsDeleteDialogOpen(true);
                           }}
                           className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg cursor-pointer"

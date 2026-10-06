@@ -24,6 +24,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { WebsiteCmsPage } from './pages/WebsiteCmsPage';
 import { ThemeCustomizerPage } from './pages/ThemeCustomizerPage';
 import { ChatbotManagerPage } from './pages/ChatbotManagerPage';
+import { ClientPortalPage } from './pages/ClientPortalPage';
 import { LoadingState } from './components/common/LoadingState';
 import { AdminErrorBoundary } from './components/common/AdminErrorBoundary';
 import { ShieldAlert } from 'lucide-react';
@@ -39,7 +40,7 @@ function getAdminInternalPath(pathname: string): string {
 }
 
 const MainContent: React.FC = () => {
-  const { user, isLoading: isAuthLoading, isAdmin } = useAuth();
+  const { user, isLoading: isAuthLoading, isAdmin, isClient } = useAuth();
   const { isLoading: isDataLoading } = useStudioData();
 
   const [currentPath, setCurrentPath] = useState<string>(() => {
@@ -102,6 +103,19 @@ const MainContent: React.FC = () => {
         </button>
       </div>
     );
+
+    if (isClient) {
+      if (currentPath === '/invoices' || currentPath === '/finance' || currentPath === '/client-payments') {
+        return <ClientPortalPage initialTab="PAYMENTS" />;
+      }
+      if (currentPath === '/client-gallery' || currentPath === '/gallery') {
+        return <ClientPortalPage initialTab="GALLERY" />;
+      }
+      if (currentPath === '/profile') {
+        return <ClientPortalPage initialTab="PROFILE" />;
+      }
+      return <ClientPortalPage initialTab="EVENTS" />;
+    }
 
     if (currentPath === '/' || currentPath === '/dashboard') {
       if (!isAdmin) {

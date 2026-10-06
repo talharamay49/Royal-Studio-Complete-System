@@ -23,7 +23,25 @@ import {
   defaultWebsiteCustomization,
   defaultConnectedSocialAccounts,
   defaultSocialMediaPosts,
+  resolveAboutImageSrc,
 } from "@/lib/data";
+
+function sanitizePortfolioItems(items: PortfolioItem[]): PortfolioItem[] {
+  return items
+    .filter((i) => i.visible !== false)
+    .map((item, idx) => {
+      const defaultMatch =
+        defaultPortfolioItems.find((d) => d.id === item.id) ||
+        defaultPortfolioItems[idx % defaultPortfolioItems.length];
+      return {
+        ...item,
+        image: resolveAboutImageSrc(
+          item.image,
+          defaultMatch?.image || "/portfolio/bridal-03-outdoor-tree.jpg"
+        ),
+      };
+    });
+}
 
 export interface PublicWebsiteCMS {
   portfolioItems: PortfolioItem[];
@@ -420,7 +438,7 @@ export function StudioProfileProvider({ children }: { children: React.ReactNode 
           setCms({
             portfolioItems:
               Array.isArray(data.portfolioItems) && data.portfolioItems.length > 0
-                ? data.portfolioItems.filter((i: PortfolioItem) => i.visible !== false)
+                ? sanitizePortfolioItems(data.portfolioItems)
                 : defaultPortfolioItems,
             pricingPackages:
               Array.isArray(data.pricingPackages) && data.pricingPackages.length > 0

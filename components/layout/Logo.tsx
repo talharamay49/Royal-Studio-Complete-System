@@ -11,8 +11,8 @@ type LogoProps = {
 };
 
 const config = {
-  nav: { width: 200, height: 56, imgClass: "h-9 w-auto sm:h-10 md:h-11" },
-  footer: { width: 220, height: 62, imgClass: "h-11 w-auto md:h-12" },
+  nav: { width: 170, height: 48, imgClass: "h-8 w-auto sm:h-9 md:h-10 object-contain" },
+  footer: { width: 220, height: 62, imgClass: "h-11 w-auto md:h-12 object-contain" },
 };
 
 export default function Logo({ variant = "nav", className }: LogoProps) {
@@ -27,28 +27,31 @@ export default function Logo({ variant = "nav", className }: LogoProps) {
     <Link
       href="/"
       className={cn(
-        "inline-block shrink-0 overflow-hidden rounded-lg shadow-premium transition-transform duration-300 hover:scale-[1.02]",
+        "group inline-flex items-center gap-2.5 shrink-0 transition-transform duration-300 hover:scale-[1.01]",
         className
       )}
     >
-      {isDataUri ? (
-        <img
-          src={logoSrc}
-          alt={`${studioName} — ${tagline}`}
-          width={width}
-          height={height}
-          className={imgClass}
-        />
-      ) : (
-        <Image
-          src={logoSrc}
-          alt={`${studioName} — ${tagline}`}
-          width={width}
-          height={height}
-          className={imgClass}
-          priority={variant === "nav"}
-        />
-      )}
+      <span className="inline-flex items-center justify-center overflow-hidden rounded-lg bg-[#111111] px-2 py-1 border border-[#c9a76a]/30 shadow-xs">
+        {isDataUri ? (
+          <img
+            src={logoSrc}
+            alt={`${studioName} — ${tagline}`}
+            width={width}
+            height={height}
+            className={imgClass}
+          />
+        ) : (
+          <Image
+            src={logoSrc}
+            alt={`${studioName} — ${tagline}`}
+            width={width}
+            height={height}
+            className={imgClass}
+            priority={variant === "nav"}
+            referrerPolicy="no-referrer"
+          />
+        )}
+      </span>
     </Link>
   );
 }

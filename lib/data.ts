@@ -1049,7 +1049,21 @@ export const LEGACY_ABOUT_IMAGE_MAP: Record<string, string> = {
   "/portfolio/boys-01-urban-portrait.jpg": "/team/talha-ramay.webp",
   "/portfolio/bridal-01-crimson-lehenga.jpg": "/portfolio/bridal-01-mirror-portrait.jpg",
   "/portfolio/walima-01-couple-portrait.jpg": "/portfolio/walima-01-reception-hall.jpg",
+  "/portfolio/bridal-01-crimson-lehenga.webp": "/portfolio/bridal-01-mirror-portrait.jpg",
+  "/portfolio/couple-02-emerald-lawn.webp": "/portfolio/couple-02-annum-ali-mehndi.jpg",
+  "/portfolio/mehndi-01-colorful-stage.webp": "/portfolio/mehndi-01-chishtiya-taj-palace.jpg",
+  "/portfolio/walima-01-couple-portrait.webp": "/portfolio/walima-01-reception-hall.jpg",
+  "/portfolio/groom-01-classic-sherwani.webp": "/portfolio/groom-01-amir-outdoor-ready.jpg",
+  "/portfolio/barat-02-stage-couple.webp": "/portfolio/barat-02-groom-turban-moment.jpg",
+  "/portfolio/bridal-02-jewelry-closeup.webp": "/portfolio/bridal-02-henna-hands.jpg",
+  "/portfolio/couple-01-garden-intimate.webp": "/portfolio/couple-01-pillars.jpg",
+  "/portfolio/mehndi-02-dance-floor.webp": "/portfolio/mehndi-02-groom-arrival.jpg",
+  "/portfolio/bridal-03-outdoor-tree.webp": "/portfolio/bridal-03-outdoor-tree.jpg",
+  "/portfolio/barat-01-nikah-signature.webp": "/portfolio/nikah-01-venue-setup.jpg",
+  "/portfolio/walima-02-stage-decor.webp": "/portfolio/walima-02-hall-decor.jpg",
 };
+
+const VALID_PORTFOLIO_PATHS = new Set(portfolioItems.map((item) => item.image));
 
 export function resolveAboutImageSrc(
   rawSrc: string | undefined | null,
@@ -1059,6 +1073,16 @@ export function resolveAboutImageSrc(
   if (!trimmed) return fallbackSrc;
   if (LEGACY_ABOUT_IMAGE_MAP[trimmed]) {
     return LEGACY_ABOUT_IMAGE_MAP[trimmed];
+  }
+  if (trimmed.startsWith("/portfolio/") && !trimmed.startsWith("/portfolio/optimized/")) {
+    if (VALID_PORTFOLIO_PATHS.has(trimmed)) {
+      return trimmed;
+    }
+    const asJpg = trimmed.replace(/\.(webp|png|jpeg)$/i, ".jpg");
+    if (VALID_PORTFOLIO_PATHS.has(asJpg)) {
+      return asJpg;
+    }
+    return fallbackSrc;
   }
   return trimmed;
 }

@@ -127,6 +127,20 @@ export default function ClientProposalPage() {
     message?: string;
   } | null>(null);
 
+  // Digital Payment Receipt & Bank/JazzCash/EasyPaisa/RAAST Deposit Upload states
+  const [depositMethod, setDepositMethod] = useState<
+    "Bank Transfer" | "JazzCash" | "EasyPaisa" | "RAAST"
+  >("Bank Transfer");
+  const [depositAmount, setDepositAmount] = useState<number>(0);
+  const [depositReference, setDepositReference] = useState("");
+  const [depositSenderTitle, setDepositSenderTitle] = useState("");
+  const [depositReceiptDataUrl, setDepositReceiptDataUrl] = useState<string>("");
+  const [depositFileName, setDepositFileName] = useState<string>("");
+  const [submittingDeposit, setSubmittingDeposit] = useState(false);
+  const [depositSuccessNotice, setDepositSuccessNotice] = useState(false);
+  const [copiedAccountKey, setCopiedAccountKey] = useState<string | null>(null);
+  const [showDepositUploader, setShowDepositUploader] = useState(false);
+
   useEffect(() => {
     if (typeof window === "undefined" || !proposalId) return;
     const url = `${window.location.origin}/proposal/${encodeURIComponent(proposalId)}`;
@@ -419,9 +433,80 @@ export default function ClientProposalPage() {
         setApprovalSuccess(true);
         setIsConfirmApprovalOpen(false);
         setShowApprovalHistory(true);
+        setShowDepositUploader(true);
       }
     } finally {
       setApproving(false);
+    }
+  }
+
+  function handleCopyPaymentDetail(key: string, value: string) {
+    if (typeof window === "undefined" || !value) return;
+    navigator.clipboard.writeText(value);
+    setCopiedAccountKey(key);
+    setTimeout(() => {
+      setCopiedAccountKey((prev) => (prev === key ? null : prev));
+    }, 2200);
+  }
+
+  function handleReceiptImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDepositFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setDepositReceiptDataUrl(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleSubmitDepositReceipt(e: React.FormEvent) {
+    e.preventDefault();
+    if (!data) return;
+    const effectiveAmount =
+      depositAmount > 0
+        ? depositAmount
+        : Math.round(liveGrandTotal * 0.3);
+    if (effectiveAmount <= 0 || !depositReference.trim()) return;
+
+    setSubmittingDeposit(true);
+    setDepositSuccessNotice(false);
+    try {
+      const res = await fetch(`/api/proposal/${encodeURIComponent(proposalId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "SUBMIT_DEPOSIT_RECEIPT",
+          amount: effectiveAmount,
+          paymentMethod: depositMethod,
+          referenceNumber: depositReference.trim(),
+          senderAccountTitle:
+            depositSenderTitle.trim() || signatureName.trim() || data.client.name,
+          receiptImageDataUrl: depositReceiptDataUrl || undefined,
+          notes: `Advance deposit uploaded via Digital Proposal (${depositMethod})`,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.event) {
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                event: json.event,
+                payments: json.payments || prev.payments,
+                invoice: json.invoice || prev.invoice,
+              }
+            : prev
+        );
+        setDepositSuccessNotice(true);
+        setDepositReference("");
+        setDepositReceiptDataUrl("");
+        setDepositFileName("");
+      }
+    } finally {
+      setSubmittingDeposit(false);
     }
   }
 
@@ -2147,22 +2232,91 @@ export default function ClientProposalPage() {
               })}
             </div>
 
-            {profile.bankName && (
-              <div className="rounded-xl border border-white/10 bg-[#0D0D0F] p-4 text-xs space-y-1">
+            <div className="rounded-xl border border-[#D4AF37]/35 bg-[#0D0D0F] p-4 text-xs space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="font-bold text-[#D4AF37] flex items-center gap-1.5">
                   <CreditCard className="w-3.5 h-3.5" />
-                  <span>Official Bank Transfer Details</span>
+                  <span>Official Bank IBAN, RAAST, JazzCash &amp; EasyPaisa Channels</span>
                 </div>
-                <div className="text-[#F5F2EB]">
-                  {profile.bankName} — Account Title:{" "}
-                  <strong>{profile.accountTitle}</strong>
+                <span className="text-[10px] text-[#A39E93]">
+                  Click any account number or IBAN to copy
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Bank IBAN Card */}
+                <div className="p-3 rounded-xl bg-[#151519] border border-white/10 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#D4AF37]">
+                      {profile.bankName || "Meezan Bank Limited"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopyPaymentDetail(
+                          "iban",
+                          profile.iban || "PK36MEZN0002010105829144"
+                        )
+                      }
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] text-[10px] font-bold cursor-pointer"
+                    >
+                      {copiedAccountKey === "iban" ? (
+                        <Check className="w-3 h-3" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                      <span>{copiedAccountKey === "iban" ? "Copied IBAN" : "Copy IBAN"}</span>
+                    </button>
+                  </div>
+                  <div className="text-[#F5F2EB] font-semibold text-[11px]">
+                    Title: {profile.accountTitle || "Royal Studio (Muhammad Ramzan)"}
+                  </div>
+                  <div className="font-mono text-[11px] text-[#A39E93] break-all">
+                    IBAN: {profile.iban || "PK36MEZN0002010105829144"}
+                  </div>
+                  <div className="font-mono text-[10px] text-[#A39E93]">
+                    Acc #: {profile.accountNumber || "0201-0105829144"}
+                  </div>
                 </div>
-                <div className="text-[#A39E93] font-mono">
-                  Account #: {profile.accountNumber}{" "}
-                  {profile.iban ? `· IBAN: ${profile.iban}` : ""}
+
+                {/* JazzCash / EasyPaisa / RAAST Card */}
+                <div className="p-3 rounded-xl bg-[#151519] border border-white/10 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                      JazzCash · EasyPaisa · RAAST ID
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleCopyPaymentDetail(
+                          "wallet",
+                          profile.phone || "0308-4877073"
+                        )
+                      }
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-[10px] font-bold cursor-pointer"
+                    >
+                      {copiedAccountKey === "wallet" ? (
+                        <Check className="w-3 h-3" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                      <span>
+                        {copiedAccountKey === "wallet" ? "Copied #" : "Copy Wallet #"}
+                      </span>
+                    </button>
+                  </div>
+                  <div className="text-[#F5F2EB] font-semibold text-[11px]">
+                    Title: {profile.accountTitle || "Muhammad Ramzan / Royal Studio"}
+                  </div>
+                  <div className="font-mono text-[11px] text-emerald-300">
+                    JazzCash / RAAST: {profile.phone || "0308-4877073"}
+                  </div>
+                  <div className="font-mono text-[10px] text-[#A39E93]">
+                    EasyPaisa / WhatsApp: {profile.whatsapp || "0308-4877073"}
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Right Column: Grand Total & Digital Acceptance */}
@@ -2344,6 +2498,209 @@ export default function ClientProposalPage() {
                   </div>
                 </form>
               )}
+
+              {/* Digital Payment Receipt & Bank / JazzCash / EasyPaisa / RAAST Deposit Upload */}
+              <div className="no-print rounded-xl border border-[#D4AF37]/40 bg-[#0D0D0F] p-4 space-y-3 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-[#D4AF37] flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>Upload Advance Deposit Receipt</span>
+                    </div>
+                    <p className="text-[11px] text-[#A39E93]">
+                      Submit your Bank / RAAST / JazzCash / EasyPaisa transfer screenshot &amp; reference for instant Finance verification
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDepositUploader((prev) => !prev)}
+                    className="px-2.5 py-1 rounded-lg bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] text-[11px] font-bold cursor-pointer shrink-0"
+                  >
+                    {showDepositUploader || isApproved || approvalSuccess
+                      ? showDepositUploader
+                        ? "Collapse"
+                        : "Upload Receipt"
+                      : "Upload Receipt"}
+                  </button>
+                </div>
+
+                {depositSuccessNotice && (
+                  <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/35 text-emerald-200 text-[11px] flex items-start gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-emerald-300 block">
+                        Deposit Receipt Submitted for Admin Verification!
+                      </strong>
+                      Your payment screenshot &amp; reference have been flagged in the Royal Studio Finance tab. Once verified by our accounts team, your official invoice balance will update automatically.
+                    </div>
+                  </div>
+                )}
+
+                {(showDepositUploader || isApproved || approvalSuccess) && (
+                  <form onSubmit={handleSubmitDepositReceipt} className="space-y-2.5 pt-2 border-t border-white/10">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#A39E93] mb-1">
+                          Transfer Channel *
+                        </label>
+                        <select
+                          value={depositMethod}
+                          onChange={(e) =>
+                            setDepositMethod(
+                              e.target.value as
+                                | "Bank Transfer"
+                                | "JazzCash"
+                                | "EasyPaisa"
+                                | "RAAST"
+                            )
+                          }
+                          className="w-full rounded-lg border border-white/15 bg-[#151519] px-2.5 py-2 text-xs text-[#F5F2EB]"
+                        >
+                          <option value="Bank Transfer">Bank Transfer (IBAN)</option>
+                          <option value="RAAST">RAAST Instant ID</option>
+                          <option value="JazzCash">JazzCash Wallet</option>
+                          <option value="EasyPaisa">EasyPaisa Wallet</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#A39E93] mb-1">
+                          Deposit Amount (PKR) *
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          required
+                          value={
+                            depositAmount > 0
+                              ? depositAmount
+                              : Math.round(liveGrandTotal * 0.3)
+                          }
+                          onChange={(e) => setDepositAmount(Number(e.target.value))}
+                          className="w-full rounded-lg border border-white/15 bg-[#151519] px-2.5 py-2 text-xs font-mono text-[#F5F2EB]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#A39E93] mb-1">
+                          Transaction ID / RAAST Reference *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={depositReference}
+                          onChange={(e) => setDepositReference(e.target.value)}
+                          placeholder="e.g. TXN-9948210 or RAAST-ID"
+                          className="w-full rounded-lg border border-white/15 bg-[#151519] px-2.5 py-2 text-xs font-mono text-[#F5F2EB]"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#A39E93] mb-1">
+                          Sender Account Title
+                        </label>
+                        <input
+                          type="text"
+                          value={depositSenderTitle}
+                          onChange={(e) => setDepositSenderTitle(e.target.value)}
+                          placeholder={client.name}
+                          className="w-full rounded-lg border border-white/15 bg-[#151519] px-2.5 py-2 text-xs text-[#F5F2EB]"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold uppercase tracking-wider text-[#A39E93] mb-1">
+                        Upload Payment Receipt Screenshot (Optional Image)
+                      </label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleReceiptImageChange}
+                        className="w-full text-[11px] text-[#A39E93] file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-[#D4AF37]/20 file:text-[#D4AF37] hover:file:bg-[#D4AF37]/30 cursor-pointer"
+                      />
+                      {depositFileName && (
+                        <div className="mt-1 text-[10px] text-emerald-300 font-mono">
+                          Attached: {depositFileName}
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={submittingDeposit || !depositReference.trim()}
+                      className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>
+                        {submittingDeposit
+                          ? "Uploading Deposit Receipt..."
+                          : "Submit Deposit Receipt for Finance Verification"}
+                      </span>
+                    </button>
+                  </form>
+                )}
+
+                {/* Existing Uploaded Deposit Receipts & Verification Status */}
+                {data.payments && data.payments.length > 0 && (
+                  <div className="pt-2 border-t border-white/10 space-y-1.5">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#A39E93]">
+                      Recorded Payments &amp; Uploaded Deposit Receipts ({data.payments.length})
+                    </div>
+                    {data.payments.map((p) => (
+                      <div
+                        key={p.id}
+                        className="p-2 rounded-lg bg-[#151519] border border-white/10 flex items-center justify-between gap-2 text-[11px]"
+                      >
+                        <div>
+                          <div className="font-bold text-[#F5F2EB]">
+                            {formatPKR(p.amount)} · {p.method}
+                          </div>
+                          <div className="text-[10px] text-[#A39E93] font-mono">
+                            Ref: {p.reference || "N/A"} · {p.paymentDate}
+                          </div>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            p.verificationStatus === "Pending Verification"
+                              ? "bg-amber-500/20 text-amber-300 border border-amber-500/35"
+                              : p.verificationStatus === "Rejected"
+                              ? "bg-rose-500/20 text-rose-300 border border-rose-500/35"
+                              : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/35"
+                          }`}
+                        >
+                          {p.verificationStatus || "Verified"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Direct Link to Private Couple Proofing & Album Selection Gallery */}
+              <div className="no-print rounded-xl border border-white/10 bg-[#0D0D0F] p-3.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37] shrink-0">
+                    <BookOpen className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-[#F5F2EB]">
+                      Private Photo Proofing &amp; Album Gallery
+                    </div>
+                    <div className="text-[10px] text-[#A39E93]">
+                      Heart 100–150 favorites &amp; leave retouching notes
+                    </div>
+                  </div>
+                </div>
+                <Link
+                  href={`/gallery/${encodeURIComponent(event.id)}`}
+                  className="px-3 py-1.5 rounded-lg bg-[#D4AF37] text-slate-950 font-bold text-[11px] shrink-0 hover:opacity-90"
+                >
+                  Open Gallery →
+                </Link>
+              </div>
             </div>
 
             <div className="pt-3 border-t border-white/10 text-[11px] text-[#A39E93] flex items-center justify-between gap-2">

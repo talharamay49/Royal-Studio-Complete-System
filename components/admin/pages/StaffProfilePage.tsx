@@ -18,6 +18,7 @@ import {
   Star,
   CheckCircle2,
   Camera,
+  Wifi,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useStudioData } from '../context/StudioDataContext';
@@ -25,6 +26,8 @@ import { apiRequest } from '../services/api';
 import { AvailabilityStatus, Event } from '../types';
 import { formatDate } from '../utils/calculations';
 import { EventQrModal } from '../components/common/EventQrModal';
+import { FieldCrewOfflineModal } from '../components/common/FieldCrewOfflineModal';
+import { CrewCallSheetModal } from '../components/common/CrewCallSheetModal';
 
 type StaffProfileTab = 'CALENDAR' | 'PERFORMANCE' | 'PROFILE';
 
@@ -33,12 +36,19 @@ export const StaffProfilePage: React.FC = () => {
   const {
     teamMembers,
     events,
+    clients,
+    daySchedules,
+    teamAssignments,
     tasks,
     equipment,
     equipmentAssignments,
+    profile,
     refreshAll,
     addToast,
   } = useStudioData();
+
+  const [offlineCrewEvent, setOfflineCrewEvent] = useState<Event | null>(null);
+  const [callSheetEvent, setCallSheetEvent] = useState<Event | null>(null);
 
   const myTeamRecord =
     teamMembers.find(
@@ -487,14 +497,30 @@ export const StaffProfilePage: React.FC = () => {
                           </div>
                         )}
 
-                        <div className="pt-2 border-t border-border flex justify-end">
+                        <div className="pt-2 border-t border-border flex flex-wrap justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setOfflineCrewEvent(evt)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 text-xs font-bold cursor-pointer"
+                          >
+                            <Wifi className="w-3.5 h-3.5" />
+                            <span>Offline Crew Mode</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setCallSheetEvent(evt)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-xs font-bold cursor-pointer"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Call-Sheet</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => setQrModalEvent(evt)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent/15 hover:bg-accent/25 text-accent text-xs font-bold cursor-pointer"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-accent/15 hover:bg-accent/25 text-accent text-xs font-bold cursor-pointer"
                           >
                             <QrCode className="w-3.5 h-3.5" />
-                            <span>Scan Mobile QR Pass</span>
+                            <span>QR Pass</span>
                           </button>
                         </div>
                       </div>
@@ -701,6 +727,37 @@ export const StaffProfilePage: React.FC = () => {
         teamMembers={teamMembers}
         staffOnlyView={true}
       />
+
+      {offlineCrewEvent && (
+        <FieldCrewOfflineModal
+          isOpen={Boolean(offlineCrewEvent)}
+          onClose={() => setOfflineCrewEvent(null)}
+          event={offlineCrewEvent}
+          client={clients.find((c) => c.id === offlineCrewEvent.clientId)}
+          daySchedules={daySchedules.filter((d) => d.eventId === offlineCrewEvent.id)}
+          crewAssignments={teamAssignments.filter((t) => t.eventId === offlineCrewEvent.id)}
+          teamMembers={teamMembers}
+          equipmentAssignments={equipmentAssignments.filter((eq) => eq.eventId === offlineCrewEvent.id)}
+          equipment={equipment}
+          onToast={addToast}
+        />
+      )}
+
+      {callSheetEvent && profile && (
+        <CrewCallSheetModal
+          isOpen={Boolean(callSheetEvent)}
+          onClose={() => setCallSheetEvent(null)}
+          event={callSheetEvent}
+          client={clients.find((c) => c.id === callSheetEvent.clientId)}
+          profile={profile}
+          daySchedules={daySchedules.filter((d) => d.eventId === callSheetEvent.id)}
+          crewAssignments={teamAssignments.filter((t) => t.eventId === callSheetEvent.id)}
+          teamMembers={teamMembers}
+          equipmentAssignments={equipmentAssignments.filter((eq) => eq.eventId === callSheetEvent.id)}
+          equipment={equipment}
+          onToast={addToast}
+        />
+      )}
     </div>
   );
 };

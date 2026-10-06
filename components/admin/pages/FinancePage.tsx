@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   DollarSign,
   TrendingUp,
@@ -9,7 +9,13 @@ import {
   PieChart as PieIcon,
   CreditCard,
   Building,
-  Layers
+  Layers,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Eye,
+  X,
+  ShieldCheck
 } from 'lucide-react';
 import { useStudioData } from '../context/StudioDataContext';
 import { formatPKR, formatDate } from '../utils/calculations';
@@ -20,7 +26,32 @@ interface FinancePageProps {
 }
 
 export const FinancePage: React.FC<FinancePageProps> = ({ navigate }) => {
-  const { profile, events, studioExpenses, invoices, payments } = useStudioData();
+  const { profile, events, clients, studioExpenses, invoices, payments, verifyPayment } = useStudioData();
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
+  const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
+  const [paymentFilter, setPaymentFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('ALL');
+
+  const pendingVerificationPayments = payments.filter(
+    p => p.verificationStatus === 'Pending Verification'
+  );
+
+  const filteredPayments = payments.filter(p => {
+    if (paymentFilter === 'PENDING') return p.verificationStatus === 'Pending Verification';
+    if (paymentFilter === 'VERIFIED') return !p.verificationStatus || p.verificationStatus === 'Verified';
+    return true;
+  });
+
+  const handleVerifyAction = async (
+    paymentId: string,
+    status: 'Verified' | 'Rejected'
+  ) => {
+    setVerifyingId(paymentId);
+    try {
+      await verifyPayment(paymentId, status);
+    } finally {
+      setVerifyingId(null);
+    }
+  };
 
   // Exclude cancelled events
   const activeEvents = events.filter(e => e.status !== 'Cancelled');
@@ -125,6 +156,209 @@ export const FinancePage: React.FC<FinancePageProps> = ({ navigate }) => {
           <div className="text-[11px] text-gray-500">Studio rent, electricity & software suites</div>
         </div>
       </div>
+
+      {/* Digital Payment Receipt & Deposit Verification Center (Bank / JazzCash / EasyPaisa / RAAST) */}
+      <div className="p-6 bg-white rounded-xl border border-amber-200 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-600 shrink-0">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
+                  Digital Deposit Receipts &amp; Client Payment Verification
+                </h3>
+                {pendingVerificationPayments.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-bold animate-pulse">
+                    {pendingVerificationPayments.length} Pending Verification
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Verify Bank IBAN, RAAST, JazzCash, and EasyPaisa advance deposit receipts uploaded by clients on Digital Proposals (/proposal/[id]) or the Client Portal.
+              </p>
+            </div>
+          </div>
+
+          <div className="inline-flex items-center gap-1 p-1 bg-gray-100 rounded-lg text-xs">
+            <button
+              type="button"
+              onClick={() => setPaymentFilter('ALL')}
+              className={`px-3 py-1 rounded-md font-semibold cursor-pointer ${
+                paymentFilter === 'ALL' ? 'bg-white text-slate-900 shadow-2xs' : 'text-gray-600'
+              }`}
+            >
+              All ({payments.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentFilter('PENDING')}
+              className={`px-3 py-1 rounded-md font-semibold cursor-pointer ${
+                paymentFilter === 'PENDING' ? 'bg-amber-500 text-slate-950 shadow-2xs' : 'text-gray-600'
+              }`}
+            >
+              Pending ({pendingVerificationPayments.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setPaymentFilter('VERIFIED')}
+              className={`px-3 py-1 rounded-md font-semibold cursor-pointer ${
+                paymentFilter === 'VERIFIED' ? 'bg-white text-slate-900 shadow-2xs' : 'text-gray-600'
+              }`}
+            >
+              Verified
+            </button>
+          </div>
+        </div>
+
+        {filteredPayments.length === 0 ? (
+          <div className="p-6 bg-gray-50 rounded-xl text-center text-xs text-gray-500">
+            No payment receipts match the selected filter.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-gray-50 text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                <tr>
+                  <th className="py-2.5 px-3">Date &amp; Ref</th>
+                  <th className="py-2.5 px-3">Client &amp; Event</th>
+                  <th className="py-2.5 px-3">Channel &amp; Sender</th>
+                  <th className="py-2.5 px-3">Amount</th>
+                  <th className="py-2.5 px-3">Receipt Proof</th>
+                  <th className="py-2.5 px-3">Verification</th>
+                  <th className="py-2.5 px-3 text-right">Finance Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredPayments.map(p => {
+                  const evt = events.find(e => e.id === p.eventId);
+                  const cli = clients.find(c => c.id === evt?.clientId);
+                  const vStatus = p.verificationStatus || 'Verified';
+
+                  return (
+                    <tr key={p.id} className="hover:bg-amber-50/30">
+                      <td className="py-3 px-3">
+                        <div className="font-semibold text-gray-900">{formatDate(p.paymentDate)}</div>
+                        <div className="text-[10px] font-mono text-gray-500">
+                          Ref: {p.reference || p.paymentId}
+                        </div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <div
+                          onClick={() => evt && navigate(`/events/${evt.id}`)}
+                          className="font-bold text-gray-900 hover:text-amber-600 cursor-pointer"
+                        >
+                          {evt?.title || p.eventId}
+                        </div>
+                        <div className="text-[11px] text-gray-500">{cli?.name || 'Booked Client'}</div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-800 font-semibold text-[11px]">
+                          {p.method}
+                        </span>
+                        {(p.senderAccountTitle || p.senderAccountName) && (
+                          <div className="text-[10px] text-gray-500 mt-0.5">
+                            Sender: {p.senderAccountTitle || p.senderAccountName}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold text-gray-900">
+                        {formatPKR(p.amount)}
+                      </td>
+                      <td className="py-3 px-3">
+                        {(p.receiptImageUrl || p.receiptImageDataUrl) ? (
+                          <button
+                            type="button"
+                            onClick={() => setReceiptPreviewUrl(p.receiptImageUrl || p.receiptImageDataUrl || null)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-semibold cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>View Screenshot</span>
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-gray-400">Reference Only</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                            vStatus === 'Pending Verification'
+                              ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                              : vStatus === 'Rejected'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          }`}
+                        >
+                          {vStatus === 'Pending Verification' && <Clock className="w-3 h-3" />}
+                          {vStatus === 'Verified' && <CheckCircle2 className="w-3 h-3" />}
+                          {vStatus === 'Rejected' && <XCircle className="w-3 h-3" />}
+                          <span>{vStatus}</span>
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <div className="inline-flex items-center justify-end gap-1.5">
+                          {vStatus !== 'Verified' && (
+                            <button
+                              type="button"
+                              disabled={verifyingId === p.id}
+                              onClick={() => handleVerifyAction(p.id, 'Verified')}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer disabled:opacity-50"
+                            >
+                              Verify &amp; Approve
+                            </button>
+                          )}
+                          {vStatus !== 'Rejected' && (
+                            <button
+                              type="button"
+                              disabled={verifyingId === p.id}
+                              onClick={() => handleVerifyAction(p.id, 'Rejected')}
+                              className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-semibold cursor-pointer disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Receipt Screenshot Preview Modal */}
+      {receiptPreviewUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+          onClick={() => setReceiptPreviewUrl(null)}
+        >
+          <div
+            className="max-w-lg w-full bg-white rounded-2xl p-4 space-y-3 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900">
+                Uploaded Client Deposit Receipt Screenshot
+              </h4>
+              <button
+                type="button"
+                onClick={() => setReceiptPreviewUrl(null)}
+                className="p-1 text-gray-500 hover:text-gray-900 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <img
+              src={receiptPreviewUrl}
+              alt="Deposit Receipt Screenshot"
+              className="w-full max-h-[70vh] object-contain rounded-xl bg-slate-950"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Loss Leaders Alert & Table (Section 31 Requirement) */}
       <div className="p-6 bg-white rounded-xl border border-rose-200 shadow-xs">

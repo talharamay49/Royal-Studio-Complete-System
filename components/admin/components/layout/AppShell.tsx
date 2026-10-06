@@ -29,6 +29,7 @@ interface AppShellProps {
 export const AppShell: React.FC<AppShellProps> = ({ currentPath, navigate, children }) => {
   const {
     isAdmin,
+    isClient,
     showIdleWarning,
     idleRemainingSeconds,
     extendSession,
@@ -57,6 +58,13 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPath, navigate, child
         { label: 'Events', path: '/events', icon: CalendarDays },
         { label: 'Billing', path: '/invoices', icon: FileText },
         { label: 'Website', path: '/website-cms', icon: Globe },
+      ]
+    : isClient
+    ? [
+        { label: 'My Events', path: '/events', icon: CalendarDays },
+        { label: 'Payments', path: '/invoices', icon: CreditCard },
+        { label: 'Proofing', path: '/client-gallery', icon: FileText },
+        { label: 'Profile', path: '/profile', icon: Globe },
       ]
     : [
         { label: 'Assigned Work', path: '/tasks', icon: CheckSquare },

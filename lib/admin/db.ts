@@ -388,7 +388,10 @@ function getInitialData(): DatabaseSchema {
       city: 'Lahore',
       notes: 'High profile wedding. Require top cinematography and live drone coverage.',
       createdDate: '2026-08-10T10:00:00.000Z',
-      createdBy: 'usr-admin'
+      createdBy: 'usr-admin',
+      hasLogin: true,
+      userId: 'usr-client',
+      loginStatus: 'ACTIVE',
     },
     {
       id: 'cli-002',
@@ -1318,6 +1321,161 @@ function getInitialData(): DatabaseSchema {
   };
 }
 
+export function getDefaultProofingGalleryForEvent(eventId: string, title?: string) {
+  const defaultPhotos = [
+    {
+      id: `${eventId}-prf-01`,
+      url: '/portfolio/bridal-01-mirror-portrait.jpg',
+      title: 'Crimson Bridal Signature Portrait — Royal Courtyard',
+      dayLabel: 'Day 2 · Barat',
+      category: 'Bridal Portrait',
+      cameraUsed: 'Sony A7R V',
+      lensUsed: '85mm f/1.4 GM II',
+      isSelectedForAlbum: true,
+      retouchingNote: 'Keep warm golden skin tones and highlight intricate zardozi embroidery on dupatta border.',
+      selectedAt: '2026-10-01T14:20:00.000Z',
+    },
+    {
+      id: `${eventId}-prf-02`,
+      url: '/portfolio/couple-02-annum-ali-mehndi.jpg',
+      title: 'Couple Grand Entrance — Chadar & Fireworks',
+      dayLabel: 'Day 2 · Barat',
+      category: 'Couple Portrait',
+      cameraUsed: 'Sony A7 IV',
+      lensUsed: '35mm f/1.4 GM',
+      isSelectedForAlbum: true,
+      retouchingNote: 'Full two-page panoramic center spread in album.',
+      selectedAt: '2026-10-01T14:22:00.000Z',
+    },
+    {
+      id: `${eventId}-prf-03`,
+      url: '/portfolio/mehndi-01-chishtiya-taj-palace.jpg',
+      title: 'Mehndi Rasam & Dholak Candid Celebration',
+      dayLabel: 'Day 1 · Mehndi',
+      category: 'Mehndi Candid',
+      cameraUsed: 'Sony A7 IV',
+      lensUsed: '24-70mm f/2.8 GM II',
+      isSelectedForAlbum: true,
+      retouchingNote: '',
+      selectedAt: '2026-10-01T14:25:00.000Z',
+    },
+    {
+      id: `${eventId}-prf-04`,
+      url: '/portfolio/walima-01-reception-hall.jpg',
+      title: 'Walima Pastel Elegance — Chandelier Hall',
+      dayLabel: 'Day 3 · Walima',
+      category: 'Walima Reception',
+      cameraUsed: 'Sony A7R V',
+      lensUsed: '50mm f/1.2 GM',
+      isSelectedForAlbum: true,
+      retouchingNote: 'Soften background chandelier glare slightly.',
+      selectedAt: '2026-10-01T14:28:00.000Z',
+    },
+    {
+      id: `${eventId}-prf-05`,
+      url: '/portfolio/groom-01-amir-outdoor-ready.jpg',
+      title: 'Groom Royal Sherwani & Turban Detail',
+      dayLabel: 'Day 2 · Barat',
+      category: 'Groom Portrait',
+      cameraUsed: 'Sony A7R V',
+      lensUsed: '85mm f/1.4 GM II',
+      isSelectedForAlbum: false,
+      retouchingNote: '',
+    },
+    {
+      id: `${eventId}-prf-06`,
+      url: '/portfolio/barat-02-groom-turban-moment.jpg',
+      title: 'Barat Stage — Royal Couple & Floral Arch',
+      dayLabel: 'Day 2 · Barat',
+      category: 'Stage & Family',
+      cameraUsed: 'Sony A7 IV',
+      lensUsed: '24-70mm f/2.8 GM II',
+      isSelectedForAlbum: true,
+      retouchingNote: '',
+      selectedAt: '2026-10-01T14:30:00.000Z',
+    },
+    {
+      id: `${eventId}-prf-07`,
+      url: '/portfolio/bridal-02-henna-hands.jpg',
+      title: 'Fine-Art Bridal Jewelry & Henna Macro Detail',
+      dayLabel: 'Day 2 · Barat',
+      category: 'Details & Jewelry',
+      cameraUsed: 'Sony A7R V',
+      lensUsed: '90mm f/2.8 Macro G',
+      isSelectedForAlbum: true,
+      retouchingNote: 'Pair next to Crimson Bridal Portrait on opening page.',
+      selectedAt: '2026-10-01T14:32:00.000Z',
+    },
+    {
+      id: `${eventId}-prf-08`,
+      url: '/portfolio/couple-01-pillars.jpg',
+      title: 'Golden Hour Sunset Walk — Fairway Gardens',
+      dayLabel: 'Day 3 · Walima',
+      category: 'Couple Portrait',
+      cameraUsed: 'Sony A7R V',
+      lensUsed: '70-200mm f/2.8 GM II',
+      isSelectedForAlbum: false,
+      retouchingNote: '',
+    },
+    {
+      id: `${eventId}-prf-09`,
+      url: '/portfolio/mehndi-02-groom-arrival.jpg',
+      title: 'Choreographed Family Dance Performance',
+      dayLabel: 'Day 1 · Mehndi',
+      category: 'Mehndi Candid',
+      cameraUsed: 'Sony FX3 / A7 IV',
+      lensUsed: '35mm f/1.4 GM',
+      isSelectedForAlbum: false,
+      retouchingNote: '',
+    },
+    {
+      id: `${eventId}-prf-10`,
+      url: '/portfolio/bridal-03-outdoor-tree.jpg',
+      title: 'Editorial Outdoor Bridal Veil Silhouette',
+      dayLabel: 'Day 3 · Walima',
+      category: 'Bridal Portrait',
+      cameraUsed: 'Sony A7R V',
+      lensUsed: '85mm f/1.4 GM II',
+      isSelectedForAlbum: true,
+      retouchingNote: 'Convert duplicate copy to timeless black & white as well.',
+      selectedAt: '2026-10-01T14:35:00.000Z',
+    },
+    {
+      id: `${eventId}-prf-11`,
+      url: '/portfolio/nikah-01-venue-setup.jpg',
+      title: 'Sacred Nikah Nama Signing & Dua',
+      dayLabel: 'Day 2 · Barat',
+      category: 'Nikah Ceremony',
+      cameraUsed: 'Sony A7 IV',
+      lensUsed: '50mm f/1.2 GM',
+      isSelectedForAlbum: true,
+      retouchingNote: 'Must include on page 3 of the main Italian leather storybook.',
+      selectedAt: '2026-10-01T14:38:00.000Z',
+    },
+    {
+      id: `${eventId}-prf-12`,
+      url: '/portfolio/walima-02-hall-decor.jpg',
+      title: 'Architectural Floral Chandelier & Reception Table Styling',
+      dayLabel: 'Day 3 · Walima',
+      category: 'Decor & Venue',
+      cameraUsed: 'Sony A7 IV',
+      lensUsed: '16-35mm f/2.8 GM II',
+      isSelectedForAlbum: false,
+      retouchingNote: '',
+    },
+  ];
+
+  return {
+    pinCode: '1234',
+    isPublished: true,
+    targetCountMin: 100,
+    targetCountMax: 150,
+    selectionStatus: 'Open' as const,
+    clientSubmissionNote: title ? `Luxury Storybook Album Selection for ${title}` : '',
+    photos: defaultPhotos,
+  };
+}
+
 export class StudioDatabase {
   private db: DatabaseSchema;
   private hydratedFromCloud = false;
@@ -1385,13 +1543,27 @@ export class StudioDatabase {
           ? existingAdmin.password
           : hashPassword('admin123');
 
-      const preservedStaffUsers = (this.db.users || []).filter(
+      const preservedNonAdminUsers = (this.db.users || []).filter(
         u =>
-          u.role === 'STAFF' &&
+          (u.role === 'STAFF' || u.role === 'CLIENT') &&
           u.id !== 'usr-staff' &&
           u.email !== 'staff@royalstudio.pk' &&
           u.email !== 'admin@royalstudio.pk'
       );
+
+      if (!preservedNonAdminUsers.some(u => u.role === 'CLIENT' && u.linkedClientId === 'cli-001')) {
+        preservedNonAdminUsers.push({
+          id: 'usr-client',
+          name: 'Tariq Mehmood',
+          email: 'tariq.mehmood@example.com',
+          role: 'CLIENT',
+          status: 'ACTIVE',
+          phone: '+92 300 9876543',
+          linkedClientId: 'cli-001',
+          password: hashPassword('client123'),
+          createdDate: '2026-08-10T10:00:00.000Z',
+        });
+      }
 
       this.db.users = [
         {
@@ -1405,8 +1577,27 @@ export class StudioDatabase {
           avatar: '/RoyalLogo.png',
           createdDate: '2026-01-01T00:00:00.000Z',
         },
-        ...preservedStaffUsers,
+        ...preservedNonAdminUsers,
       ];
+      needsSave = true;
+    }
+
+    // Ensure demo client user exists if cli-001 exists and has no linked user
+    if (
+      this.db.clients?.some(c => c.id === 'cli-001') &&
+      !this.db.users?.some(u => u.role === 'CLIENT' && u.linkedClientId === 'cli-001')
+    ) {
+      this.db.users.push({
+        id: 'usr-client',
+        name: 'Tariq Mehmood',
+        email: 'tariq.mehmood@example.com',
+        role: 'CLIENT',
+        status: 'ACTIVE',
+        phone: '+92 300 9876543',
+        linkedClientId: 'cli-001',
+        password: hashPassword('client123'),
+        createdDate: '2026-08-10T10:00:00.000Z',
+      });
       needsSave = true;
     }
 
@@ -1427,6 +1618,34 @@ export class StudioDatabase {
           delete tm.loginStatus;
           needsSave = true;
         }
+      }
+    });
+
+    // Sync client login status with user accounts
+    this.db.clients?.forEach(c => {
+      const linkedUser = this.db.users?.find(u => u.linkedClientId === c.id || (u.role === 'CLIENT' && u.id === c.userId));
+      if (linkedUser) {
+        if (!c.hasLogin || c.userId !== linkedUser.id || c.loginStatus !== linkedUser.status) {
+          c.hasLogin = true;
+          c.userId = linkedUser.id;
+          c.loginStatus = linkedUser.status;
+          needsSave = true;
+        }
+      } else {
+        if (c.hasLogin || c.userId || c.loginStatus) {
+          c.hasLogin = false;
+          delete c.userId;
+          delete c.loginStatus;
+          needsSave = true;
+        }
+      }
+    });
+
+    // Ensure every event has a Proofing Gallery initialized
+    this.db.events?.forEach(ev => {
+      if (!ev.proofingGallery) {
+        ev.proofingGallery = getDefaultProofingGalleryForEvent(ev.id, ev.title);
+        needsSave = true;
       }
     });
 
@@ -1587,6 +1806,26 @@ export class StudioDatabase {
       if (!Array.isArray(this.db.cms.portfolioItems) || this.db.cms.portfolioItems.length === 0) {
         this.db.cms.portfolioItems = [...defaultPortfolioItems];
         needsSave = true;
+      } else {
+        const validSet = new Set(defaultPortfolioItems.map((i) => i.image));
+        let fixedAny = false;
+        this.db.cms.portfolioItems = this.db.cms.portfolioItems.map((item: any, idx: number) => {
+          const img = String(item?.image || '').trim();
+          if (img.startsWith('/portfolio/') && !img.startsWith('/portfolio/optimized/') && !validSet.has(img)) {
+            fixedAny = true;
+            const defaultMatch =
+              defaultPortfolioItems.find((d) => d.id === item.id) ||
+              defaultPortfolioItems[idx % defaultPortfolioItems.length];
+            return {
+              ...item,
+              image: defaultMatch?.image || '/portfolio/bridal-03-outdoor-tree.jpg',
+            };
+          }
+          return item;
+        });
+        if (fixedAny) {
+          needsSave = true;
+        }
       }
       if (!Array.isArray(this.db.cms.pricingPackages) || this.db.cms.pricingPackages.length === 0) {
         this.db.cms.pricingPackages = [...defaultPricingPackages];

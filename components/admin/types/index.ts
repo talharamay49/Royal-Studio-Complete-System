@@ -38,6 +38,7 @@ export interface Client {
   avatar?: string;
   hasLogin?: boolean;
   userId?: string;
+  loginStatus?: UserStatus;
   communicationPreferences?: {
     whatsappUpdates: boolean;
     emailInvoices: boolean;
@@ -120,9 +121,54 @@ export interface EventDaySchedule {
   services?: DayServiceSlot[];
 }
 
+export interface ProofingPhotoItem {
+  id: string;
+  code?: string;
+  url: string;
+  title: string;
+  dayLabel: string;
+  category: string;
+  cameraUsed?: string;
+  lensUsed?: string;
+  isSelectedForAlbum?: boolean;
+  retouchingNote?: string;
+  selectedAt?: string;
+}
+
+export interface EventProofingGallery {
+  eventId?: string;
+  pinCode: string;
+  isPinProtected?: boolean;
+  isPublished?: boolean;
+  targetCountMin?: number;
+  targetCountMax?: number;
+  minAlbumSelection?: number;
+  maxAlbumSelection?: number;
+  selectionStatus: 'Open' | 'Submitted' | 'Approved';
+  submittedAt?: string;
+  clientSubmissionNote?: string;
+  photos: ProofingPhotoItem[];
+}
+
+export interface OfflineCrewCheckInRecord {
+  id: string;
+  eventId?: string;
+  dayNumber?: number;
+  crewMemberName?: string;
+  crewName?: string;
+  crewRole?: string;
+  role?: string;
+  checkedInAt: string;
+  venuePin?: string;
+  locationLabel?: string;
+  notes?: string;
+  syncedToServer?: boolean;
+  syncStatus?: 'Synced' | 'Pending Offline Sync';
+}
+
 export interface ProposalApprovalHistoryEntry {
   id: string;
-  action: 'ISSUED' | 'VIEWED' | 'ADDONS_UPDATED' | 'ACCEPTED';
+  action: 'ISSUED' | 'VIEWED' | 'ADDONS_UPDATED' | 'APPROVAL_INITIATED' | 'ACCEPTED' | 'DEPOSIT_UPLOADED';
   timestamp: string;
   actorName: string;
   signatureName?: string;
@@ -140,9 +186,11 @@ export interface Event {
   packageBasePrice?: number;
   eventDate: string;
   timingMode?: TimingMode;
+  callTime?: string;
   startTime: string;
   endTime: string;
   venue: string;
+  venueMapPinUrl?: string;
   city: string;
   status: EventStatus;
   packagePrice: number;
@@ -168,6 +216,12 @@ export interface Event {
   proposalLastViewedAt?: string;
   proposalViewCount?: number;
   approvalHistory?: ProposalApprovalHistoryEntry[];
+  proofingGallery?: EventProofingGallery;
+  fieldCheckIns?: OfflineCrewCheckInRecord[];
+  fieldShotListCompleted?: string[];
+  fieldGearVerifiedIds?: string[];
+  offlineShotList?: any[];
+  offlineGearChecklist?: any[];
 
   // Cached calculated financials
   staffCost: number;
@@ -233,6 +287,7 @@ export interface EventTeamAssignment {
   eventId: string;
   teamMemberId: string;
   role: TeamRole;
+  assignedRole?: string;
   date: string;
   hours: number;
   rate: number;
@@ -264,6 +319,7 @@ export interface Equipment {
   serialNumber: string;
   quantity: number;
   status: EquipmentStatus;
+  condition?: string;
   rentalRate: number;
   purchaseDate: string;
   serviceAfterUses: number;
@@ -361,7 +417,9 @@ export interface Invoice {
   createdBy: string;
 }
 
-export type PaymentMethod = 'Cash' | 'Bank Transfer' | 'JazzCash' | 'EasyPaisa' | 'Other';
+export type PaymentMethod = 'Cash' | 'Bank Transfer' | 'JazzCash' | 'EasyPaisa' | 'RAAST' | 'Other';
+
+export type PaymentVerificationStatus = 'Verified' | 'Pending Verification' | 'Rejected';
 
 export interface Payment {
   id: string;
@@ -374,6 +432,14 @@ export interface Payment {
   reference: string;
   notes: string;
   createdBy: string;
+  verificationStatus?: PaymentVerificationStatus;
+  receiptImageDataUrl?: string;
+  receiptImageUrl?: string;
+  senderAccountTitle?: string;
+  senderAccountName?: string;
+  senderAccountNumber?: string;
+  submittedByClientAt?: string;
+  verifiedByAdminAt?: string;
 }
 
 export interface Quotation {

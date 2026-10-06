@@ -23,6 +23,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAdmin: boolean;
   isStaff: boolean;
+  isClient: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: (reason?: 'manual' | 'inactivity') => Promise<void>;
   idleRemainingSeconds: number;
@@ -321,6 +322,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const isAdmin = user?.role === 'ADMIN';
   const isStaff = user?.role === 'STAFF';
+  const isClient = user?.role === 'CLIENT';
 
   return (
     <AuthContext.Provider
@@ -329,6 +331,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading,
         isAdmin,
         isStaff,
+        isClient,
         login,
         logout,
         idleRemainingSeconds,

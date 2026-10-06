@@ -212,7 +212,8 @@ export async function POST(
     const action = body.action as
       | "UPDATE_ADDONS"
       | "APPROVE_PROPOSAL"
-      | "NOTIFY_ADMIN_APPROVAL";
+      | "NOTIFY_ADMIN_APPROVAL"
+      | "SUBMIT_DEPOSIT_RECEIPT";
     const incomingAddons: string[] | undefined = Array.isArray(body.selectedAddons)
       ? body.selectedAddons.map((s: unknown) => String(s))
       : undefined;
@@ -437,6 +438,74 @@ export async function POST(
       }
     }
 
+    let createdDepositPayment: any = null;
+    if (action === "SUBMIT_DEPOSIT_RECEIPT") {
+      const nowIso = new Date().toISOString();
+      const amountNum = Number(body.amount || 0);
+      if (amountNum <= 0) {
+        return NextResponse.json(
+          { error: "Please enter a valid deposit amount greater than 0." },
+          { status: 400 }
+        );
+      }
+      const method = (body.paymentMethod || "Bank Transfer") as any;
+      const reference = String(body.referenceNumber || "").trim();
+      const senderAccountTitle = String(body.senderAccountTitle || "").trim();
+      const notes = String(body.notes || "Advance deposit uploaded via Digital Proposal").trim();
+      const receiptImageDataUrl =
+        typeof body.receiptImageDataUrl === "string" && body.receiptImageDataUrl.startsWith("data:image/")
+          ? body.receiptImageDataUrl
+          : undefined;
+
+      const existingInv = db.invoices.find((i) => i.eventId === event!.id);
+
+      createdDepositPayment = {
+        id: `pay-${Date.now().toString().slice(-6)}`,
+        paymentId: `PAY-${Date.now().toString().slice(-4)}`,
+        eventId: event.id,
+        invoiceId: existingInv?.id,
+        amount: amountNum,
+        paymentDate: nowIso.split("T")[0],
+        method,
+        reference: reference || `REF-${Date.now().toString().slice(-5)}`,
+        notes: senderAccountTitle ? `${notes} (Sender: ${senderAccountTitle})` : notes,
+        createdBy: "client-proposal",
+        verificationStatus: "Pending Verification" as const,
+        receiptImageDataUrl,
+        senderAccountTitle: senderAccountTitle || undefined,
+        submittedByClientAt: nowIso,
+      };
+
+      db.payments.unshift(createdDepositPayment);
+
+      if (!Array.isArray(event.approvalHistory)) {
+        event.approvalHistory = [];
+      }
+      const cliObj = db.clients.find((c) => c.id === event!.clientId);
+      event.approvalHistory.push({
+        id: `hist-deposit-${Date.now()}`,
+        action: "DEPOSIT_UPLOADED",
+        timestamp: nowIso,
+        actorName: event.approvedByClient || senderAccountTitle || cliObj?.name || "Client",
+        signatureName: event.approvedByClient || senderAccountTitle || cliObj?.name,
+        details: `Uploaded ${method} deposit receipt of PKR ${amountNum.toLocaleString("en-PK")} (Ref: ${createdDepositPayment.reference}) — Flagged for Admin Verification in Finance`,
+      });
+
+      if (!Array.isArray(db.profileAuditLogs)) {
+        db.profileAuditLogs = [];
+      }
+      db.profileAuditLogs.unshift({
+        id: `audit-dep-${Date.now()}`,
+        timestamp: nowIso,
+        userId: "client-portal",
+        userName: senderAccountTitle || cliObj?.name || "Client",
+        userRole: "CLIENT",
+        section: "Digital Proposal Deposit Upload",
+        changedFields: ["payments", "verificationStatus"],
+        summary: `Client uploaded ${method} deposit receipt of PKR ${amountNum.toLocaleString("en-PK")} (Ref: ${createdDepositPayment.reference}) for "${event.title}". Pending Admin verification in Finance tab.`,
+      });
+    }
+
     await dbInstance.recalculateEvent(event.id);
     await dbInstance.save();
 
@@ -456,6 +525,7 @@ export async function POST(
       invoice: updatedInvoice,
       daySchedules: updatedDays,
       payments: updatedPayments,
+      payment: createdDepositPayment,
       emailNotification,
     });
   } catch (err: any) {

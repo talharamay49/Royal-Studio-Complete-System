@@ -286,8 +286,14 @@ export function calculateEventTotals(
   // Net margin % (only calculate when package price > 0)
   const netMargin = packagePrice > 0 ? (netProfit / packagePrice) * 100 : 0;
 
-  // Client payments
-  const totalClientPayments = payments.reduce((acc, p) => acc + Number(p.amount || 0), 0);
+  // Client payments (only Verified or legacy payments count toward paid balance; Pending Verification waits for Admin approval)
+  const totalClientPayments = payments
+    .filter(
+      (p) =>
+        p.verificationStatus !== 'Pending Verification' &&
+        p.verificationStatus !== 'Rejected'
+    )
+    .reduce((acc, p) => acc + Number(p.amount || 0), 0);
   const remainingBalance = Math.max(0, packagePrice - totalClientPayments);
 
   return {
