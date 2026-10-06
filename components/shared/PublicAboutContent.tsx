@@ -140,11 +140,12 @@ export default function PublicAboutContent() {
                       alt="Royal Studio co-founders Muhammad Ramzan and Talha Ramay"
                       fill
                       priority
+                      quality={92}
                       placeholder="blur"
                       blurDataURL={ROYAL_BLUR_DATA_URL}
                       referrerPolicy="no-referrer"
                       onError={() => setMainImgError(true)}
-                      className="object-cover object-top"
+                      className="portfolio-hd-img object-cover object-top"
                       sizes="(max-width: 1024px) 100vw, 50vw"
                     />
                   )}
@@ -173,12 +174,13 @@ export default function PublicAboutContent() {
                       src={resolvedSecondaryImage}
                       alt="Muhammad Ramzan and Talha Ramay at a Royal Studio branded event"
                       fill
+                      quality={92}
                       placeholder="blur"
                       blurDataURL={ROYAL_BLUR_DATA_URL}
                       referrerPolicy="no-referrer"
                       onError={() => setSecondaryImgError(true)}
-                      className="object-cover object-center"
-                      sizes="(max-width: 640px) 128px, 208px"
+                      className="portfolio-hd-img object-cover object-center"
+                      sizes="(max-width: 640px) 256px, 384px"
                     />
                   )}
                 </div>
@@ -220,14 +222,15 @@ export default function PublicAboutContent() {
                           src={imgSrc}
                           alt={founder.name}
                           fill
+                          quality={92}
                           placeholder="blur"
                           blurDataURL={ROYAL_BLUR_DATA_URL}
                           referrerPolicy="no-referrer"
                           onError={() =>
                             setFounderImgErrors((prev) => ({ ...prev, [idx]: true }))
                           }
-                          className="object-cover object-top transition-transform duration-500 group-hover:scale-105"
-                          sizes="176px"
+                          className="portfolio-hd-img object-cover object-top transition-transform duration-500 group-hover:scale-105"
+                          sizes="384px"
                         />
                       )}
                     </div>

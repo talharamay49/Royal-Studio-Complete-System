@@ -99,10 +99,11 @@ export default async function BlogPostPage({ params }: Props) {
               alt={post.title}
               fill
               priority
+              quality={92}
               placeholder="blur"
               blurDataURL={ROYAL_BLUR_DATA_URL}
               referrerPolicy="no-referrer"
-              className="object-cover"
+              className="portfolio-hd-img object-cover"
               sizes="100vw"
             />
           )}

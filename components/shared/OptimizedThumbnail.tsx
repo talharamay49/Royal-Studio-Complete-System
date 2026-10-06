@@ -14,6 +14,7 @@ export interface OptimizedThumbnailProps {
   aspect?: ThumbnailAspectRatio;
   focalPoint?: "center" | "top" | "bottom";
   priority?: boolean;
+  quality?: number;
   sizes?: string;
   blurDataURL?: string;
   zoomOnHover?: boolean;
@@ -37,9 +38,44 @@ const FOCAL_CLASS_MAP: Record<"center" | "top" | "bottom", string> = {
 };
 
 /**
+ * Normalizes remote image URLs to their highest-resolution, optimized variant
+ * (e.g., Cloudinary f_auto,q_auto:best, Unsplash w=1920&q=90&auto=format).
+ */
+export function upgradeToHighResUrl(rawUrl: string): string {
+  if (!rawUrl || rawUrl.startsWith("data:") || rawUrl.startsWith("/")) {
+    return rawUrl;
+  }
+  let url = rawUrl.trim();
+  if (
+    url.includes("res.cloudinary.com") &&
+    url.includes("/upload/") &&
+    !url.includes("q_auto")
+  ) {
+    url = url.replace("/upload/", "/upload/f_auto,q_auto:best/");
+  }
+  if (url.includes("images.unsplash.com")) {
+    try {
+      const parsed = new URL(url);
+      if (
+        !parsed.searchParams.has("w") ||
+        Number(parsed.searchParams.get("w")) < 1600
+      ) {
+        parsed.searchParams.set("w", "1920");
+      }
+      parsed.searchParams.set("q", "90");
+      parsed.searchParams.set("auto", "format");
+      url = parsed.toString();
+    } catch {
+      // Ignore malformed URL
+    }
+  }
+  return url;
+}
+
+/**
  * Custom image optimization wrapper that dynamically handles aspect-ratio cropping
  * for thumbnails while preserving Next.js `placeholder="blur"` blur-up placeholders
- * for consistent visual quality across mobile, tablet, and 4K displays.
+ * and high-resolution AVIF/WebP optimization (`quality={90}`) across mobile, tablet, and 4K displays.
  */
 export default function OptimizedThumbnail({
   src,
@@ -47,7 +83,8 @@ export default function OptimizedThumbnail({
   aspect = "wide",
   focalPoint = "center",
   priority = false,
-  sizes = "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw",
+  quality = 90,
+  sizes = "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 25vw",
   blurDataURL = ROYAL_BLUR_DATA_URL,
   zoomOnHover = true,
   className,
@@ -55,8 +92,12 @@ export default function OptimizedThumbnail({
   children,
 }: OptimizedThumbnailProps) {
   const [hasError, setHasError] = useState(false);
-  const sanitizedSrc = resolveAboutImageSrc(src, "/portfolio/bridal-03-outdoor-tree.jpg");
-  const resolvedSrc = hasError ? "/portfolio/bridal-03-outdoor-tree.jpg" : sanitizedSrc;
+  const sanitizedSrc = upgradeToHighResUrl(
+    resolveAboutImageSrc(src, "/portfolio/bridal-03-outdoor-tree.jpg")
+  );
+  const resolvedSrc = hasError
+    ? "/portfolio/bridal-03-outdoor-tree.jpg"
+    : sanitizedSrc;
   const isRawImg =
     resolvedSrc.startsWith("data:") ||
     (/^https?:\/\//i.test(resolvedSrc) &&
@@ -80,10 +121,11 @@ export default function OptimizedThumbnail({
           src={resolvedSrc}
           alt={alt}
           loading={priority ? "eager" : "lazy"}
+          decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setHasError(true)}
           className={cn(
-            "h-full w-full object-cover transition-transform duration-700",
+            "portfolio-hd-img h-full w-full object-cover transition-transform duration-700",
             FOCAL_CLASS_MAP[focalPoint],
             zoomOnHover && "group-hover:scale-105",
             imageClassName
@@ -94,6 +136,7 @@ export default function OptimizedThumbnail({
           src={resolvedSrc}
           alt={alt}
           fill
+          quality={quality}
           priority={priority}
           loading={priority ? undefined : "lazy"}
           placeholder="blur"
@@ -102,7 +145,7 @@ export default function OptimizedThumbnail({
           onError={() => setHasError(true)}
           sizes={sizes}
           className={cn(
-            "object-cover transition-transform duration-700",
+            "portfolio-hd-img object-cover transition-transform duration-700",
             FOCAL_CLASS_MAP[focalPoint],
             zoomOnHover && "group-hover:scale-105",
             imageClassName

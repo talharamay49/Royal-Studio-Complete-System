@@ -3,6 +3,7 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import PageTransitionWrapper from "@/components/layout/PageTransitionWrapper";
 import TopLoadingBar from "@/components/layout/TopLoadingBar";
+import ScrollbarVisibilityManager from "@/components/layout/ScrollbarVisibilityManager";
 import FloatingWhatsAppButton from "@/components/shared/FloatingWhatsAppButton";
 import RoyalChatbotWidget from "@/components/shared/RoyalChatbotWidget";
 import { StudioProfileProvider } from "@/components/shared/StudioProfileContext";
@@ -59,6 +60,7 @@ export default function RootLayout({
       </head>
       <body className="bg-background text-text antialiased">
         <StudioProfileProvider>
+          <ScrollbarVisibilityManager />
           <TopLoadingBar />
           <Navbar />
           <PageTransitionWrapper>{children}</PageTransitionWrapper>

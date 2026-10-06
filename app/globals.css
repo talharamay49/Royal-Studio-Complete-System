@@ -67,17 +67,64 @@ body {
   color: var(--color-primary);
 }
 
-::-webkit-scrollbar {
-  width: 6px;
+/* ============================================================================
+   AUTO-HIDING TRANSPARENT SCROLLBAR (ONLY SHOWN WHILE SCROLLING)
+   Track is always transparent; thumb is completely transparent when idle and
+   appears with a subtle translucent tint only while actively scrolling.
+   ============================================================================ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 
-::-webkit-scrollbar-track {
-  background: var(--color-background);
+html.is-scrolling,
+html.is-scrolling *,
+.is-scrolling {
+  scrollbar-color: rgba(201, 167, 106, 0.35) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent !important;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-accent-dark);
-  border-radius: 3px;
+  background: transparent;
+  border-radius: 9999px;
+  transition: background-color 0.25s ease;
+}
+
+html.is-scrolling ::-webkit-scrollbar-thumb,
+.is-scrolling::-webkit-scrollbar-thumb,
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background: rgba(201, 167, 106, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+/* High-resolution crisp image rendering across portfolio & galleries */
+.portfolio-hd-img {
+  image-rendering: auto;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform: translateZ(0);
 }
 
 .text-accent-gradient {

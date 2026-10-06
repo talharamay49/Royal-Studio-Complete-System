@@ -81,11 +81,12 @@ export default function AboutPreview() {
                     src={mainImage}
                     alt="Royal Studio founders and team"
                     fill
+                    quality={92}
                     placeholder="blur"
                     blurDataURL={ROYAL_BLUR_DATA_URL}
                     referrerPolicy="no-referrer"
                     onError={() => setImgError(true)}
-                    className="object-cover object-top"
+                    className="portfolio-hd-img object-cover object-top"
                     sizes="(max-width: 1024px) 100vw, 50vw"
                   />
                 )}

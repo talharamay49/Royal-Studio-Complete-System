@@ -1,8 +1,10 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { heroPoster, heroVideoId, siteConfig, extractYoutubeId } from "@/lib/data";
+import { heroPoster, heroVideoId, siteConfig, extractYoutubeId, resolveAboutImageSrc } from "@/lib/data";
+import { ROYAL_BLUR_DATA_URL } from "@/lib/blur-placeholder";
 import { usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
 import { Button } from "@/components/ui/button";
 
@@ -15,7 +17,7 @@ export default function Hero() {
     return null;
   }
 
-  const poster = heroCfg?.posterImage || heroPoster;
+  const poster = resolveAboutImageSrc(heroCfg?.posterImage || heroPoster, heroPoster);
   const videoId = extractYoutubeId(heroCfg?.youtubeVideoId || heroVideoId);
   const showVideo = heroCfg?.showBackgroundVideo !== false;
   const eyebrow = heroCfg?.eyebrowText || `${siteConfig.name} · Since ${siteConfig.established}`;
@@ -37,12 +39,41 @@ export default function Hero() {
           { value: siteConfig.stats.team, label: "Member Team" },
         ];
 
+  const isRawPoster =
+    poster.startsWith("data:") ||
+    (/^https?:\/\//i.test(poster) &&
+      !poster.includes("res.cloudinary.com") &&
+      !poster.includes("storage.googleapis.com") &&
+      !poster.includes("images.unsplash.com") &&
+      !poster.includes("picsum.photos") &&
+      !poster.includes("ytimg.com") &&
+      !poster.includes("youtube.com"));
+
   return (
     <section className="relative flex min-h-screen items-center justify-center overflow-hidden bg-primary">
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url(${poster})` }}
-      />
+      <div className="absolute inset-0">
+        {isRawPoster ? (
+          <img
+            src={poster}
+            alt={`${siteConfig.name} wedding photography showcase`}
+            referrerPolicy="no-referrer"
+            className="portfolio-hd-img h-full w-full object-cover object-center"
+          />
+        ) : (
+          <Image
+            src={poster}
+            alt={`${siteConfig.name} wedding photography showcase`}
+            fill
+            priority
+            quality={92}
+            placeholder="blur"
+            blurDataURL={ROYAL_BLUR_DATA_URL}
+            referrerPolicy="no-referrer"
+            sizes="100vw"
+            className="portfolio-hd-img object-cover object-center"
+          />
+        )}
+      </div>
       {showVideo && (
         <div className="pointer-events-none absolute top-1/2 left-1/2 h-[56.25vw] min-h-full w-[177.78vh] min-w-full -translate-x-1/2 -translate-y-1/2">
           <iframe

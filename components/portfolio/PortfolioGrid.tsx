@@ -328,7 +328,16 @@ export default function PortfolioGrid({
                   <OptimizedThumbnail
                     src={item.image}
                     alt={item.title}
-                    aspect="portrait"
+                    aspect="wide"
+                    focalPoint={
+                      item.aspect === "tall" ||
+                      item.category === "bridal" ||
+                      item.category === "bride" ||
+                      item.category === "groom"
+                        ? "top"
+                        : "center"
+                    }
+                    quality={92}
                     priority={i < 6}
                     blurDataURL={ROYAL_BLUR_DATA_URL}
                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, (max-width: 1536px) 33vw, 25vw"
@@ -510,12 +519,14 @@ export default function PortfolioGrid({
                         src={lightboxSrc}
                         alt={lightbox.title}
                         fill
+                        quality={95}
+                        priority
                         placeholder="blur"
                         blurDataURL={ROYAL_BLUR_DATA_URL}
                         referrerPolicy="no-referrer"
                         onError={() => setLightboxImgError(true)}
-                        className="object-contain"
-                        sizes="90vw"
+                        className="portfolio-hd-img object-contain"
+                        sizes="100vw"
                       />
                     );
                   })()}
