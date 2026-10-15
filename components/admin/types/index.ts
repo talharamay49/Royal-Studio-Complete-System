@@ -1,4 +1,4 @@
-export type Role = 'ADMIN' | 'STAFF' | 'CLIENT';
+export type Role = 'ADMIN' | 'STAFF';
 
 export type UserStatus = 'ACTIVE' | 'DISABLED';
 
@@ -24,6 +24,92 @@ export interface User {
   };
 }
 
+export interface AdminOnlyGoogleDriveCredentials {
+  googleAccountEmail: string;
+  googleAccountPassword: string;
+  recoveryEmail: string;
+  recoveryPhone: string;
+  allocatedQuotaGb: number;
+  usedStorageGb: number;
+  provisionedAt: string;
+  provisionedBy: string;
+  adminInternalNotes?: string;
+}
+
+export interface ClientGoogleDriveAccountRecord extends AdminOnlyGoogleDriveCredentials {
+  eventId: string;
+  eventTitle: string;
+  driveFolderUrl: string;
+}
+
+export interface ClientGoogleDriveFolderItem {
+  id: string;
+  folderName: string;
+  folderUrl: string;
+  driveUrl?: string;
+  folderType?:
+    | 'High-Res Edited'
+    | 'RAW Archive'
+    | 'Album Print Ready'
+    | 'Social Media Reels'
+    | string;
+  fileCount: number;
+  sizeGb: number;
+  transferStatus: 'Queued' | 'Transferring' | 'Transferred' | 'Verified' | 'Synced';
+  status?: string;
+  updatedAt: string;
+  uploadedAt?: string;
+}
+
+export interface YouTubeUnlistedVideoItem {
+  id: string;
+  title: string;
+  videoType:
+    | 'Teaser'
+    | 'Highlight Film'
+    | 'Couple Highlight'
+    | 'Mehndi Coverage'
+    | 'Barat Coverage'
+    | 'Walima Coverage'
+    | 'Full Film'
+    | 'Full Feature Film'
+    | 'Drone Reel';
+  youtubeUrl: string;
+  youtubeId: string;
+  duration: string;
+  resolution: '4K UHD' | '1080p Full HD';
+  privacyStatus: 'Unlisted';
+  uploadedAt: string;
+}
+
+export interface EventMediaDeliveryVault {
+  approvalStatus:
+    | 'Pending Approval'
+    | 'Approved & Provisioned'
+    | 'Transfer In Progress'
+    | 'Delivered';
+  approvedAt?: string;
+  approvedBy?: string;
+  driveFolderUrl: string;
+  driveFolderId?: string;
+  driveFolderName: string;
+  totalDataVolumeGb: number;
+  freeTierQuotaGb: number;
+  totalHighResPhotos: number;
+  rawAssetsIncluded: boolean;
+  driveTransferProgress: number;
+  driveSubfolders: ClientGoogleDriveFolderItem[];
+  /** STRICTLY ADMIN-ONLY: Stripped from all client/public API responses */
+  adminOnlyDriveCredentials?: AdminOnlyGoogleDriveCredentials;
+  youtubePlaylistUrl: string;
+  youtubePlaylistId?: string;
+  youtubePlaylistTitle: string;
+  youtubePrivacyMode: 'Unlisted Playlist & Videos';
+  unlistedVideos: YouTubeUnlistedVideoItem[];
+  clientDeliveryNotes?: string;
+  lastUpdatedAt?: string;
+}
+
 export interface Client {
   id: string;
   name: string;
@@ -36,24 +122,35 @@ export interface Client {
   createdDate: string;
   createdBy: string;
   avatar?: string;
+  portalPassword?: string;
   hasLogin?: boolean;
   userId?: string;
-  loginStatus?: UserStatus;
+  loginStatus?: UserStatus | 'NONE';
   communicationPreferences?: {
     whatsappUpdates: boolean;
     emailInvoices: boolean;
     galleryNotifications: boolean;
   };
+  /** Public/Client-safe synthesized media links */
+  googleDriveFolderUrl?: string;
+  youtubePlaylistUrl?: string;
+  mediaDelivery?: EventMediaDeliveryVault;
+  /** STRICTLY ADMIN-ONLY: Dedicated Google Drive account credentials per event */
+  adminOnlyDriveAccounts?: ClientGoogleDriveAccountRecord[];
 }
 
 export type EventCategory = 
   | 'Wedding'
+  | 'Mehndi'
+  | 'Barat'
+  | 'Walima'
   | 'Birthday'
   | 'Nikah'
   | 'Corporate'
   | 'Concert'
   | 'Engagement'
   | 'Bridal Shower'
+  | 'Portrait'
   | 'Other';
 
 export type WeddingSubtype =
@@ -212,11 +309,13 @@ export interface Event {
   selectedAddons?: string[];
   approvedByClient?: string;
   approvedAt?: string;
+  clientApprovalNotes?: string;
   proposalFirstViewedAt?: string;
   proposalLastViewedAt?: string;
   proposalViewCount?: number;
   approvalHistory?: ProposalApprovalHistoryEntry[];
   proofingGallery?: EventProofingGallery;
+  mediaDelivery?: EventMediaDeliveryVault;
   fieldCheckIns?: OfflineCrewCheckInRecord[];
   fieldShotListCompleted?: string[];
   fieldGearVerifiedIds?: string[];
@@ -425,6 +524,7 @@ export interface Payment {
   id: string;
   paymentId: string;
   eventId: string;
+  clientId?: string;
   invoiceId?: string;
   amount: number;
   paymentDate: string;
@@ -546,7 +646,7 @@ export interface AuditLogEntry {
   timestamp: string;
   userId: string;
   userName: string;
-  userRole: Role;
+  userRole: Role | 'CLIENT';
   section: string;
   changedFields: string[];
   summary: string;

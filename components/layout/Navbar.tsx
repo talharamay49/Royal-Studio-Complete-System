@@ -18,6 +18,7 @@ export default function Navbar() {
   const { websiteCustomization } = usePublicWebsiteCMS();
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [scrollTopBottomY, setScrollTopBottomY] = useState<number>(136);
 
   const navCfg = websiteCustomization?.navigation;
   const activeNavLinks =
@@ -30,7 +31,27 @@ export default function Navbar() {
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+    try {
+      const savedWa = window.localStorage.getItem("royal_whatsapp_y_pos_v3");
+      if (savedWa && !Number.isNaN(Number(savedWa))) {
+        setScrollTopBottomY(Math.min(window.innerHeight - 88, Number(savedWa) + 60));
+      }
+    } catch {
+      // Ignore
+    }
+    const handleRailSync = (e: Event) => {
+      const ce = e as CustomEvent<{ source: string; bottomY: number }>;
+      if (typeof ce.detail?.bottomY === "number") {
+        const waBottom =
+          ce.detail.source === "chatbot" ? ce.detail.bottomY + 60 : ce.detail.bottomY;
+        setScrollTopBottomY(Math.min(window.innerHeight - 88, waBottom + 60));
+      }
+    };
+    window.addEventListener("royalstudio:floating-rail-sync", handleRailSync);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("royalstudio:floating-rail-sync", handleRailSync);
+    };
   }, []);
 
   useEffect(() => {
@@ -124,14 +145,14 @@ export default function Navbar() {
             : "bg-gradient-to-b from-black/80 via-black/45 to-transparent py-4"
         )}
       >
-        <nav className="mx-auto flex max-w-7xl 2xl:max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-10">
+        <nav className="mx-auto flex max-w-7xl 2xl:max-w-[1440px] items-center justify-between gap-3 xl:gap-5 px-4 sm:px-6 lg:px-8 xl:px-10">
           {/* Left Zone: Brand Logo */}
           <div className="flex items-center shrink-0">
             <Logo />
           </div>
 
           {/* Center Zone: Crisp Single-Line Editorial Navigation */}
-          <ul className="hidden xl:flex items-center justify-center gap-6 2xl:gap-8">
+          <ul className="hidden lg:flex items-center justify-center gap-4 xl:gap-6 2xl:gap-8">
             {activeNavLinks.map((link) => {
               const isActive =
                 link.href === "/"
@@ -143,7 +164,7 @@ export default function Navbar() {
                     href={link.href}
                     onClick={(e) => handleNavLinkClick(e, link.href)}
                     className={cn(
-                      "relative py-1.5 text-[11px] font-semibold tracking-[0.18em] uppercase whitespace-nowrap transition-colors duration-200",
+                      "relative py-1.5 text-[11px] font-semibold tracking-[0.14em] xl:tracking-[0.18em] uppercase whitespace-nowrap transition-colors duration-200",
                       isActive
                         ? "text-accent"
                         : scrolled
@@ -179,14 +200,16 @@ export default function Navbar() {
             />
 
             <Link
-              href="/admin"
+              href="/client-portal"
               className={cn(
                 "hidden md:inline-flex h-9 items-center justify-center rounded-full border px-3.5 text-[11px] font-semibold tracking-[0.14em] uppercase whitespace-nowrap transition-all shrink-0",
-                scrolled
+                pathname?.startsWith("/client-portal")
+                  ? "border-accent bg-accent/15 text-accent"
+                  : scrolled
                   ? "border-border bg-surface/90 text-primary hover:border-accent hover:text-accent"
                   : "border-white/25 bg-black/40 text-white hover:border-accent hover:text-accent"
               )}
-              title="Client Portal & Studio Login"
+              title="Interactive Client Portal, Proofing Gallery & Payments"
             >
               <span>Client Portal</span>
             </Link>
@@ -209,7 +232,7 @@ export default function Navbar() {
               type="button"
               onClick={() => setMobileOpen(!mobileOpen)}
               className={cn(
-                "relative z-50 inline-flex h-9 w-9 items-center justify-center rounded-full border xl:hidden transition-colors cursor-pointer shrink-0",
+                "relative z-50 inline-flex h-9 w-9 items-center justify-center rounded-full border lg:hidden transition-colors cursor-pointer shrink-0",
                 scrolled || mobileOpen
                   ? "border-border bg-surface/90 text-primary hover:border-accent"
                   : "border-white/20 bg-black/40 text-white hover:border-accent"
@@ -228,7 +251,7 @@ export default function Navbar() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-y-auto bg-surface/98 backdrop-blur-xl px-6 py-24 xl:hidden"
+            className="fixed inset-0 z-40 flex flex-col items-center justify-center overflow-y-auto bg-surface/98 backdrop-blur-xl px-6 py-24 lg:hidden"
           >
             <ul className="flex flex-col items-center gap-5">
               {activeNavLinks.map((link, i) => (
@@ -265,11 +288,18 @@ export default function Navbar() {
                   </Link>
                 </Button>
                 <Link
-                  href="/admin"
+                  href="/client-portal"
                   onClick={() => setMobileOpen(false)}
                   className="inline-flex w-full items-center justify-center rounded-full border border-border bg-background px-5 py-2.5 text-xs font-semibold tracking-widest uppercase text-primary hover:border-accent hover:text-accent transition-colors"
                 >
-                  Client &amp; Studio Portal
+                  Client Portal &amp; Proofing Gallery
+                </Link>
+                <Link
+                  href="/admin"
+                  onClick={() => setMobileOpen(false)}
+                  className="inline-flex w-full items-center justify-center rounded-full border border-border bg-background px-5 py-2 text-[11px] font-semibold tracking-widest uppercase text-text-muted hover:border-accent hover:text-accent transition-colors"
+                >
+                  Studio ERP Login
                 </Link>
               </motion.li>
             </ul>
@@ -277,7 +307,7 @@ export default function Navbar() {
         )}
       </AnimatePresence>
 
-      {/* Smooth Back-to-Top Floating Button — Strictly Aligned Above Bottom-Left WhatsApp Button */}
+      {/* Smooth Back-to-Top Floating Button — Aligned on the Right Side with WhatsApp & Chatbot */}
       <AnimatePresence>
         {scrolled && (
           <motion.button
@@ -288,7 +318,8 @@ export default function Navbar() {
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
             aria-label="Smooth scroll to top"
             title="Scroll to top"
-            className="no-print fixed bottom-20 left-5 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface/95 text-primary shadow-premium backdrop-blur-md transition-all hover:border-accent hover:text-accent cursor-pointer"
+            style={{ bottom: `${scrollTopBottomY}px` }}
+            className="no-print fixed right-4 sm:right-5 z-40 flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface/95 text-primary shadow-premium backdrop-blur-md transition-all hover:border-accent hover:text-accent cursor-pointer"
           >
             <ArrowUp size={16} />
           </motion.button>

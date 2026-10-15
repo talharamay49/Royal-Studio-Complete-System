@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { dbInstance } from "@/lib/admin/db";
+import {
+  dbInstance,
+  getDefaultProofingGalleryForEvent,
+  buildDefaultMediaDeliveryVault,
+  syncEventMediaDeliveryToClientProfile,
+} from "@/lib/admin/db";
 import { persistWebsiteInquiryToFirestore } from "@/lib/db/storageAdapter";
 import {
   calculateDaySummary,
@@ -153,33 +158,40 @@ export async function POST(request: Request) {
 
     // 2. Persist CRM Client, Inquiry Event, and Website Lead into Cloud Firestore Shards
     const db = dbInstance.getData();
-    let client = db.clients.find(
-      (c) =>
-        c.phone === phone ||
-        c.name.toLowerCase() === clientDisplayName.toLowerCase()
-    );
+    const normPhone = phone.replace(/[^0-9]/g, "");
+    const cleanEmail = (email || "").trim().toLowerCase();
+    let client = db.clients.find((c) => {
+      if (c.name.trim().toLowerCase() === clientDisplayName.toLowerCase()) return true;
+      const cDigits = (c.phone || "").replace(/[^0-9]/g, "");
+      if (normPhone.length >= 7 && cDigits === normPhone) return true;
+      if (cleanEmail && c.email && c.email.trim().toLowerCase() === cleanEmail) return true;
+      return false;
+    });
     if (!client) {
       client = {
         id: `cli-${Date.now().toString().slice(-6)}`,
         name: clientDisplayName,
         phone,
         whatsapp,
-        email: email || "",
+        email: cleanEmail,
         address: venue || city,
         city,
         notes: `Inquiry Ref: ${referenceId}. ${detailsSummary}. ${message}`,
         createdDate: submittedAt,
         createdBy: "website-inquiry",
+        hasLogin: false,
+        loginStatus: "NONE",
       };
       db.clients.unshift(client);
     }
 
-    const calculatedEstimate = Math.max(0, Number(data.calculatedEstimate || 0));
+    const rawEstimate = Number(data.calculatedEstimate || 0);
+    const calculatedEstimate = rawEstimate > 0 ? rawEstimate : 185000;
     const customDaysConfig: CustomDayConfiguration[] = Array.isArray(data.customDaysConfig)
       ? data.customDaysConfig
       : [];
 
-    const newInquiryEvent = {
+    const newInquiryEvent: any = {
       id: linkedEventId,
       clientId: client.id,
       title: groomName
@@ -222,7 +234,13 @@ export async function POST(request: Request) {
       netMargin: calculatedEstimate > 0 ? 100 : 0,
       totalClientPayments: 0,
       remainingBalance: calculatedEstimate,
+      proofingGallery: getDefaultProofingGalleryForEvent(
+        linkedEventId,
+        groomName ? `${clientDisplayName} Wedding` : `${clientDisplayName} — ${eventType}`
+      ),
     };
+    newInquiryEvent.mediaDelivery = buildDefaultMediaDeliveryVault(newInquiryEvent, client);
+    syncEventMediaDeliveryToClientProfile(newInquiryEvent, db.clients);
     db.events.unshift(newInquiryEvent);
 
     if (customDaysConfig.length > 0 && Array.isArray(db.daySchedules)) {

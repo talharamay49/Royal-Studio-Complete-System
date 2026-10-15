@@ -294,7 +294,9 @@ export function calculateEventTotals(
         p.verificationStatus !== 'Rejected'
     )
     .reduce((acc, p) => acc + Number(p.amount || 0), 0);
-  const remainingBalance = Math.max(0, packagePrice - totalClientPayments);
+  const taxAmount = Number(event.tax || 0);
+  const finalPayable = Math.max(0, packagePrice + taxAmount);
+  const remainingBalance = Math.max(0, finalPayable - totalClientPayments);
 
   return {
     packagePrice,

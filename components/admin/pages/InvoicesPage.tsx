@@ -206,41 +206,32 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Invoices & Quotations Billing Ledger</h2>
-          <p className="text-xs text-gray-500">
-            Automated tax invoices, proposals, balance tracking, and branded template previews with official lens watermark and logos.
-          </p>
-        </div>
-
-        {/* Top Quick Preview Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => handleOpenGeneralPreview('INVOICE')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-300 rounded-lg text-xs font-bold text-amber-950 hover:bg-amber-100 shadow-2xs cursor-pointer transition-colors"
-            title="Preview the official branded Invoice template on image.png stationery with RoyalLogo.png"
-          >
-            <Eye className="w-3.5 h-3.5 text-amber-700" />
-            <span>Invoice Template</span>
-          </button>
-          <button
-            onClick={() => handleOpenGeneralPreview('QUOTATION')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-bold text-blue-900 hover:bg-blue-100 shadow-2xs cursor-pointer transition-colors"
-            title="Preview the official branded Quotation template on image.png stationery with RoyalLogo.png"
-          >
-            <Eye className="w-3.5 h-3.5 text-blue-600" />
-            <span>Quotation Template</span>
-          </button>
-          <button
-            onClick={() => handleOpenGeneralPreview('RECEIPT')}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-900 hover:bg-emerald-100 shadow-2xs cursor-pointer transition-colors"
-            title="Preview the official Payment Receipt template on image.png stationery with RoyalLogo.png"
-          >
-            <Eye className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Receipt Template</span>
-          </button>
-        </div>
+      {/* Top Quick Preview Action Buttons */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button
+          onClick={() => handleOpenGeneralPreview('INVOICE')}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-300 rounded-lg text-xs font-bold text-amber-950 hover:bg-amber-100 shadow-2xs cursor-pointer transition-colors"
+          title="Preview the official branded Invoice template on image.png stationery with RoyalLogo.png"
+        >
+          <Eye className="w-3.5 h-3.5 text-amber-700" />
+          <span>Invoice Template</span>
+        </button>
+        <button
+          onClick={() => handleOpenGeneralPreview('QUOTATION')}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs font-bold text-blue-900 hover:bg-blue-100 shadow-2xs cursor-pointer transition-colors"
+          title="Preview the official branded Quotation template on image.png stationery with RoyalLogo.png"
+        >
+          <Eye className="w-3.5 h-3.5 text-blue-600" />
+          <span>Quotation Template</span>
+        </button>
+        <button
+          onClick={() => handleOpenGeneralPreview('RECEIPT')}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-xs font-bold text-emerald-900 hover:bg-emerald-100 shadow-2xs cursor-pointer transition-colors"
+          title="Preview the official Payment Receipt template on image.png stationery with RoyalLogo.png"
+        >
+          <Eye className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Receipt Template</span>
+        </button>
       </div>
 
       {/* Main Tabs (Invoices vs Quotations vs Payment Receipts) */}

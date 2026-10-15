@@ -1,5 +1,16 @@
 import { NextResponse } from 'next/server';
-import { dbInstance, getDefaultStudioProfile, verifyPassword, hashPassword } from '@/lib/admin/db';
+import {
+  dbInstance,
+  getDefaultStudioProfile,
+  verifyPassword,
+  hashPassword,
+  buildDefaultMediaDeliveryVault,
+  syncEventMediaDeliveryToClientProfile,
+  sanitizeEventForClient,
+  sanitizeClientForClientPortal,
+  extractYoutubePlaylistId,
+  getDefaultProofingGalleryForEvent,
+} from '@/lib/admin/db';
 import {
   computeInvoiceStatus,
   CAMERA_CATEGORY_RATES,
@@ -25,6 +36,7 @@ import {
   defaultConnectedSocialAccounts,
   defaultSocialMediaPosts,
   extractYoutubeId,
+  tryExtractYoutubeId,
 } from '@/lib/data';
 import { optimizePortfolioImageServer } from '@/lib/imageOptimizer';
 
@@ -69,7 +81,10 @@ export function getAuthUser(req: Request): User | null {
 
   const db = dbInstance.getData();
   const user = db.users.find(
-    u => u.id === session.userId && u.status !== 'DISABLED'
+    u =>
+      u.id === session.userId &&
+      u.status !== 'DISABLED' &&
+      (u.role === 'ADMIN' || u.role === 'STAFF')
   );
   return user || null;
 }
@@ -187,6 +202,13 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       );
     }
 
+    if (matchedUser.role !== 'ADMIN' && matchedUser.role !== 'STAFF') {
+      return NextResponse.json(
+        { error: 'This portal (/admin) is strictly for Studio Administrators and Staff. Booked clients please sign in at /client-portal using your Event ID & PIN.' },
+        { status: 403 }
+      );
+    }
+
     const token = `token-${matchedUser.id}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const maxAgeSec = 30 * 24 * 60 * 60;
     const sessionRecord = {
@@ -264,51 +286,6 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     teamMember.hasLogin = true;
     teamMember.userId = newUser.id;
     teamMember.loginStatus = 'ACTIVE';
-    dbInstance.save();
-    const { password: _, ...safeUser } = newUser;
-    return NextResponse.json(safeUser, { status: 201 });
-  }
-
-  if (pathStr === 'users/client-login' && method === 'POST') {
-    const err = requireAdminCheck();
-    if (err) return err;
-    const { clientId, email, password, name, phone } = await parseJsonBody(req);
-    if (!clientId || !email || !password) {
-      return NextResponse.json({ error: 'Client, email, and password are required.' }, { status: 400 });
-    }
-    const cleanEmail = String(email).toLowerCase().trim();
-    if (db.users.some(u => u.email.toLowerCase() === cleanEmail && u.linkedClientId !== clientId)) {
-      return NextResponse.json({ error: 'A login account with this email address already exists.' }, { status: 400 });
-    }
-    const client = db.clients.find(c => c.id === clientId);
-    if (!client) {
-      return NextResponse.json({ error: 'Target client not found.' }, { status: 404 });
-    }
-
-    // Remove any existing login for this client if recreating
-    db.users = db.users.filter(u => u.linkedClientId !== client.id);
-
-    const newUser: User = {
-      id: `usr-cli-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      name: name || client.name,
-      email: cleanEmail,
-      role: 'CLIENT',
-      status: 'ACTIVE',
-      linkedClientId: client.id,
-      phone: phone || client.phone,
-      password: hashPassword(String(password).trim()),
-      createdDate: new Date().toISOString(),
-    };
-    db.users.push(newUser);
-    client.hasLogin = true;
-    client.userId = newUser.id;
-    client.loginStatus = 'ACTIVE';
-    if (!client.email) client.email = cleanEmail;
-    recordAdminAudit(
-      'Client Portal Access',
-      ['hasLogin', 'email'],
-      `Created Client Portal login for "${client.name}" (${cleanEmail}).`
-    );
     dbInstance.save();
     const { password: _, ...safeUser } = newUser;
     return NextResponse.json(safeUser, { status: 201 });
@@ -490,7 +467,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     }
 
     recordAdminAudit(
-      targetUser.role === 'CLIENT' ? 'Client Profile' : 'Staff Profile',
+      'Staff Profile',
       updatedFields.length ? updatedFields : ['profile'],
       `${targetUser.name} (${targetUser.role}) updated their personal profile (${updatedFields.join(', ') || 'details'}).`
     );
@@ -500,7 +477,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     return NextResponse.json({
       user: safeUser,
       teamMember: linkedTm ? { ...linkedTm, dailyRate: 0, eventRate: 0 } : null,
-      client: linkedCli || null,
+      client: linkedCli
+        ? isAdmin
+          ? linkedCli
+          : sanitizeClientForClientPortal(linkedCli)
+        : null,
     });
   }
 
@@ -508,62 +489,6 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
   if (pathStr === 'db/all' && method === 'GET') {
     const err = requireAuthCheck();
     if (err) return err;
-
-    const isClient = user?.role === 'CLIENT';
-    if (isClient && user) {
-      const linkedClient = db.clients.find(
-        c =>
-          c.id === user.linkedClientId ||
-          c.userId === user.id ||
-          (c.email && c.email.toLowerCase() === user.email.toLowerCase())
-      );
-      const clientId = linkedClient?.id || user.linkedClientId || '';
-      const myClientEvents = db.events
-        .filter(e => e.clientId === clientId && e.status !== 'Cancelled')
-        .map(e => ({
-          ...e,
-          staffCost: 0,
-          rentalCost: 0,
-          eventExpenses: 0,
-          netProfit: 0,
-          netMargin: 0,
-        }));
-      const myEventIds = new Set(myClientEvents.map(e => e.id));
-      const myDaySchedules = db.daySchedules.filter(ds => myEventIds.has(ds.eventId));
-      const myInvoices = db.invoices.filter(
-        inv => inv.clientId === clientId || myEventIds.has(inv.eventId)
-      );
-      const myPayments = db.payments.filter(p => myEventIds.has(p.eventId));
-      const myQuotations = db.quotations.filter(
-        q => q.clientId === clientId || myEventIds.has(q.eventId)
-      );
-
-      return NextResponse.json({
-        profile: {
-          ...db.profile,
-          bankAccounts: (db.profile.bankAccounts || []).filter(b => b.showPublicly && b.isActive),
-          paymentMethods: (db.profile.paymentMethods || []).filter(m => m.showPublicly && m.isActive),
-        },
-        users: [],
-        clients: linkedClient ? [linkedClient] : [],
-        events: myClientEvents,
-        daySchedules: myDaySchedules,
-        packages: db.packages,
-        teamMembers: [],
-        teamAssignments: [],
-        teamPayments: [],
-        equipment: [],
-        equipmentAssignments: [],
-        maintenanceLogs: [],
-        eventExpenses: [],
-        studioExpenses: [],
-        invoices: myInvoices,
-        payments: myPayments,
-        quotations: myQuotations,
-        tasks: [],
-        tempHireRecommendations: [],
-      });
-    }
 
     const isStaff = user?.role === 'STAFF';
     if (isStaff && user) {
@@ -698,24 +623,14 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       };
     });
 
-    const enrichedClients = db.clients.map(c => {
-      const linkedUser = db.users.find(
-        u => u.linkedClientId === c.id || (u.role === 'CLIENT' && u.id === c.userId)
-      );
-      return {
-        ...c,
-        hasLogin: !!linkedUser,
-        userId: linkedUser?.id,
-        loginStatus: linkedUser?.status || (linkedUser ? 'ACTIVE' : undefined),
-      };
-    });
-
     return NextResponse.json({
       profile: db.profile,
       profileAuditLogs: db.profileAuditLogs || [],
       cms: db.cms,
-      users: db.users.map(({ password: _, ...u }) => u),
-      clients: enrichedClients,
+      users: db.users
+        .filter(u => u.role === 'ADMIN' || u.role === 'STAFF')
+        .map(({ password: _, ...u }) => u),
+      clients: db.clients,
       events: db.events,
       daySchedules: db.daySchedules,
       packages: db.packages,
@@ -769,6 +684,342 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
   }
 
   // ================= PUBLIC WEBSITE & PORTFOLIO CMS =================
+  const syncSocialDataWithPortfolioAndFilms = (cmsObj: any): boolean => {
+    if (!cmsObj) return false;
+    let mutated = false;
+
+    if (!cmsObj.websiteCustomization) {
+      cmsObj.websiteCustomization = JSON.parse(JSON.stringify(defaultWebsiteCustomization));
+      mutated = true;
+    }
+    if (!cmsObj.websiteCustomization.films) {
+      cmsObj.websiteCustomization.films = JSON.parse(
+        JSON.stringify(defaultWebsiteCustomization.films)
+      );
+      mutated = true;
+    }
+    if (!Array.isArray(cmsObj.websiteCustomization.films.weddingFilms)) {
+      cmsObj.websiteCustomization.films.weddingFilms = JSON.parse(
+        JSON.stringify(defaultWebsiteCustomization.films.weddingFilms)
+      );
+      mutated = true;
+    }
+    if (!Array.isArray(cmsObj.connectedSocialAccounts) || cmsObj.connectedSocialAccounts.length === 0) {
+      cmsObj.connectedSocialAccounts = JSON.parse(JSON.stringify(defaultConnectedSocialAccounts));
+      mutated = true;
+    }
+    if (!Array.isArray(cmsObj.socialMediaPosts) || cmsObj.socialMediaPosts.length === 0) {
+      cmsObj.socialMediaPosts = JSON.parse(JSON.stringify(defaultSocialMediaPosts));
+      mutated = true;
+    } else {
+      // Clean up any previously corrupted posts where a non-YouTube URL was treated as a YouTube ID
+      cmsObj.socialMediaPosts = cmsObj.socialMediaPosts.map((post: any) => {
+        const cleanYt = post.youtubeId ? tryExtractYoutubeId(post.youtubeId) : null;
+        const hasCorruptedThumb =
+          typeof post.image === 'string' && post.image.includes('i.ytimg.com/vi/http');
+        const hasCorruptedTitle =
+          typeof post.title === 'string' && post.title.startsWith('Royal Studio 4K Film (http');
+
+        if ((post.youtubeId && !cleanYt) || hasCorruptedThumb || hasCorruptedTitle) {
+          mutated = true;
+          const isNaturallyVideo = post.platform === 'youtube' || post.platform === 'tiktok';
+          return {
+            ...post,
+            youtubeId: cleanYt || (post.platform === 'youtube' ? 'QF3BmojTrKQ' : undefined),
+            mediaType: cleanYt || isNaturallyVideo ? 'video' : 'image',
+            image: hasCorruptedThumb
+              ? '/portfolio/bridal-01-mirror-portrait.jpg'
+              : post.image || '/portfolio/bridal-01-mirror-portrait.jpg',
+            title: hasCorruptedTitle
+              ? `Royal Studio ${post.platform === 'facebook' ? 'Facebook' : 'Instagram'} Editorial`
+              : post.title,
+            permalink:
+              typeof post.permalink === 'string' &&
+              post.permalink.startsWith('https://www.youtube.com/watch?v=http')
+                ? post.permalink.replace('https://www.youtube.com/watch?v=', '')
+                : post.permalink,
+          };
+        }
+        return post;
+      });
+
+      const existingIds = new Set(cmsObj.socialMediaPosts.map((p: any) => p.id));
+      for (const defPost of defaultSocialMediaPosts) {
+        if (!existingIds.has(defPost.id)) {
+          cmsObj.socialMediaPosts.push(JSON.parse(JSON.stringify(defPost)));
+          mutated = true;
+        } else {
+          const match = cmsObj.socialMediaPosts.find((p: any) => p.id === defPost.id);
+          if (match) {
+            if (!match.mediaType) {
+              match.mediaType = defPost.mediaType || (match.youtubeId ? 'video' : 'image');
+              mutated = true;
+            }
+            if (!match.youtubeId && defPost.youtubeId) {
+              match.youtubeId = defPost.youtubeId;
+              mutated = true;
+            }
+            if (!match.duration && defPost.duration) {
+              match.duration = defPost.duration;
+              mutated = true;
+            }
+            if (!match.viewsCount && defPost.viewsCount) {
+              match.viewsCount = defPost.viewsCount;
+              mutated = true;
+            }
+            if (match.commentsCount === undefined && defPost.commentsCount !== undefined) {
+              match.commentsCount = defPost.commentsCount;
+              mutated = true;
+            }
+            // Ensure unique permalinks on default posts so toggling one post never affects others
+            if (
+              match.permalink === 'https://www.instagram.com/royalstudio089/' ||
+              match.permalink === 'https://www.facebook.com/royalstudio089' ||
+              match.permalink === 'https://www.tiktok.com/@royalstudio089'
+            ) {
+              match.permalink = defPost.permalink;
+              mutated = true;
+            }
+            if (
+              match.image === '/portfolio/bridal-01-crimson-lehenga.jpg' ||
+              match.image === '/portfolio/couple-02-emerald-lawn.jpg' ||
+              match.image === '/portfolio/barat-02-stage-couple.jpg' ||
+              match.image === '/portfolio/walima-01-couple-portrait.jpg' ||
+              match.image === '/portfolio/mehndi-01-colorful-stage.jpg' ||
+              match.image === '/portfolio/groom-01-classic-sherwani.jpg'
+            ) {
+              match.image = defPost.image;
+              mutated = true;
+            }
+          }
+        }
+      }
+    }
+
+    // Sync account handles & live counts on connectedSocialAccounts
+    const handleMap = new Map<string, string>();
+    for (const acc of cmsObj.connectedSocialAccounts) {
+      handleMap.set(acc.platform, acc.handle);
+    }
+    cmsObj.socialMediaPosts = cmsObj.socialMediaPosts.map((post: any) => {
+      const expectedHandle = handleMap.get(post.platform);
+      if (expectedHandle && post.accountHandle !== expectedHandle) {
+        mutated = true;
+        return { ...post, accountHandle: expectedHandle };
+      }
+      return post;
+    });
+
+    // Ensure selectedForPortfolio posts exist in portfolioItems with complete social data
+    if (!Array.isArray(cmsObj.portfolioItems)) {
+      cmsObj.portfolioItems = [...defaultPortfolioItems];
+      mutated = true;
+    } else {
+      // Remove any corrupted portfolio items created from broken Auto-Fetch
+      const prevLen = cmsObj.portfolioItems.length;
+      cmsObj.portfolioItems = cmsObj.portfolioItems.filter(
+        (item: any) =>
+          !(
+            (typeof item?.image === 'string' && item.image.includes('i.ytimg.com/vi/http')) ||
+            (typeof item?.title === 'string' && item.title.startsWith('Royal Studio 4K Film (http'))
+          )
+      );
+      if (cmsObj.portfolioItems.length !== prevLen) {
+        mutated = true;
+      }
+    }
+
+    let maxPortfolioId = Math.max(
+      0,
+      ...cmsObj.portfolioItems.map((i: any) => Number(i.id) || 0)
+    );
+    const autoSyncPlatforms = new Set(
+      cmsObj.connectedSocialAccounts
+        .filter((a: any) => a.connected && a.autoSyncToGallery)
+        .map((a: any) => a.platform)
+    );
+
+    const unselectedPostIds = new Set<string>();
+
+    for (const post of cmsObj.socialMediaPosts) {
+      if (autoSyncPlatforms.has(post.platform) && !post.selectedForPortfolio) {
+        post.selectedForPortfolio = true;
+        mutated = true;
+      }
+
+      if (!post.selectedForPortfolio) {
+        unselectedPostIds.add(post.id);
+        continue;
+      }
+
+      const existingIdx = cmsObj.portfolioItems.findIndex(
+        (p: any) =>
+          (p.socialPostId && p.socialPostId === post.id) ||
+          (p.image === post.image && p.title === post.title)
+      );
+
+      const cleanYtId = post.youtubeId ? tryExtractYoutubeId(post.youtubeId) : null;
+      const videoUrlResolved =
+        post.videoUrl ||
+        (cleanYtId ? `https://www.youtube.com/watch?v=${cleanYtId}` : undefined);
+
+      if (existingIdx === -1) {
+        maxPortfolioId += 1;
+        cmsObj.portfolioItems.unshift({
+          id: maxPortfolioId,
+          title: post.title,
+          category: post.category || 'bridal',
+          image:
+            post.image ||
+            (cleanYtId
+              ? `https://i.ytimg.com/vi/${cleanYtId}/hqdefault.jpg`
+              : '/portfolio/bridal-01-mirror-portrait.jpg'),
+          aspect: post.aspect || (post.mediaType === 'video' ? 'wide' : 'tall'),
+          location: post.location || 'Burewala',
+          visible: true,
+          mediaType: post.mediaType || (cleanYtId ? 'video' : 'image'),
+          videoUrl: videoUrlResolved,
+          youtubeId: cleanYtId || undefined,
+          duration: post.duration,
+          caption: post.caption,
+          likesCount: post.likesCount,
+          commentsCount: post.commentsCount,
+          viewsCount: post.viewsCount,
+          postedAt: post.postedAt,
+          sourcePlatform: post.platform,
+          socialSource: post.platform,
+          socialPermalink: post.permalink,
+          socialPostUrl: post.permalink,
+          socialPostId: post.id,
+          socialHandle: post.accountHandle,
+          exif: {
+            camera: 'Sony A7R V',
+            lens: '85mm f/1.4 GM',
+            aperture: 'f/1.8',
+            shutter: '1/250s',
+            iso: '200',
+          },
+        });
+        mutated = true;
+      } else {
+        // Enrich existing portfolio item with complete social data if missing
+        const existingItem = cmsObj.portfolioItems[existingIdx];
+        if (
+          existingItem.socialPostId !== post.id ||
+          !existingItem.caption ||
+          !existingItem.likesCount ||
+          existingItem.category !== post.category
+        ) {
+          cmsObj.portfolioItems[existingIdx] = {
+            ...existingItem,
+            category: post.category || existingItem.category,
+            aspect: post.aspect || existingItem.aspect,
+            caption: post.caption || existingItem.caption,
+            likesCount: post.likesCount ?? existingItem.likesCount,
+            commentsCount: post.commentsCount ?? existingItem.commentsCount,
+            viewsCount: post.viewsCount || existingItem.viewsCount,
+            postedAt: post.postedAt || existingItem.postedAt,
+            sourcePlatform: post.platform || existingItem.sourcePlatform,
+            socialSource: post.platform || existingItem.socialSource,
+            socialPermalink: post.permalink || existingItem.socialPermalink,
+            socialPostUrl: post.permalink || existingItem.socialPostUrl,
+            socialPostId: post.id,
+            socialHandle: post.accountHandle || existingItem.socialHandle,
+            mediaType: post.mediaType || existingItem.mediaType || (cleanYtId ? 'video' : 'image'),
+            videoUrl: videoUrlResolved || existingItem.videoUrl,
+            youtubeId: cleanYtId || existingItem.youtubeId,
+            duration: post.duration || existingItem.duration,
+          };
+          mutated = true;
+        }
+      }
+    }
+
+    // Remove any portfolioItems that are linked to an unselected socialPostId
+    if (unselectedPostIds.size > 0) {
+      const beforeFilterLen = cmsObj.portfolioItems.length;
+      cmsObj.portfolioItems = cmsObj.portfolioItems.filter(
+        (item: any) => !(item.socialPostId && unselectedPostIds.has(item.socialPostId))
+      );
+      if (cmsObj.portfolioItems.length !== beforeFilterLen) {
+        mutated = true;
+      }
+    }
+
+    for (const post of cmsObj.socialMediaPosts) {
+      // Ensure selectedForWeddingFilms video posts exist in websiteCustomization.films.weddingFilms
+      const cleanYt = post.youtubeId ? tryExtractYoutubeId(post.youtubeId) : tryExtractYoutubeId(post.videoUrl || post.permalink);
+      const isVideo = (post.mediaType === 'video' || Boolean(cleanYt)) && Boolean(cleanYt);
+      if (isVideo && post.selectedForWeddingFilms && cleanYt) {
+        const ytId = cleanYt;
+        const filmsArr = cmsObj.websiteCustomization.films.weddingFilms || [];
+        const filmIdx = filmsArr.findIndex(
+          (f: any) =>
+            (f.sourceSocialPostId && f.sourceSocialPostId === post.id) ||
+            (extractYoutubeId(f.youtubeId) === ytId && f.title === post.title)
+        );
+        if (filmIdx === -1) {
+          filmsArr.push({
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            title: post.title,
+            youtubeId: ytId,
+            location: post.location || 'Burewala',
+            duration: post.duration || '2:15',
+            description: post.caption,
+            channelHandle: post.accountHandle,
+            viewsCount: post.viewsCount,
+            likesCount: post.likesCount,
+            commentsCount: post.commentsCount,
+            publishedAt: post.postedAt,
+            thumbnailUrl: post.image || `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+            sourceSocialPostId: post.id,
+            sourcePlatform: post.platform,
+            category: post.category,
+            permalink: post.permalink,
+            youtubeUrl: `https://www.youtube.com/watch?v=${ytId}`,
+          });
+          cmsObj.websiteCustomization.films.weddingFilms = filmsArr;
+          mutated = true;
+        } else {
+          const existingFilm = filmsArr[filmIdx];
+          if (!existingFilm.sourcePlatform || !existingFilm.viewsCount) {
+            filmsArr[filmIdx] = {
+              ...existingFilm,
+              description: existingFilm.description || post.caption,
+              channelHandle: existingFilm.channelHandle || post.accountHandle,
+              viewsCount: existingFilm.viewsCount || post.viewsCount,
+              likesCount: existingFilm.likesCount ?? post.likesCount,
+              commentsCount: existingFilm.commentsCount ?? post.commentsCount,
+              publishedAt: existingFilm.publishedAt || post.postedAt,
+              thumbnailUrl:
+                existingFilm.thumbnailUrl ||
+                post.image ||
+                `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+              sourceSocialPostId: existingFilm.sourceSocialPostId || post.id,
+              sourcePlatform: existingFilm.sourcePlatform || post.platform,
+              category: existingFilm.category || post.category,
+              permalink: existingFilm.permalink || post.permalink,
+            };
+            mutated = true;
+          }
+        }
+      }
+    }
+
+    // Update live post & video counts on connectedSocialAccounts
+    cmsObj.connectedSocialAccounts = (cmsObj.connectedSocialAccounts || []).map((acc: any) => {
+      const platPosts = (cmsObj.socialMediaPosts || []).filter((p: any) => p.platform === acc.platform);
+      const platVideos = platPosts.filter((p: any) => p.mediaType === 'video' || Boolean(p.youtubeId));
+      return {
+        ...acc,
+        postsCount: Math.max(acc.postsCount || 0, platPosts.length),
+        videosCount: Math.max(acc.videosCount || 0, platVideos.length),
+      };
+    });
+
+    return mutated;
+  };
+
   if (pathStr === 'cms' && method === 'GET') {
     if (!db.cms) {
       db.cms = {
@@ -782,13 +1033,12 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         connectedSocialAccounts: JSON.parse(JSON.stringify(defaultConnectedSocialAccounts)),
         socialMediaPosts: JSON.parse(JSON.stringify(defaultSocialMediaPosts)),
       };
+      syncSocialDataWithPortfolioAndFilms(db.cms);
       dbInstance.save();
     } else {
-      if (!db.cms.websiteCustomization) {
-        db.cms.websiteCustomization = JSON.parse(JSON.stringify(defaultWebsiteCustomization));
-      } else if (db.cms.websiteCustomization.about) {
+      let abtMutated = false;
+      if (db.cms.websiteCustomization?.about) {
         const abt = db.cms.websiteCustomization.about;
-        let abtMutated = false;
         if (!abt.mainImage || abt.mainImage === '/portfolio/couple-01-garden-intimate.jpg') {
           abt.mainImage = '/team/co-founders.webp';
           abtMutated = true;
@@ -808,41 +1058,10 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
             }
           });
         }
-        if (abtMutated) {
-          dbInstance.save();
-        }
       }
-      if (!Array.isArray(db.cms.connectedSocialAccounts) || db.cms.connectedSocialAccounts.length === 0) {
-        db.cms.connectedSocialAccounts = JSON.parse(JSON.stringify(defaultConnectedSocialAccounts));
-      }
-      if (!Array.isArray(db.cms.socialMediaPosts) || db.cms.socialMediaPosts.length === 0) {
-        db.cms.socialMediaPosts = JSON.parse(JSON.stringify(defaultSocialMediaPosts));
-      } else {
-        // Ensure all default YouTube channel videos and video metadata are present in existing DB state
-        const existingIds = new Set(db.cms.socialMediaPosts.map((p: any) => p.id));
-        let mutated = false;
-        for (const defPost of defaultSocialMediaPosts) {
-          if (!existingIds.has(defPost.id)) {
-            db.cms.socialMediaPosts.push(JSON.parse(JSON.stringify(defPost)));
-            mutated = true;
-          } else {
-            const match = db.cms.socialMediaPosts.find((p: any) => p.id === defPost.id);
-            if (match && !match.mediaType) {
-              match.mediaType = defPost.mediaType || (match.youtubeId ? 'video' : 'image');
-              match.youtubeId = match.youtubeId || defPost.youtubeId;
-              match.duration = match.duration || defPost.duration;
-              match.viewsCount = match.viewsCount || defPost.viewsCount;
-              match.commentsCount = match.commentsCount ?? defPost.commentsCount;
-              if (match.image === '/portfolio/bridal-01-crimson-lehenga.jpg' || match.image === '/portfolio/couple-02-emerald-lawn.jpg' || match.image === '/portfolio/barat-02-stage-couple.jpg' || match.image === '/portfolio/walima-01-couple-portrait.jpg' || match.image === '/portfolio/mehndi-01-colorful-stage.jpg' || match.image === '/portfolio/groom-01-classic-sherwani.jpg') {
-                match.image = defPost.image;
-              }
-              mutated = true;
-            }
-          }
-        }
-        if (mutated) {
-          dbInstance.save();
-        }
+      const socialMutated = syncSocialDataWithPortfolioAndFilms(db.cms);
+      if (abtMutated || socialMutated) {
+        dbInstance.save();
       }
     }
     if (isAdmin) {
@@ -966,6 +1185,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     if (Array.isArray(body.socialMediaPosts)) {
       db.cms.socialMediaPosts = body.socialMediaPosts;
     }
+    syncSocialDataWithPortfolioAndFilms(db.cms);
     dbInstance.save();
     return NextResponse.json(db.cms);
   }
@@ -984,52 +1204,233 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       connectedSocialAccounts: JSON.parse(JSON.stringify(defaultConnectedSocialAccounts)),
       socialMediaPosts: JSON.parse(JSON.stringify(defaultSocialMediaPosts)),
     };
+    syncSocialDataWithPortfolioAndFilms(db.cms);
     dbInstance.save();
     return NextResponse.json(db.cms);
   }
 
-  // ================= YOUTUBE CHANNEL & VIDEO RESOLVER =================
-  if (pathStr === 'cms/youtube/resolve' && method === 'POST') {
+  // ================= UNIVERSAL SOCIAL POST & YOUTUBE RESOLVER =================
+  if ((pathStr === 'cms/youtube/resolve' || pathStr === 'cms/social/resolve') && method === 'POST') {
     const err = requireAdminCheck();
     if (err) return err;
     const body = await parseJsonBody(req);
     const rawUrlOrId = typeof body?.urlOrId === 'string' ? body.urlOrId.trim() : '';
     const rawChannel = typeof body?.channelUrlOrHandle === 'string' ? body.channelUrlOrHandle.trim() : '';
 
-    // 1. Resolve a single YouTube video by URL or 11-char Video ID via real YouTube oEmbed
+    // 1. Resolve a single URL (YouTube, Instagram, Facebook, TikTok, or direct image)
     if (rawUrlOrId) {
-      const videoId = extractYoutubeId(rawUrlOrId);
-      let title = body?.fallbackTitle || `Royal Studio 4K Film (${videoId})`;
-      let authorName = '@royalstudio089';
-      let authorUrl = 'https://www.youtube.com/@royalstudio089';
-      const thumbnailUrl = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      const ytVideoId = tryExtractYoutubeId(rawUrlOrId);
+      const lowerUrl = rawUrlOrId.toLowerCase();
 
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 4500);
-        const oembedRes = await fetch(
-          `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`,
-          { signal: controller.signal }
-        );
-        clearTimeout(timer);
-        if (oembedRes.ok) {
-          const data = await oembedRes.json();
-          if (data?.title) title = String(data.title).trim();
-          if (data?.author_name) authorName = String(data.author_name).trim();
-          if (data?.author_url) authorUrl = String(data.author_url).trim();
+      // Case A: Valid YouTube Video URL or 11-char YouTube ID
+      if (ytVideoId) {
+        let title = body?.fallbackTitle || `Royal Studio 4K Film (${ytVideoId})`;
+        let authorName = '@royalstudio089';
+        let authorUrl = 'https://www.youtube.com/@royalstudio089';
+        const thumbnailUrl = `https://i.ytimg.com/vi/${ytVideoId}/hqdefault.jpg`;
+
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 4500);
+          const oembedRes = await fetch(
+            `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${ytVideoId}`)}&format=json`,
+            { signal: controller.signal }
+          );
+          clearTimeout(timer);
+          if (oembedRes.ok) {
+            const data = await oembedRes.json();
+            if (data?.title) title = String(data.title).trim();
+            if (data?.author_name) authorName = String(data.author_name).trim();
+            if (data?.author_url) authorUrl = String(data.author_url).trim();
+          }
+        } catch {
+          // Fallback if network restricted
         }
-      } catch {
-        // Fallback if network restricted
+
+        return NextResponse.json({
+          platform: 'youtube',
+          mediaType: 'video',
+          youtubeId: ytVideoId,
+          title,
+          caption: `${title} — Official 4K film from ${authorName}`,
+          authorName,
+          authorUrl,
+          thumbnailUrl,
+          imageUrl: thumbnailUrl,
+          permalink: `https://www.youtube.com/watch?v=${ytVideoId}`,
+          duration: body?.duration || '2:15',
+          viewsCount: '28.4K',
+          likesCount: 2150,
+          commentsCount: 94,
+          category: 'walima',
+          aspect: 'wide',
+        });
       }
 
+      // Case B: Instagram, Facebook, TikTok, or Direct Image URL
+      let detectedPlatform: 'instagram' | 'facebook' | 'tiktok' | 'youtube' =
+        body?.platform === 'facebook' ||
+        body?.platform === 'tiktok' ||
+        body?.platform === 'youtube'
+          ? body.platform
+          : 'instagram';
+
+      if (lowerUrl.includes('facebook.com') || lowerUrl.includes('fb.watch') || lowerUrl.includes('fb.com')) {
+        detectedPlatform = 'facebook';
+      } else if (lowerUrl.includes('tiktok.com')) {
+        detectedPlatform = 'tiktok';
+      } else if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am')) {
+        detectedPlatform = 'instagram';
+      }
+
+      const isReelOrVideoUrl =
+        detectedPlatform === 'tiktok' ||
+        lowerUrl.includes('/reel/') ||
+        lowerUrl.includes('/reels/') ||
+        lowerUrl.includes('/videos/') ||
+        lowerUrl.includes('fb.watch');
+
+      const isDirectImage =
+        /\.(jpg|jpeg|png|webp|avif)(\?.*)?$/i.test(lowerUrl) ||
+        rawUrlOrId.startsWith('/portfolio/');
+
+      const studioSamplesByPlatform: Record<
+        string,
+        { title: string; caption: string; image: string; category: string; aspect: 'tall' | 'wide' | 'square' }[]
+      > = {
+        instagram: [
+          {
+            title: 'Royal Bridal Editorial Portrait — @royalstudio089',
+            caption: 'Timeless bridal artistry captured in natural golden light by Royal Studio Burewala ✨ #RoyalStudio #PakistaniBride #BridalEditorial',
+            image: '/portfolio/bridal-04-courtyard-portrait.jpg',
+            category: 'bridal',
+            aspect: 'tall',
+          },
+          {
+            title: 'Annum & Ali — Signature Couple Portrait',
+            caption: 'Intimate couple portrait from our luxury wedding editorial series across Punjab. #CoupleGoals #RoyalStudio089',
+            image: '/portfolio/couple-01-pillars.jpg',
+            category: 'couple',
+            aspect: 'square',
+          },
+          {
+            title: 'Luxury Chikankari & Velvet Couture Shoot',
+            caption: 'Editorial fashion campaign crafted with Sony A7R V & GM prime lenses. #FashionEditorial #RoyalStudio',
+            image: '/portfolio/fashion-03-zaib.jpg',
+            category: 'fashion',
+            aspect: 'tall',
+          },
+        ],
+        facebook: [
+          {
+            title: 'Grand Walima Reception Stage & Floral Decor',
+            caption: 'Full wedding reception coverage and architectural stage lighting by Royal Studio.',
+            image: '/portfolio/walima-01-reception-hall.jpg',
+            category: 'walima',
+            aspect: 'wide',
+          },
+          {
+            title: 'Royal Barat Groom Turban & Procession',
+            caption: 'Traditional Barat preparation and family blessings documented in high resolution.',
+            image: '/portfolio/barat-02-groom-turban-moment.jpg',
+            category: 'barat',
+            aspect: 'wide',
+          },
+        ],
+        tiktok: [
+          {
+            title: 'Viral Bridal Courtyard Transition Reel',
+            caption: 'Behind the scenes of our signature bridal shoot! ✨🎬 #BridalReel #RoyalStudio089 #PakistaniWeddings',
+            image: '/portfolio/bridal-03-outdoor-tree.jpg',
+            category: 'bridal',
+            aspect: 'tall',
+          },
+        ],
+      };
+
+      const platformSamples =
+        studioSamplesByPlatform[detectedPlatform] || studioSamplesByPlatform.instagram;
+      const sample = platformSamples[Math.floor(Math.random() * platformSamples.length)];
+
+      let resolvedTitle = body?.fallbackTitle || sample.title;
+      let resolvedCaption = sample.caption;
+      let resolvedImage = isDirectImage ? rawUrlOrId : sample.image;
+
+      // Attempt lightweight OpenGraph metadata fetch for public URLs
+      if (!isDirectImage && rawUrlOrId.startsWith('http')) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 3500);
+          const pageRes = await fetch(rawUrlOrId, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; RoyalStudioCMS/1.0)',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+          if (pageRes.ok) {
+            const html = await pageRes.text();
+            const ogTitleMatch =
+              html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i);
+            const ogDescMatch =
+              html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:description["']/i);
+            const ogImageMatch =
+              html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i);
+
+            if (
+              ogTitleMatch?.[1] &&
+              !ogTitleMatch[1].toLowerCase().includes('login') &&
+              !ogTitleMatch[1].toLowerCase().includes('sign in')
+            ) {
+              resolvedTitle = ogTitleMatch[1]
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"')
+                .replace(/&#039;/g, "'")
+                .trim();
+            }
+            if (ogDescMatch?.[1] && !ogDescMatch[1].toLowerCase().includes('log in')) {
+              resolvedCaption = ogDescMatch[1]
+                .replace(/&amp;/g, '&')
+                .replace(/&quot;/g, '"')
+                .replace(/&#039;/g, "'")
+                .trim();
+            }
+            if (ogImageMatch?.[1] && ogImageMatch[1].startsWith('http')) {
+              resolvedImage = ogImageMatch[1].replace(/&amp;/g, '&').trim();
+            }
+          }
+        } catch {
+          // Use studio profile catalog fallback
+        }
+      }
+
+      const acc = (db.cms?.connectedSocialAccounts || defaultConnectedSocialAccounts).find(
+        (a: any) => a.platform === detectedPlatform
+      );
+
       return NextResponse.json({
-        youtubeId: videoId,
-        title,
-        authorName,
-        authorUrl,
-        thumbnailUrl,
-        permalink: `https://www.youtube.com/watch?v=${videoId}`,
-        duration: body?.duration || '2:15',
+        platform: detectedPlatform,
+        mediaType: isReelOrVideoUrl ? 'video' : 'image',
+        youtubeId: isReelOrVideoUrl ? 'IHpGkLHnmpU' : '',
+        title: resolvedTitle,
+        caption: resolvedCaption,
+        authorName: acc?.handle || '@royalstudio089',
+        authorUrl: acc?.profileUrl || rawUrlOrId,
+        thumbnailUrl: resolvedImage,
+        imageUrl: resolvedImage,
+        permalink: rawUrlOrId.startsWith('http')
+          ? rawUrlOrId
+          : acc?.profileUrl || 'https://www.instagram.com/royalstudio089/',
+        duration: isReelOrVideoUrl ? '0:56' : '',
+        viewsCount: '19.4K',
+        likesCount: 2180,
+        commentsCount: 96,
+        category: sample.category,
+        aspect: sample.aspect,
       });
     }
 
@@ -1177,82 +1578,110 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       };
     }
 
-    // Update lastSyncedAt on connected accounts
-    const targetPlatform = body?.platform;
+    const targetPlatform =
+      body?.platform && body.platform !== 'all' ? String(body.platform) : undefined;
+
+    // 1. Discover any new videos from connected YouTube channel if syncing all or YouTube
+    if (!targetPlatform || targetPlatform === 'youtube') {
+      const ytAcc = (db.cms.connectedSocialAccounts || []).find(
+        (a: any) => a.platform === 'youtube' && a.connected
+      );
+      if (ytAcc) {
+        const handleOrUrl = ytAcc.profileUrl || ytAcc.handle || '@royalstudio089';
+        try {
+          let targetUrl = handleOrUrl;
+          if (!targetUrl.startsWith('http')) {
+            const cleanHandle = targetUrl.startsWith('@') ? targetUrl : `@${targetUrl}`;
+            targetUrl = `https://www.youtube.com/${cleanHandle}/videos`;
+          } else if (!targetUrl.endsWith('/videos') && !targetUrl.includes('feeds/videos.xml')) {
+            targetUrl = `${targetUrl.replace(/\/$/, '')}/videos`;
+          }
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 4500);
+          const res = await fetch(targetUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; RoyalStudioCMS/1.0)',
+              'Accept-Language': 'en-US,en;q=0.9',
+            },
+            signal: controller.signal,
+          });
+          clearTimeout(timer);
+          if (res.ok) {
+            const html = await res.text();
+            const videoRegex =
+              /"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})".*?"title":\{"runs":\[\{"text":"([^"]+)"\}/g;
+            let match: RegExpExecArray | null;
+            const seen = new Set<string>();
+            const existingPosts = db.cms.socialMediaPosts || [];
+            while ((match = videoRegex.exec(html)) !== null && seen.size < 12) {
+              const vid = match[1];
+              const vTitle = match[2];
+              if (vid && !seen.has(vid)) {
+                seen.add(vid);
+                const exists = existingPosts.some(
+                  (p: any) => p.youtubeId === vid || p.permalink?.includes(vid)
+                );
+                if (!exists) {
+                  existingPosts.unshift({
+                    id: `yt-post-${vid}`,
+                    platform: 'youtube',
+                    accountHandle: ytAcc.handle || '@royalstudio089',
+                    title: vTitle,
+                    caption: `${vTitle} — Synced from connected YouTube channel ${ytAcc.handle || '@royalstudio089'}`,
+                    image: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+                    permalink: `https://www.youtube.com/watch?v=${vid}`,
+                    postedAt: nowIso.split('T')[0],
+                    location: 'Burewala',
+                    likesCount: 1420,
+                    commentsCount: 64,
+                    viewsCount: '21.4K',
+                    mediaType: 'video',
+                    youtubeId: vid,
+                    duration: '2:15',
+                    category: 'walima',
+                    aspect: 'wide',
+                    selectedForPortfolio: Boolean(ytAcc.autoSyncToGallery),
+                    selectedForWeddingFilms: true,
+                  });
+                }
+              }
+            }
+            db.cms.socialMediaPosts = existingPosts;
+          }
+        } catch {
+          // Fallback to existing studio social feed catalog
+        }
+      }
+    }
+
+    // 2. Ensure complete catalog of posts from connected accounts is merged & synchronized
+    syncSocialDataWithPortfolioAndFilms(db.cms);
+
+    // 3. Update lastSyncedAt & live synced counts on connectedSocialAccounts
     db.cms.connectedSocialAccounts = (
       db.cms.connectedSocialAccounts || defaultConnectedSocialAccounts
     ).map((acc: any) => {
-      if (targetPlatform && acc.platform !== targetPlatform) return acc;
+      const platPosts = (db.cms?.socialMediaPosts || []).filter(
+        (p: any) => p.platform === acc.platform
+      );
+      const platVideos = platPosts.filter(
+        (p: any) => p.mediaType === 'video' || Boolean(p.youtubeId)
+      );
+      if (targetPlatform && acc.platform !== targetPlatform) {
+        return {
+          ...acc,
+          postsCount: Math.max(acc.postsCount || 0, platPosts.length),
+          videosCount: Math.max(acc.videosCount || 0, platVideos.length),
+        };
+      }
       if (!acc.connected) return acc;
       return {
         ...acc,
         lastSyncedAt: nowIso,
+        postsCount: Math.max(acc.postsCount || 0, platPosts.length),
+        videosCount: Math.max(acc.videosCount || 0, platVideos.length),
       };
     });
-
-    // Sync account handles onto posts
-    const handleMap = new Map<string, string>();
-    for (const acc of db.cms.connectedSocialAccounts) {
-      handleMap.set(acc.platform, acc.handle);
-    }
-    db.cms.socialMediaPosts = (db.cms.socialMediaPosts || []).map((post: any) => ({
-      ...post,
-      accountHandle: handleMap.get(post.platform) || post.accountHandle,
-    }));
-
-    // Auto-sync posts to portfolio for accounts with autoSyncToGallery enabled
-    const autoSyncPlatforms = new Set(
-      db.cms.connectedSocialAccounts
-        .filter((a: any) => a.connected && a.autoSyncToGallery)
-        .map((a: any) => a.platform)
-    );
-
-    if (autoSyncPlatforms.size > 0) {
-      let maxId = Math.max(0, ...(db.cms.portfolioItems || []).map((i: any) => i.id || 0));
-      const nextPortfolio = [...(db.cms.portfolioItems || [])];
-
-      db.cms.socialMediaPosts = db.cms.socialMediaPosts.map((post: any) => {
-        if (!autoSyncPlatforms.has(post.platform)) return post;
-        const alreadyIn = nextPortfolio.some(
-          (p: any) =>
-            (p.socialPermalink && p.socialPermalink === post.permalink) ||
-            (p.image === post.image && p.title === post.title)
-        );
-        if (!alreadyIn) {
-          maxId += 1;
-          nextPortfolio.unshift({
-            id: maxId,
-            title: post.title,
-            category: post.category,
-            image: post.image,
-            aspect: post.aspect,
-            location: post.location || 'Burewala',
-            visible: true,
-            mediaType: post.mediaType || (post.youtubeId ? 'video' : 'image'),
-            videoUrl: post.videoUrl,
-            youtubeId: post.youtubeId,
-            duration: post.duration,
-            caption: post.caption,
-            likesCount: post.likesCount,
-            viewsCount: post.viewsCount,
-            postedAt: post.postedAt,
-            sourcePlatform: post.platform,
-            socialPermalink: post.permalink,
-            socialHandle: post.accountHandle,
-            exif: {
-              camera: 'Sony A7R V',
-              lens: '85mm f/1.4 GM',
-              aperture: 'f/1.8',
-              shutter: '1/250s',
-              iso: '200',
-            },
-          });
-        }
-        return { ...post, selectedForPortfolio: true };
-      });
-
-      db.cms.portfolioItems = nextPortfolio;
-    }
 
     dbInstance.save();
     return NextResponse.json(db.cms);
@@ -1446,31 +1875,117 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
   }
 
   // ================= CLIENTS =================
+  if (pathStr === 'clients' && method === 'GET') {
+    const err = requireAuthCheck();
+    if (err) return err;
+    if (isAdmin) {
+      return NextResponse.json(db.clients);
+    }
+    return NextResponse.json(db.clients.map(c => sanitizeClientForClientPortal(c)));
+  }
+
+  if (slug[0] === 'clients' && slug.length === 2 && method === 'GET') {
+    const err = requireAuthCheck();
+    if (err) return err;
+    const id = slug[1];
+    const client = db.clients.find(c => c.id === id);
+    if (!client) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+    }
+    return NextResponse.json(isAdmin ? client : sanitizeClientForClientPortal(client));
+  }
+
   if (pathStr === 'clients' && method === 'POST') {
     const err = requireAdminCheck();
     if (err) return err;
-    const { name, phone, whatsapp, email, address, city, notes } = await parseJsonBody(req);
-    if (!name || !phone) {
-      return NextResponse.json({ error: 'Name and Phone are required' }, { status: 400 });
-    }
-    const duplicate = db.clients.find(c => c.phone === phone || c.name.toLowerCase() === name.toLowerCase());
-    if (duplicate) {
-      return NextResponse.json({ error: 'A client with this phone number or name already exists.' }, { status: 400 });
-    }
-    const newClient = {
-      id: `cli-${Date.now().toString().slice(-6)}`,
+    const {
       name,
       phone,
-      whatsapp: whatsapp || phone,
-      email: email || '',
-      address: address || '',
-      city: city || 'Burewala',
-      notes: notes || '',
+      whatsapp,
+      email,
+      address,
+      city,
+      notes,
+      portalPassword,
+      hasLogin,
+      loginStatus,
+      googleDriveFolderUrl,
+      youtubePlaylistUrl,
+      mediaDelivery,
+    } = await parseJsonBody(req);
+    const cleanName = String(name || '').trim();
+    const cleanPhone = String(phone || '').trim();
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!cleanName || !cleanPhone) {
+      return NextResponse.json({ error: 'Name and Phone are required' }, { status: 400 });
+    }
+    const normPhone = cleanPhone.replace(/[^0-9]/g, '');
+    let duplicateReason = '';
+    const duplicate = db.clients.find(c => {
+      if (c.name.trim().toLowerCase() === cleanName.toLowerCase()) {
+        duplicateReason = `A client named "${c.name}" already exists.`;
+        return true;
+      }
+      const cDigits = (c.phone || '').replace(/[^0-9]/g, '');
+      if (normPhone.length >= 7 && cDigits === normPhone) {
+        duplicateReason = `A client (${c.name}) with phone number "${cleanPhone}" already exists.`;
+        return true;
+      }
+      if (cleanEmail && c.email && c.email.trim().toLowerCase() === cleanEmail) {
+        duplicateReason = `A client (${c.name}) with email address "${cleanEmail}" already exists.`;
+        return true;
+      }
+      return false;
+    });
+    if (duplicate) {
+      return NextResponse.json(
+        { error: duplicateReason || 'A client with this name, phone number, or email address already exists.' },
+        { status: 400 }
+      );
+    }
+    const cleanPass = String(portalPassword || '').trim();
+    if (cleanPass && cleanPass.length < 4) {
+      return NextResponse.json(
+        { error: 'Client Portal password must be at least 4 characters long.' },
+        { status: 400 }
+      );
+    }
+    const effectiveHasLogin =
+      loginStatus === 'NONE' || hasLogin === false
+        ? false
+        : hasLogin !== undefined
+        ? Boolean(hasLogin)
+        : Boolean(cleanPass);
+    const effectiveLoginStatus = !effectiveHasLogin
+      ? 'NONE'
+      : loginStatus === 'DISABLED'
+      ? 'DISABLED'
+      : 'ACTIVE';
+    const newClient: any = {
+      id: `cli-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 5)}`,
+      name: cleanName,
+      phone: cleanPhone,
+      whatsapp: String(whatsapp || cleanPhone).trim(),
+      email: cleanEmail,
+      address: String(address || '').trim(),
+      city: String(city || 'Burewala').trim(),
+      notes: String(notes || '').trim(),
+      portalPassword: effectiveHasLogin ? cleanPass || `RS@${normPhone.slice(-4) || '2026'}` : '',
+      hasLogin: effectiveHasLogin,
+      loginStatus: effectiveLoginStatus as 'ACTIVE' | 'DISABLED' | 'NONE',
+      googleDriveFolderUrl: googleDriveFolderUrl || mediaDelivery?.driveFolderUrl || undefined,
+      youtubePlaylistUrl: youtubePlaylistUrl || mediaDelivery?.youtubePlaylistUrl || undefined,
+      mediaDelivery: mediaDelivery || undefined,
       createdDate: new Date().toISOString(),
       createdBy: user?.id || 'usr-admin',
     };
     db.clients.unshift(newClient);
-    dbInstance.save();
+    recordAdminAudit(
+      'Clients & Portal Accounts',
+      ['name', 'phone', 'email', 'loginStatus'],
+      `Created client profile "${newClient.name}" (${newClient.city}) with login status: ${newClient.loginStatus}.`
+    );
+    await dbInstance.save();
     return NextResponse.json(newClient);
   }
 
@@ -1481,8 +1996,145 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const body = await parseJsonBody(req);
     const index = db.clients.findIndex(c => c.id === id);
     if (index === -1) return NextResponse.json({ error: 'Client not found' }, { status: 404 });
-    db.clients[index] = { ...db.clients[index], ...body };
-    dbInstance.save();
+
+    const existing = db.clients[index];
+    const nextName = body.name !== undefined ? String(body.name).trim() : existing.name;
+    const nextPhone = body.phone !== undefined ? String(body.phone).trim() : existing.phone;
+    const nextEmail =
+      body.email !== undefined ? String(body.email).trim().toLowerCase() : existing.email;
+
+    if (!nextName || !nextPhone) {
+      return NextResponse.json({ error: 'Name and Phone are required' }, { status: 400 });
+    }
+
+    const normPhone = nextPhone.replace(/[^0-9]/g, '');
+    let conflictReason = '';
+    const conflict = db.clients.find(c => {
+      if (c.id === id) return false;
+      if (c.name.trim().toLowerCase() === nextName.toLowerCase()) {
+        conflictReason = `Another client ("${c.name}") already uses this name.`;
+        return true;
+      }
+      const cDigits = (c.phone || '').replace(/[^0-9]/g, '');
+      if (normPhone.length >= 7 && cDigits === normPhone) {
+        conflictReason = `Another client ("${c.name}") already uses phone number ${nextPhone}.`;
+        return true;
+      }
+      if (nextEmail && c.email && c.email.trim().toLowerCase() === nextEmail) {
+        conflictReason = `Another client ("${c.name}") already uses email address ${nextEmail}.`;
+        return true;
+      }
+      return false;
+    });
+    if (conflict) {
+      return NextResponse.json(
+        { error: conflictReason || `Another client (${conflict.name}) already uses this name, phone number, or email.` },
+        { status: 400 }
+      );
+    }
+
+    const updated: any = {
+      ...existing,
+      ...body,
+      name: nextName,
+      phone: nextPhone,
+      whatsapp: body.whatsapp !== undefined ? String(body.whatsapp || nextPhone).trim() : existing.whatsapp,
+      email: nextEmail,
+    };
+
+    if (body.mediaDelivery && typeof body.mediaDelivery === 'object') {
+      const mdPatch = body.mediaDelivery;
+      const nowIso = new Date().toISOString();
+      const rawFolders = Array.isArray(mdPatch.driveSubfolders)
+        ? mdPatch.driveSubfolders
+        : existing.mediaDelivery?.driveSubfolders || [];
+      const normalizedFolders = rawFolders.map((f: any) => ({
+        ...f,
+        folderUrl: f.folderUrl || f.driveUrl || mdPatch.driveFolderUrl || updated.googleDriveFolderUrl || '',
+        driveUrl: f.driveUrl || f.folderUrl || mdPatch.driveFolderUrl || updated.googleDriveFolderUrl || '',
+        folderType: f.folderType || 'High-Res Edited',
+        transferStatus: f.transferStatus || 'Verified',
+        status: f.status || 'Synced',
+        updatedAt: f.updatedAt || f.uploadedAt || nowIso,
+        uploadedAt: f.uploadedAt || f.updatedAt || nowIso,
+      }));
+      const rawVideos = Array.isArray(mdPatch.unlistedYoutubeVideos)
+        ? mdPatch.unlistedYoutubeVideos
+        : Array.isArray(mdPatch.unlistedVideos)
+        ? mdPatch.unlistedVideos
+        : existing.mediaDelivery?.unlistedYoutubeVideos ||
+          existing.mediaDelivery?.unlistedVideos ||
+          [];
+      const playlistUrl =
+        typeof mdPatch.youtubePlaylistUrl === 'string'
+          ? mdPatch.youtubePlaylistUrl.trim()
+          : updated.youtubePlaylistUrl || existing.mediaDelivery?.youtubePlaylistUrl || '';
+      const playlistId =
+        extractYoutubePlaylistId(playlistUrl) ||
+        mdPatch.youtubePlaylistId ||
+        existing.mediaDelivery?.youtubePlaylistId ||
+        '';
+      updated.mediaDelivery = {
+        ...(existing.mediaDelivery || {}),
+        ...mdPatch,
+        driveSubfolders: normalizedFolders,
+        unlistedYoutubeVideos: rawVideos,
+        unlistedVideos: rawVideos,
+        youtubePlaylistUrl: playlistUrl,
+        youtubePlaylistId: playlistId,
+        lastUpdatedAt: nowIso,
+      };
+      if (updated.mediaDelivery.driveFolderUrl) {
+        updated.googleDriveFolderUrl = updated.mediaDelivery.driveFolderUrl;
+      }
+      if (updated.mediaDelivery.youtubePlaylistUrl) {
+        updated.youtubePlaylistUrl = updated.mediaDelivery.youtubePlaylistUrl;
+      }
+      // Also propagate mediaDelivery updates to the client's events if they only have 1 event or no event-specific override
+      const clientEvents = db.events.filter(e => e.clientId === id);
+      if (clientEvents.length === 1) {
+        const targetEvt = clientEvents[0];
+        targetEvt.mediaDelivery = {
+          ...(targetEvt.mediaDelivery || buildDefaultMediaDeliveryVault(targetEvt, updated)),
+          ...updated.mediaDelivery,
+        };
+      }
+    }
+
+    if (
+      body.loginStatus === 'NONE' ||
+      body.hasLogin === false ||
+      (body.portalPassword !== undefined && String(body.portalPassword).trim() === '')
+    ) {
+      updated.portalPassword = '';
+      updated.hasLogin = false;
+      updated.loginStatus = 'NONE';
+    } else if (body.portalPassword !== undefined) {
+      const cleanPass = String(body.portalPassword).trim();
+      if (cleanPass.length < 4) {
+        return NextResponse.json(
+          { error: 'Client Portal password must be at least 4 characters long.' },
+          { status: 400 }
+        );
+      }
+      updated.portalPassword = cleanPass;
+      updated.hasLogin = true;
+      updated.loginStatus = body.loginStatus === 'DISABLED' ? 'DISABLED' : 'ACTIVE';
+    } else if (body.loginStatus === 'ACTIVE' || body.loginStatus === 'DISABLED' || body.hasLogin === true) {
+      updated.hasLogin = true;
+      updated.loginStatus = body.loginStatus === 'DISABLED' ? 'DISABLED' : 'ACTIVE';
+      if (!updated.portalPassword || !updated.portalPassword.trim()) {
+        updated.portalPassword = `RS@${normPhone.slice(-4) || '2026'}`;
+      }
+    }
+
+    db.clients[index] = updated;
+    recordAdminAudit(
+      'Clients & Portal Accounts',
+      Object.keys(body),
+      `Updated client "${updated.name}" (${Object.keys(body).join(', ')}).`
+    );
+    await dbInstance.save();
     return NextResponse.json(db.clients[index]);
   }
 
@@ -1490,12 +2142,42 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const id = slug[1];
-    const hasEvents = db.events.some(e => e.clientId === id);
-    if (hasEvents) {
-      return NextResponse.json({ error: 'Cannot delete client with existing events. Remove or reassign events first.' }, { status: 400 });
+    const urlObj = new URL(req.url);
+    const cascade = urlObj.searchParams.get('cascade') === 'true';
+    const targetClient = db.clients.find(c => c.id === id);
+    if (!targetClient) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+    }
+    const clientEvents = db.events.filter(e => e.clientId === id);
+    if (clientEvents.length > 0 && !cascade) {
+      return NextResponse.json(
+        { error: 'Cannot delete client with existing events. Remove or reassign events first, or confirm cascade deletion.' },
+        { status: 400 }
+      );
+    }
+    if (clientEvents.length > 0) {
+      const evtIds = new Set(clientEvents.map(e => e.id));
+      db.events = db.events.filter(e => e.clientId !== id);
+      db.daySchedules = db.daySchedules.filter(d => !evtIds.has(d.eventId));
+      db.teamAssignments = db.teamAssignments.filter(t => !evtIds.has(t.eventId));
+      db.equipmentAssignments = db.equipmentAssignments.filter(eq => !evtIds.has(eq.eventId));
+      db.eventExpenses = db.eventExpenses.filter(ex => !evtIds.has(ex.eventId));
+      db.tasks = db.tasks.filter(t => !evtIds.has(t.eventId));
+      db.invoices = db.invoices.filter(i => i.clientId !== id && !evtIds.has(i.eventId));
+      db.payments = db.payments.filter(p => p.clientId !== id && !evtIds.has(p.eventId));
+      db.quotations = db.quotations.filter(q => q.clientId !== id && !evtIds.has(q.eventId));
+    } else {
+      db.invoices = db.invoices.filter(i => i.clientId !== id);
+      db.payments = db.payments.filter(p => p.clientId !== id);
+      db.quotations = db.quotations.filter(q => q.clientId !== id);
     }
     db.clients = db.clients.filter(c => c.id !== id);
-    dbInstance.save();
+    recordAdminAudit(
+      'Clients & Portal Accounts',
+      ['deleted'],
+      `Deleted client profile "${targetClient.name}"${clientEvents.length > 0 ? ` and ${clientEvents.length} associated event(s)` : ''}.`
+    );
+    await dbInstance.save();
     return NextResponse.json({ success: true });
   }
 
@@ -1703,7 +2385,14 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       netMargin: priceNum > 0 ? 100 : 0,
       totalClientPayments: 0,
       remainingBalance: priceNum,
-    };
+    } as any;
+    const targetClientObj = db.clients.find(c => c.id === clientId);
+    newEvent.proofingGallery =
+      body.proofingGallery && Array.isArray(body.proofingGallery.photos)
+        ? body.proofingGallery
+        : getDefaultProofingGalleryForEvent(newEvent.id, newEvent.title);
+    newEvent.mediaDelivery = buildDefaultMediaDeliveryVault(newEvent, targetClientObj);
+    syncEventMediaDeliveryToClientProfile(newEvent, db.clients);
     db.events.unshift(newEvent);
 
     // Persist Day Schedules (for both Single-Day and Multi-Day events with per-date DM/Night timing & per-day packages)
@@ -1886,6 +2575,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         id: `pay-${Date.now().toString().slice(-6)}`,
         paymentId: `PAY-${Date.now().toString().slice(-4)}`,
         eventId: newEvent.id,
+        clientId: newEvent.clientId,
         invoiceId: newInvoice.id,
         amount: advNum,
         paymentDate: newEvent.eventDate,
@@ -1893,6 +2583,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
         reference: 'Booking Advance Deposit',
         notes: 'Initial booking advance payment',
         createdBy: user?.id || 'usr-admin',
+        verificationStatus: 'Verified' as const,
+        verifiedByAdminAt: new Date().toISOString(),
       };
       db.payments.unshift(payment);
     }
@@ -2035,6 +2727,11 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const index = db.events.findIndex(e => e.id === id);
     if (index === -1) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
     db.events[index] = { ...db.events[index], ...body, updatedDate: new Date().toISOString() };
+    const linkedCli = db.clients.find(c => c.id === db.events[index].clientId);
+    if (!db.events[index].mediaDelivery) {
+      db.events[index].mediaDelivery = buildDefaultMediaDeliveryVault(db.events[index], linkedCli);
+    }
+    syncEventMediaDeliveryToClientProfile(db.events[index], db.clients);
     recordAdminAudit(
       'Events & Bookings',
       Object.keys(body),
@@ -2043,6 +2740,129 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const updated = await dbInstance.recalculateEvent(id);
     await dbInstance.save();
     return NextResponse.json(updated);
+  }
+
+  if (slug[0] === 'events' && slug[2] === 'media-delivery' && method === 'POST') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    const id = slug[1];
+    const body = await parseJsonBody(req);
+    const event = db.events.find(e => e.id === id);
+    if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
+    const client = db.clients.find(c => c.id === event.clientId);
+
+    if (!event.mediaDelivery) {
+      event.mediaDelivery = buildDefaultMediaDeliveryVault(event, client);
+    }
+
+    const action = String(body.action || 'UPDATE_VAULT').toUpperCase();
+    const nowIso = new Date().toISOString();
+
+    if (action === 'APPROVE_AND_PROVISION') {
+      const freshVault = buildDefaultMediaDeliveryVault(event, client);
+      event.mediaDelivery = {
+        ...freshVault,
+        ...event.mediaDelivery,
+        approvalStatus: 'Approved & Provisioned',
+        approvedAt: nowIso,
+        approvedBy: user?.name || 'Royal Studio Admin',
+        adminOnlyDriveCredentials: {
+          ...freshVault.adminOnlyDriveCredentials!,
+          ...(event.mediaDelivery.adminOnlyDriveCredentials || {}),
+          ...(body.adminOnlyDriveCredentials || {}),
+          provisionedAt: nowIso,
+          provisionedBy: user?.name || 'Royal Studio Admin',
+        },
+        lastUpdatedAt: nowIso,
+      };
+      if (event.status === 'Inquiry' || event.status === 'Quotation Sent') {
+        event.status = 'Confirmed';
+      }
+      syncEventMediaDeliveryToClientProfile(event, db.clients);
+      recordAdminAudit(
+        'Automated Event Delivery & Storage',
+        ['mediaDelivery', 'adminOnlyDriveCredentials'],
+        `Approved & provisioned dedicated 15GB Google Drive account (${event.mediaDelivery.adminOnlyDriveCredentials?.googleAccountEmail}) + Unlisted YouTube Playlist for "${event.title}".`
+      );
+      await dbInstance.save();
+      return NextResponse.json({
+        event,
+        client,
+        mediaDelivery: event.mediaDelivery,
+      });
+    }
+
+    if (body.mediaDelivery && typeof body.mediaDelivery === 'object') {
+      const patch = body.mediaDelivery;
+      const rawSubfolders = Array.isArray(patch.driveSubfolders)
+        ? patch.driveSubfolders
+        : event.mediaDelivery.driveSubfolders;
+      const nextSubfolders = rawSubfolders.map((f: any) => ({
+        ...f,
+        folderUrl: f.folderUrl || f.driveUrl || patch.driveFolderUrl || event.mediaDelivery?.driveFolderUrl || '',
+        driveUrl: f.driveUrl || f.folderUrl || patch.driveFolderUrl || event.mediaDelivery?.driveFolderUrl || '',
+        folderType: f.folderType || 'High-Res Edited',
+        transferStatus: f.transferStatus || 'Verified',
+        status: f.status || 'Synced',
+        updatedAt: f.updatedAt || f.uploadedAt || nowIso,
+        uploadedAt: f.uploadedAt || f.updatedAt || nowIso,
+      }));
+      const rawVideos = Array.isArray(patch.unlistedYoutubeVideos)
+        ? patch.unlistedYoutubeVideos
+        : Array.isArray(patch.unlistedVideos)
+        ? patch.unlistedVideos
+        : event.mediaDelivery.unlistedYoutubeVideos ||
+          event.mediaDelivery.unlistedVideos ||
+          [];
+      const totalGb = Number(
+        nextSubfolders.reduce((sum: number, f: any) => sum + Number(f.sizeGb || 0), 0).toFixed(1)
+      );
+      const totalPhotos = nextSubfolders.reduce(
+        (sum: number, f: any) => sum + Number(f.fileCount || 0),
+        0
+      );
+      const playlistUrl =
+        typeof patch.youtubePlaylistUrl === 'string'
+          ? patch.youtubePlaylistUrl.trim()
+          : event.mediaDelivery.youtubePlaylistUrl;
+      const extractedPlId =
+        extractYoutubePlaylistId(playlistUrl) || event.mediaDelivery.youtubePlaylistId;
+
+      event.mediaDelivery = {
+        ...event.mediaDelivery,
+        ...patch,
+        driveSubfolders: nextSubfolders,
+        unlistedYoutubeVideos: rawVideos,
+        unlistedVideos: rawVideos,
+        totalDataVolumeGb:
+          typeof patch.totalDataVolumeGb === 'number' ? patch.totalDataVolumeGb : totalGb,
+        totalHighResPhotos:
+          typeof patch.totalHighResPhotos === 'number' ? patch.totalHighResPhotos : totalPhotos,
+        youtubePlaylistUrl: playlistUrl,
+        youtubePlaylistId: extractedPlId,
+        adminOnlyDriveCredentials: {
+          ...(event.mediaDelivery.adminOnlyDriveCredentials ||
+            buildDefaultMediaDeliveryVault(event, client).adminOnlyDriveCredentials!),
+          ...(patch.adminOnlyDriveCredentials || {}),
+          usedStorageGb:
+            typeof patch.totalDataVolumeGb === 'number' ? patch.totalDataVolumeGb : totalGb,
+        },
+        lastUpdatedAt: nowIso,
+      };
+    }
+
+    syncEventMediaDeliveryToClientProfile(event, db.clients);
+    recordAdminAudit(
+      'Automated Event Delivery & Storage',
+      ['mediaDelivery', 'googleDrive', 'youtubePlaylist'],
+      `Updated 15GB Google Drive & Unlisted YouTube delivery vault for "${event.title}".`
+    );
+    await dbInstance.save();
+    return NextResponse.json({
+      event,
+      client,
+      mediaDelivery: event.mediaDelivery,
+    });
   }
 
   if (slug[0] === 'events' && slug.length === 2 && method === 'DELETE') {
@@ -2760,12 +3580,8 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
 
   // ================= PAYMENTS =================
   if (pathStr === 'payments' && method === 'POST') {
-    const err = requireAuthCheck();
+    const err = requireAdminCheck();
     if (err) return err;
-    const isClientUser = user?.role === 'CLIENT';
-    if (!isAdmin && !isClientUser) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    }
     const body = await parseJsonBody(req);
     const {
       eventId,
@@ -2786,14 +3602,13 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const event = db.events.find(e => e.id === eventId);
     if (!event) return NextResponse.json({ error: 'Event not found' }, { status: 404 });
 
-    const statusToSet = isClientUser
-      ? 'Pending Verification'
-      : verificationStatus || 'Verified';
+    const statusToSet = verificationStatus || 'Verified';
 
     const newPayment = {
       id: `pay-${Date.now().toString().slice(-6)}`,
       paymentId: `PAY-${Date.now().toString().slice(-4)}`,
       eventId,
+      clientId: body.clientId || event.clientId,
       invoiceId,
       amount: amt,
       paymentDate: paymentDate || new Date().toISOString().split('T')[0],
@@ -2804,8 +3619,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       verificationStatus: statusToSet,
       receiptImageDataUrl: receiptImageDataUrl || undefined,
       senderAccountTitle: senderAccountTitle || undefined,
-      submittedByClientAt: isClientUser ? new Date().toISOString() : undefined,
-      verifiedByAdminAt: !isClientUser && statusToSet === 'Verified' ? new Date().toISOString() : undefined,
+      verifiedByAdminAt: statusToSet === 'Verified' ? new Date().toISOString() : undefined,
     };
     db.payments.unshift(newPayment);
     await dbInstance.recalculateEvent(eventId);

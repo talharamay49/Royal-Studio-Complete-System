@@ -33,9 +33,19 @@ import {
   QrCode,
   FileText,
   Mail,
+  WifiOff,
+  Lock,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import QRCode from "qrcode";
+import {
+  saveOfflineProposal,
+  getOfflineProposal,
+  enqueueBackgroundSync,
+  getCustomerPortalSession,
+  setCustomerPortalSession,
+} from "@/lib/pwa/offlineVault";
+import ClientPortalOfflineStatusBanner from "@/components/client-portal/ClientPortalOfflineStatusBanner";
 import { generateQuotationPDF } from "@/components/admin/utils/pdfGenerator";
 import ProposalPrintPreviewModal from "@/components/proposal/ProposalPrintPreviewModal";
 import ProposalQrShareModal from "@/components/proposal/ProposalQrShareModal";
@@ -140,6 +150,25 @@ export default function ClientProposalPage() {
   const [depositSuccessNotice, setDepositSuccessNotice] = useState(false);
   const [copiedAccountKey, setCopiedAccountKey] = useState<string | null>(null);
   const [showDepositUploader, setShowDepositUploader] = useState(false);
+  const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [savedOfflineNotice, setSavedOfflineNotice] = useState(false);
+  const [isPinLocked, setIsPinLocked] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [verifyingPin, setVerifyingPin] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setIsOfflineMode(!navigator.onLine);
+    const onOnline = () => setIsOfflineMode(false);
+    const onOffline = () => setIsOfflineMode(true);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !proposalId) return;
@@ -155,33 +184,110 @@ export default function ClientProposalPage() {
 
   useEffect(() => {
     if (!proposalId) return;
+    let active = true;
     setLoading(true);
-    fetch(`/api/proposal/${encodeURIComponent(proposalId)}`)
+    let storedPin = "";
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const session = getCustomerPortalSession();
+      storedPin =
+        urlParams.get("pin") ||
+        sessionStorage.getItem(`rs_gallery_unlocked_${proposalId}`) ||
+        (session &&
+        (session.eventId.toLowerCase() === proposalId.toLowerCase() ||
+          session.identifier.toLowerCase() === proposalId.toLowerCase() ||
+          (session.quotationId &&
+            session.quotationId.toLowerCase() === proposalId.toLowerCase()))
+          ? session.pin
+          : "") ||
+        "";
+    }
+    const hydrateFromOfflineCache = async (fallbackErrMsg?: string) => {
+      const cached = await getOfflineProposal(proposalId);
+      if (!active) return false;
+      if (cached?.payload) {
+        setData(cached.payload);
+        setIsPinLocked(false);
+        setSelectedAddons(
+          cached.selectedAddons || cached.payload.event?.selectedAddons || []
+        );
+        setSignatureName(
+          cached.payload.event?.approvedByClient ||
+            cached.payload.client?.name ||
+            ""
+        );
+        setIsOfflineMode(true);
+        setError("");
+        return true;
+      }
+      if (fallbackErrMsg) {
+        setError(fallbackErrMsg);
+      }
+      return false;
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      hydrateFromOfflineCache("Offline and no cached proposal found on this device.")
+        .finally(() => {
+          if (active) setLoading(false);
+        });
+      return () => {
+        active = false;
+      };
+    }
+
+    const querySuffix = storedPin ? `?pin=${encodeURIComponent(storedPin)}` : "";
+    fetch(`/api/proposal/${encodeURIComponent(proposalId)}${querySuffix}`)
       .then(async (res) => {
         const json = await res.json();
         if (!res.ok) {
           throw new Error(json.error || "Proposal not found");
         }
+        if (!active) return;
         setData(json);
-        setSelectedAddons(json.event?.selectedAddons || []);
-        setSignatureName(json.event?.approvedByClient || json.client?.name || "");
+        if (json.locked) {
+          const unlockedFromCache = await hydrateFromOfflineCache();
+          if (!unlockedFromCache && active) {
+            setIsPinLocked(true);
+          }
+        } else {
+          setIsPinLocked(false);
+          setSelectedAddons(json.event?.selectedAddons || []);
+          setSignatureName(
+            json.event?.approvedByClient || json.client?.name || ""
+          );
+          if (storedPin && typeof window !== "undefined") {
+            sessionStorage.setItem(
+              `rs_gallery_unlocked_${proposalId}`,
+              storedPin
+            );
+            setCustomerPortalSession({
+              identifier: json.event?.id || proposalId,
+              eventId: json.event?.id || proposalId,
+              clientId: json.client?.id,
+              quotationId: json.quotation?.id,
+              pin: storedPin,
+              clientName: json.client?.name,
+              eventTitle: json.event?.title,
+              verifiedAt: new Date().toISOString(),
+            });
+          }
+          void saveOfflineProposal(proposalId, json);
+        }
       })
-      .catch((err) => {
-        setError(err.message || "Could not load proposal");
+      .catch(async (err) => {
+        await hydrateFromOfflineCache(err.message || "Could not load proposal");
       })
       .finally(() => {
-        setLoading(false);
+        if (active) setLoading(false);
       });
+    return () => {
+      active = false;
+    };
   }, [proposalId]);
 
   const daysTotal = useMemo(() => {
     if (!data) return 0;
-    if (data.daySchedules.length > 0) {
-      return data.daySchedules.reduce(
-        (sum, d) => sum + (Number(d.customPrice) || 0),
-        0
-      );
-    }
     const existingAddonsFee = (data.event.selectedAddons || []).reduce(
       (sum, label) => {
         const match = data.addonCatalog.find(
@@ -191,7 +297,15 @@ export default function ClientProposalPage() {
       },
       0
     );
-    return Math.max(0, (data.event.packagePrice || 0) - existingAddonsFee);
+    const basePkg = Math.max(0, (data.event.packagePrice || 0) - existingAddonsFee);
+    if (data.daySchedules.length > 0) {
+      const schedulesSum = data.daySchedules.reduce(
+        (sum, d) => sum + (Number(d.customPrice) || 0),
+        0
+      );
+      return Math.max(basePkg, schedulesSum);
+    }
+    return basePkg;
   }, [data]);
 
   const addonsTotal = useMemo(() => {
@@ -322,6 +436,39 @@ export default function ClientProposalPage() {
     if (!data) return;
     setSavingAddons(true);
     setAddonsSavedNotice(false);
+
+    const queueAddonsOffline = async () => {
+      const nextData: ProposalData = {
+        ...data,
+        event: {
+          ...data.event,
+          selectedAddons,
+          packagePrice: liveGrandTotal,
+        },
+      };
+      setData(nextData);
+      await saveOfflineProposal(proposalId, nextData);
+      await enqueueBackgroundSync({
+        type: "UPDATE_PROPOSAL_ADDONS",
+        endpoint: `/api/proposal/${encodeURIComponent(proposalId)}`,
+        method: "POST",
+        body: {
+          action: "UPDATE_ADDONS",
+          selectedAddons,
+        },
+        label: `Updated proposal add-ons for ${data.event.title}`,
+        proposalId,
+        eventId: data.event.id,
+      });
+      setAddonsSavedNotice(true);
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      await queueAddonsOffline();
+      setSavingAddons(false);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/proposal/${encodeURIComponent(proposalId)}`, {
         method: "POST",
@@ -333,21 +480,37 @@ export default function ClientProposalPage() {
       });
       const json = await res.json();
       if (res.ok && json.event) {
-        setData((prev) =>
-          prev
-            ? {
-                ...prev,
-                event: json.event,
-                quotation: json.quotation || prev.quotation,
-                invoice: json.invoice || prev.invoice,
-              }
-            : prev
-        );
+        const nextData: ProposalData = {
+          ...data,
+          event: json.event,
+          quotation: json.quotation || data.quotation,
+          invoice: json.invoice || data.invoice,
+        };
+        setData(nextData);
+        await saveOfflineProposal(proposalId, nextData);
         setAddonsSavedNotice(true);
+      } else if (json?.offlineQueued) {
+        await queueAddonsOffline();
       }
+    } catch {
+      await queueAddonsOffline();
     } finally {
       setSavingAddons(false);
     }
+  }
+
+  async function handleSaveProposalOfflineManual() {
+    if (!data) return;
+    await saveOfflineProposal(proposalId, {
+      ...data,
+      event: {
+        ...data.event,
+        selectedAddons,
+        packagePrice: liveGrandTotal,
+      },
+    });
+    setSavedOfflineNotice(true);
+    setTimeout(() => setSavedOfflineNotice(false), 3000);
   }
 
   async function handleOpenConfirmApprovalModal(e: React.FormEvent) {
@@ -404,6 +567,47 @@ export default function ClientProposalPage() {
   async function handleConfirmAndSubmitApproval() {
     if (!data || !signatureName.trim() || !hasReviewedTerms) return;
     setApproving(true);
+
+    const queueApprovalOffline = async () => {
+      const nowIso = new Date().toISOString();
+      const nextData: ProposalData = {
+        ...data,
+        event: {
+          ...data.event,
+          approvedByClient: signatureName.trim(),
+          approvedAt: nowIso,
+          clientApprovalNotes: clientNotes.trim(),
+          selectedAddons,
+        },
+      };
+      setData(nextData);
+      await saveOfflineProposal(proposalId, nextData);
+      await enqueueBackgroundSync({
+        type: "UPDATE_PROPOSAL_ADDONS",
+        endpoint: `/api/proposal/${encodeURIComponent(proposalId)}`,
+        method: "POST",
+        body: {
+          action: "APPROVE_PROPOSAL",
+          clientSignatureName: signatureName.trim(),
+          clientNotes: clientNotes.trim(),
+          selectedAddons,
+        },
+        label: `Approved proposal & saved client notes for ${data.event.title}`,
+        proposalId,
+        eventId: data.event.id,
+      });
+      setApprovalSuccess(true);
+      setIsConfirmApprovalOpen(false);
+      setShowApprovalHistory(true);
+      setShowDepositUploader(true);
+    };
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      await queueApprovalOffline();
+      setApproving(false);
+      return;
+    }
+
     try {
       const res = await fetch(`/api/proposal/${encodeURIComponent(proposalId)}`, {
         method: "POST",
@@ -417,16 +621,14 @@ export default function ClientProposalPage() {
       });
       const json = await res.json();
       if (res.ok && json.event) {
-        setData((prev) =>
-          prev
-            ? {
-                ...prev,
-                event: json.event,
-                quotation: json.quotation || prev.quotation,
-                invoice: json.invoice || prev.invoice,
-              }
-            : prev
-        );
+        const nextData: ProposalData = {
+          ...data,
+          event: json.event,
+          quotation: json.quotation || data.quotation,
+          invoice: json.invoice || data.invoice,
+        };
+        setData(nextData);
+        await saveOfflineProposal(proposalId, nextData);
         if (json.emailNotification) {
           setAdminEmailNotification(json.emailNotification);
         }
@@ -434,7 +636,11 @@ export default function ClientProposalPage() {
         setIsConfirmApprovalOpen(false);
         setShowApprovalHistory(true);
         setShowDepositUploader(true);
+      } else if (json?.offlineQueued) {
+        await queueApprovalOffline();
       }
+    } catch {
+      await queueApprovalOffline();
     } finally {
       setApproving(false);
     }
@@ -508,6 +714,59 @@ export default function ClientProposalPage() {
     } finally {
       setSubmittingDeposit(false);
     }
+  }
+
+  async function ensureOfflineCachedProposalForPrint(): Promise<ProposalData | null> {
+    if (data) {
+      const syncedPayload: ProposalData = {
+        ...data,
+        event: {
+          ...data.event,
+          selectedAddons,
+          packagePrice: liveGrandTotal,
+        },
+        quotation: {
+          ...data.quotation,
+          subtotal: daysTotal + addonsTotal,
+          discount: discountAmount,
+          tax: taxAmount,
+          total: liveGrandTotal,
+        },
+      };
+      await saveOfflineProposal(proposalId, syncedPayload);
+      return syncedPayload;
+    }
+    const cached = await getOfflineProposal(proposalId);
+    if (cached?.payload) {
+      setData(cached.payload);
+      setSelectedAddons(
+        cached.selectedAddons || cached.payload.event?.selectedAddons || []
+      );
+      setSignatureName(
+        cached.payload.event?.approvedByClient ||
+          cached.payload.client?.name ||
+          ""
+      );
+      setIsOfflineMode(true);
+      return cached.payload;
+    }
+    return null;
+  }
+
+  async function handleOpenPrintPreview() {
+    await ensureOfflineCachedProposalForPrint();
+    setIsPrintPreviewOpen(true);
+  }
+
+  async function handleTriggerBrowserPrint() {
+    const readyData = await ensureOfflineCachedProposalForPrint();
+    if (!readyData || typeof window === "undefined") return;
+    setIsPrintPreviewOpen(true);
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        window.print();
+      }, 120);
+    });
   }
 
   function handleDownloadPDF() {
@@ -793,6 +1052,61 @@ export default function ClientProposalPage() {
     doc.save(`Royal-Studio-Approval-Audit-${quo.quotationNumber}.pdf`);
   }
 
+  async function handleVerifyProposalPin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pinInput.trim() || !data) return;
+    setVerifyingPin(true);
+    setPinError("");
+    try {
+      const res = await fetch(
+        `/api/proposal/${encodeURIComponent(proposalId)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "VERIFY_PIN",
+            pin: pinInput.trim(),
+          }),
+        }
+      );
+      const json = await res.json();
+      if (!res.ok || !json.valid) {
+        setPinError(
+          json.error ||
+            "Invalid Proposal PIN. Enter the 4-digit PIN shared by Royal Studio Admin."
+        );
+      } else {
+        setIsPinLocked(false);
+        setData(json);
+        setSelectedAddons(json.event?.selectedAddons || []);
+        setSignatureName(
+          json.event?.approvedByClient || json.client?.name || ""
+        );
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem(
+            `rs_gallery_unlocked_${proposalId}`,
+            pinInput.trim()
+          );
+          setCustomerPortalSession({
+            identifier: json.event?.id || proposalId,
+            eventId: json.event?.id || proposalId,
+            clientId: json.client?.id,
+            quotationId: json.quotation?.id,
+            pin: pinInput.trim(),
+            clientName: json.client?.name,
+            eventTitle: json.event?.title,
+            verifiedAt: new Date().toISOString(),
+          });
+        }
+        await saveOfflineProposal(proposalId, json);
+      }
+    } catch {
+      setPinError("Could not verify PIN. Please check your connection.");
+    } finally {
+      setVerifyingPin(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0D0D0F] text-[#F5F2EB] flex items-center justify-center p-6">
@@ -822,6 +1136,65 @@ export default function ClientProposalPage() {
             <ArrowLeft className="w-4 h-4" />
             <span>Create a New Custom Quote</span>
           </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (isPinLocked) {
+    return (
+      <div className="min-h-screen bg-[#0D0D0F] text-[#F5F2EB] flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-3xl border border-[#D4AF37]/30 bg-[#151519] p-8 space-y-6 shadow-2xl">
+          <div className="text-center space-y-2">
+            <div className="w-12 h-12 rounded-2xl bg-[#D4AF37]/15 border border-[#D4AF37]/40 flex items-center justify-center mx-auto text-[#D4AF37]">
+              <Lock className="w-6 h-6" />
+            </div>
+            <span className="inline-block text-[10px] font-bold uppercase tracking-[0.2em] text-[#D4AF37]">
+              Private Customer Proposal Vault
+            </span>
+            <h1 className="font-display text-2xl font-bold text-white">
+              {data.event.title}
+            </h1>
+            <p className="text-xs text-[#A39E93] leading-relaxed">
+              This wedding quotation and contract for{" "}
+              <strong className="text-white">{data.client.name}</strong> is
+              PIN-protected. Enter the 4-Digit Private PIN provided by Royal
+              Studio Admin (or the last 4 digits of your registered phone).
+            </p>
+          </div>
+
+          <form onSubmit={handleVerifyProposalPin} className="space-y-4">
+            <input
+              type="password"
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value)}
+              placeholder="• • • •"
+              maxLength={8}
+              required
+              className="w-full rounded-xl border border-white/15 bg-[#0D0D0F] px-4 py-3.5 text-center font-mono text-xl tracking-[0.5em] text-white focus:outline-none focus:border-[#D4AF37]"
+            />
+            {pinError && (
+              <p className="text-xs text-rose-400 text-center font-medium">
+                {pinError}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={verifyingPin}
+              className="w-full py-3.5 rounded-xl bg-[#D4AF37] hover:bg-[#e3be42] text-[#111111] font-bold text-xs uppercase tracking-widest transition-colors cursor-pointer"
+            >
+              {verifyingPin ? "Verifying PIN..." : "Unlock My Private Proposal"}
+            </button>
+          </form>
+
+          <div className="pt-4 border-t border-white/10 text-center">
+            <Link
+              href="/client-portal"
+              className="text-xs font-semibold text-[#D4AF37] hover:underline"
+            >
+              Or Sign In via Full Private Client Portal →
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -888,8 +1261,15 @@ export default function ClientProposalPage() {
   )}`;
 
   return (
-    <div className="proposal-print-page min-h-screen bg-[#0D0D0F] text-[#F5F2EB] py-10 px-4 sm:px-6 lg:px-8">
+    <div
+      className={`proposal-print-page ${
+        isPrintPreviewOpen ? "print-modal-active" : ""
+      } min-h-screen bg-[#0D0D0F] text-[#F5F2EB] py-10 px-4 sm:px-6 lg:px-8`}
+    >
       <div className="max-w-5xl mx-auto space-y-8">
+        <div className="no-print">
+          <ClientPortalOfflineStatusBanner contextLabel="Interactive Proposal" />
+        </div>
         {/* Top Action Navigation */}
         <div className="no-print flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
           <div className="flex flex-wrap items-center gap-3">
@@ -907,18 +1287,28 @@ export default function ClientProposalPage() {
                 {quotation.quotationNumber}
               </strong>
             </span>
-            <button
-              type="button"
-              onClick={() => setIsQrModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#D4AF37]/60 bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[#D4AF37] text-xs font-bold transition-all shadow-xs cursor-pointer"
-              title="Quick-Share QR code with family members or co-decision-makers"
-            >
-              <QrCode className="w-3.5 h-3.5" />
-              <span>Quick-Share QR</span>
-            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {isOfflineMode && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-bold">
+                <WifiOff className="w-3.5 h-3.5" />
+                <span>Offline Saved Proposal</span>
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSaveProposalOfflineManual}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 text-xs font-bold transition-colors cursor-pointer"
+              title="Save this proposal to your device for offline viewing"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>
+                {savedOfflineNotice ? "Saved to Offline Vault" : "Save Offline"}
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={() => setIsQrModalOpen(true)}
@@ -961,11 +1351,21 @@ export default function ClientProposalPage() {
 
             <button
               type="button"
-              onClick={() => setIsPrintPreviewOpen(true)}
+              onClick={handleOpenPrintPreview}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#D4AF37] hover:opacity-90 text-[#111111] text-xs font-bold transition-opacity cursor-pointer"
             >
-              <Printer className="w-3.5 h-3.5" />
+              <Eye className="w-3.5 h-3.5" />
               <span>Print Preview (A4)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleTriggerBrowserPrint}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-[#D4AF37] bg-[#D4AF37]/20 hover:bg-[#D4AF37]/30 text-[#D4AF37] text-xs font-bold transition-colors cursor-pointer"
+              title="Trigger browser A4 print dialog directly (works in offline mode using cached proposal data)"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span>{isOfflineMode ? "Print Cached A4" : "Print Proposal"}</span>
             </button>
 
             <button
@@ -1162,17 +1562,6 @@ export default function ClientProposalPage() {
                   </strong>{" "}
                   of 3 ({lifecycleProgressPercent}% Complete)
                 </div>
-
-                {/* Quick-Share QR Button for Family Members & Co-Decision-Makers */}
-                <button
-                  type="button"
-                  onClick={() => setIsQrModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#D4AF37]/60 bg-[#D4AF37]/15 hover:bg-[#D4AF37]/25 text-[11px] font-bold text-[#D4AF37] transition-all shadow-xs cursor-pointer"
-                  title="Display Proposal QR Code to share with family members or co-decision-makers via smartphone camera"
-                >
-                  <QrCode className="w-3.5 h-3.5 text-[#D4AF37]" />
-                  <span>Quick-Share QR</span>
-                </button>
 
                 {/* Persistent 'Approval History' Toggle Button */}
                 <button
@@ -1899,7 +2288,7 @@ export default function ClientProposalPage() {
                 return (
                   <div
                     key={day.id}
-                    className="rounded-xl border border-white/10 bg-[#0D0D0F] p-4 sm:p-5 space-y-3"
+                    className="proposal-day-card rounded-xl border border-white/10 bg-[#0D0D0F] p-4 sm:p-5 space-y-3 break-inside-avoid"
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/10 pb-3">
                       <div>
@@ -1935,7 +2324,7 @@ export default function ClientProposalPage() {
 
                     {structuredServices.length > 0 ? (
                       <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
+                        <table className="proposal-print-table w-full text-left text-xs">
                           <thead className="text-[10px] uppercase tracking-wider text-[#A39E93] border-b border-white/10">
                             <tr>
                               <th className="py-2 pr-3">Service Role</th>
@@ -2066,7 +2455,7 @@ export default function ClientProposalPage() {
                   key={addon.id}
                   type="button"
                   onClick={() => toggleAddon(addon.label)}
-                  className={`p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                  className={`proposal-addon-card break-inside-avoid p-4 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-2 ${
                     active
                       ? "border-[#D4AF37] bg-[#D4AF37]/15 text-[#F5F2EB]"
                       : "border-white/10 bg-[#0D0D0F] text-[#A39E93] hover:border-white/25"
@@ -2096,9 +2485,9 @@ export default function ClientProposalPage() {
         </div>
 
         {/* Section 03: Payment Milestone Schedule & Financial Summary */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="proposal-print-grid-stack grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="proposal-print-card lg:col-span-7 rounded-2xl border border-white/10 bg-[#151519] p-6 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="proposal-section-header flex flex-wrap items-center justify-between gap-2">
               <div>
                 <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#D4AF37] block">
                   Section 03 · Installment Plan
@@ -2125,7 +2514,7 @@ export default function ClientProposalPage() {
                     onFocus={() => setHoveredMilestoneIdx(idx)}
                     onBlur={() => setHoveredMilestoneIdx(null)}
                     tabIndex={0}
-                    className={`group relative rounded-xl border p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_24px_rgba(212,175,55,0.16)] focus:outline-none ${
+                    className={`proposal-milestone-card break-inside-avoid group relative rounded-xl border p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_0_24px_rgba(212,175,55,0.16)] focus:outline-none ${
                       mStatus === "FULL"
                         ? "border-emerald-500/45 bg-emerald-500/5 hover:border-emerald-400"
                         : mStatus === "PARTIAL"
@@ -2232,7 +2621,7 @@ export default function ClientProposalPage() {
               })}
             </div>
 
-            <div className="rounded-xl border border-[#D4AF37]/35 bg-[#0D0D0F] p-4 text-xs space-y-3">
+            <div className="proposal-payment-channels break-inside-avoid rounded-xl border border-[#D4AF37]/35 bg-[#0D0D0F] p-4 text-xs space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="font-bold text-[#D4AF37] flex items-center gap-1.5">
                   <CreditCard className="w-3.5 h-3.5" />
@@ -2320,7 +2709,7 @@ export default function ClientProposalPage() {
           </div>
 
           {/* Right Column: Grand Total & Digital Acceptance */}
-          <div className="proposal-print-card lg:col-span-5 rounded-2xl border border-[#D4AF37]/40 bg-[#151519] p-6 space-y-5 flex flex-col justify-between">
+          <div className="proposal-print-card proposal-summary-box break-inside-avoid lg:col-span-5 rounded-2xl border border-[#D4AF37]/40 bg-[#151519] p-6 space-y-5 flex flex-col justify-between">
             <div className="space-y-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
@@ -2707,11 +3096,11 @@ export default function ClientProposalPage() {
               <span>{profile.studioName || "Royal Studio"}</span>
               <button
                 type="button"
-                onClick={() => setIsPrintPreviewOpen(true)}
+                onClick={handleTriggerBrowserPrint}
                 className="inline-flex items-center gap-1 text-[#D4AF37] hover:underline font-semibold cursor-pointer"
               >
                 <Printer className="w-3 h-3" />
-                <span>Open A4 Print Preview</span>
+                <span>{isOfflineMode ? "Print Cached A4 Proposal" : "Print A4 Proposal"}</span>
               </button>
               <span>{profile.phone || "0308-4877073"}</span>
             </div>
@@ -2888,6 +3277,8 @@ export default function ClientProposalPage() {
         isOpen={isPrintPreviewOpen}
         onClose={() => setIsPrintPreviewOpen(false)}
         onDownloadPDF={handleDownloadPDF}
+        onTriggerPrint={handleTriggerBrowserPrint}
+        isOfflineMode={isOfflineMode}
         event={event}
         client={client}
         quotation={quotation}

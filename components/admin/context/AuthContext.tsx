@@ -23,7 +23,6 @@ interface AuthContextType {
   isLoading: boolean;
   isAdmin: boolean;
   isStaff: boolean;
-  isClient: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: (reason?: 'manual' | 'inactivity') => Promise<void>;
   idleRemainingSeconds: number;
@@ -145,14 +144,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const hydrated = await hydrateSecureSession();
 
-      if (hydrated.user && hydrated.user.status !== 'DISABLED') {
+      if (
+        hydrated.user &&
+        hydrated.user.status !== 'DISABLED' &&
+        (hydrated.user.role === 'ADMIN' || hydrated.user.role === 'STAFF')
+      ) {
         setUser(hydrated.user);
       }
 
       if (!hydrated.token) {
         try {
           const cookieSession = await apiRequest<{ user: User }>('/api/auth/me');
-          if (cookieSession?.user && cookieSession.user.status !== 'DISABLED') {
+          if (
+            cookieSession?.user &&
+            cookieSession.user.status !== 'DISABLED' &&
+            (cookieSession.user.role === 'ADMIN' || cookieSession.user.role === 'STAFF')
+          ) {
             setUser(cookieSession.user);
             lastActivityRef.current = Date.now();
             setIsLoading(false);
@@ -167,7 +174,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
 
       const data = await apiRequest<{ user: User }>('/api/auth/me');
-      if (data?.user && data.user.status !== 'DISABLED') {
+      if (
+        data?.user &&
+        data.user.status !== 'DISABLED' &&
+        (data.user.role === 'ADMIN' || data.user.role === 'STAFF')
+      ) {
         await saveSecureSession(hydrated.token, data.user);
         setUser(data.user);
         lastActivityRef.current = Date.now();
@@ -322,7 +333,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const isAdmin = user?.role === 'ADMIN';
   const isStaff = user?.role === 'STAFF';
-  const isClient = user?.role === 'CLIENT';
 
   return (
     <AuthContext.Provider
@@ -331,7 +341,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isLoading,
         isAdmin,
         isStaff,
-        isClient,
         login,
         logout,
         idleRemainingSeconds,

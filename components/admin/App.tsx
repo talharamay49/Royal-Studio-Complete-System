@@ -24,7 +24,6 @@ import { ProfilePage } from './pages/ProfilePage';
 import { WebsiteCmsPage } from './pages/WebsiteCmsPage';
 import { ThemeCustomizerPage } from './pages/ThemeCustomizerPage';
 import { ChatbotManagerPage } from './pages/ChatbotManagerPage';
-import { ClientPortalPage } from './pages/ClientPortalPage';
 import { LoadingState } from './components/common/LoadingState';
 import { AdminErrorBoundary } from './components/common/AdminErrorBoundary';
 import { ShieldAlert } from 'lucide-react';
@@ -40,7 +39,7 @@ function getAdminInternalPath(pathname: string): string {
 }
 
 const MainContent: React.FC = () => {
-  const { user, isLoading: isAuthLoading, isAdmin, isClient } = useAuth();
+  const { user, isLoading: isAuthLoading, isAdmin } = useAuth();
   const { isLoading: isDataLoading } = useStudioData();
 
   const [currentPath, setCurrentPath] = useState<string>(() => {
@@ -104,19 +103,6 @@ const MainContent: React.FC = () => {
       </div>
     );
 
-    if (isClient) {
-      if (currentPath === '/invoices' || currentPath === '/finance' || currentPath === '/client-payments') {
-        return <ClientPortalPage initialTab="PAYMENTS" />;
-      }
-      if (currentPath === '/client-gallery' || currentPath === '/gallery') {
-        return <ClientPortalPage initialTab="GALLERY" />;
-      }
-      if (currentPath === '/profile') {
-        return <ClientPortalPage initialTab="PROFILE" />;
-      }
-      return <ClientPortalPage initialTab="EVENTS" />;
-    }
-
     if (currentPath === '/' || currentPath === '/dashboard') {
       if (!isAdmin) {
         return <TasksPage navigate={navigate} />;
@@ -147,9 +133,18 @@ const MainContent: React.FC = () => {
       return <CalendarPage navigate={navigate} />;
     }
 
-    if (currentPath === '/clients') {
-      if (!isAdmin) return renderRestricted('Client Directory & CRM');
-      return <ClientsPage navigate={navigate} />;
+    if (
+      currentPath === '/clients' ||
+      currentPath.startsWith('/clients/') ||
+      currentPath === '/client-access' ||
+      currentPath === '/client-portal' ||
+      currentPath === '/client-upload'
+    ) {
+      if (!isAdmin) return renderRestricted('Client Directory & Portal Management');
+      const clientIdParam = currentPath.startsWith('/clients/')
+        ? currentPath.replace('/clients/', '').split('/')[0]
+        : undefined;
+      return <ClientsPage navigate={navigate} initialClientId={clientIdParam} />;
     }
 
     if (currentPath === '/team') {

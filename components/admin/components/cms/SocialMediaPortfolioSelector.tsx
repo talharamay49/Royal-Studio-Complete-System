@@ -11,6 +11,7 @@ import {
   Check,
   Sparkles,
   Heart,
+  MessageCircle,
   MapPin,
   Upload,
   Eye,
@@ -22,6 +23,9 @@ import {
   Film,
   X,
   Link2,
+  Users,
+  Calendar,
+  CheckSquare,
 } from 'lucide-react';
 import type {
   ConnectedSocialAccount,
@@ -31,7 +35,11 @@ import type {
   SocialPlatformId,
   WebsiteCustomizationConfig,
 } from '@/types';
-import { extractYoutubeId, defaultWebsiteCustomization } from '@/lib/data';
+import {
+  extractYoutubeId,
+  tryExtractYoutubeId,
+  defaultWebsiteCustomization,
+} from '@/lib/data';
 import { apiRequest } from '../../services/api';
 import { Modal } from '../common/Modal';
 
@@ -70,6 +78,22 @@ const CATEGORIES: Exclude<PortfolioCategory, 'all'>[] = [
   'boys',
   'birthday',
   'expo',
+];
+
+const QUICK_STUDIO_PHOTOS: {
+  url: string;
+  title: string;
+  category: Exclude<PortfolioCategory, 'all'>;
+  aspect: 'tall' | 'wide' | 'square';
+}[] = [
+  { url: '/portfolio/bridal-01-mirror-portrait.jpg', title: 'Bridal Mirror Portrait', category: 'bridal', aspect: 'square' },
+  { url: '/portfolio/bridal-04-courtyard-portrait.jpg', title: 'Courtyard Bridal Editorial', category: 'bridal', aspect: 'tall' },
+  { url: '/portfolio/bridal-06-blue-lehnga.jpg', title: 'Royal Sapphire Lehenga', category: 'bridal', aspect: 'tall' },
+  { url: '/portfolio/couple-02-annum-ali-mehndi.jpg', title: 'Annum & Ali Mehndi Portrait', category: 'couple', aspect: 'wide' },
+  { url: '/portfolio/couple-03-walima-laugh.jpg', title: 'Walima Couple Portrait', category: 'walima', aspect: 'wide' },
+  { url: '/portfolio/barat-02-groom-turban-moment.jpg', title: 'Barat Groom Turban Ceremony', category: 'barat', aspect: 'wide' },
+  { url: '/portfolio/mehndi-01-chishtiya-taj-palace.jpg', title: 'Chishtiya Taj Palace Mehndi', category: 'mehndi', aspect: 'wide' },
+  { url: '/portfolio/fashion-02-rubab-chikankari.jpg', title: 'Rubab Chikankari Campaign', category: 'fashion', aspect: 'tall' },
 ];
 
 const PLATFORM_META: Record<
@@ -119,6 +143,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
   const [isSyncing, setIsSyncing] = useState(false);
   const [playingPostId, setPlayingPostId] = useState<string | null>(null);
   const [isResolvingUrl, setIsResolvingUrl] = useState(false);
+  const [resolveNotice, setResolveNotice] = useState<{ type: 'success' | 'info'; text: string } | null>(null);
 
   // Account configuration modal
   const [editingAccount, setEditingAccount] = useState<ConnectedSocialAccount | null>(null);
@@ -163,7 +188,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
     title: '',
     caption: '',
     image: '/portfolio/bridal-01-mirror-portrait.jpg',
-    permalink: 'https://www.instagram.com/royalstudio089/',
+    permalink: '',
     youtubeId: '',
     duration: '1:15',
     viewsCount: '18.5K',
@@ -175,25 +200,36 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
   });
 
   const isVideoPost = (post: SocialMediaPostItem) => {
+    const validYt = post.youtubeId ? tryExtractYoutubeId(post.youtubeId) : tryExtractYoutubeId(post.permalink);
     return (
       post.mediaType === 'video' ||
-      Boolean(post.youtubeId) ||
+      Boolean(validYt) ||
       Boolean(post.videoUrl) ||
-      post.platform === 'youtube' ||
-      post.permalink.includes('youtube.com/watch') ||
-      post.permalink.includes('youtu.be/')
+      post.platform === 'youtube'
     );
   };
 
+  const resolvePostImageSrc = (post: SocialMediaPostItem) => {
+    const rawImg = (post.image || '').trim();
+    const ytId =
+      tryExtractYoutubeId(post.youtubeId || '') || tryExtractYoutubeId(post.permalink || '');
+    if (
+      !rawImg ||
+      rawImg.includes('i.ytimg.com/vi/http') ||
+      rawImg.includes('img.youtube.com/vi/http')
+    ) {
+      return ytId
+        ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`
+        : '/portfolio/bridal-01-mirror-portrait.jpg';
+    }
+    return rawImg;
+  };
+
+  // Authoritative check for whether a social post is synced to the Public Portfolio
   const isPostInPortfolio = (post: SocialMediaPostItem) => {
-    return (
-      post.selectedForPortfolio ||
-      portfolioItems.some(
-        (p) =>
-          (p.socialPermalink && p.socialPermalink === post.permalink) ||
-          (p.youtubeId && post.youtubeId && p.youtubeId === post.youtubeId) ||
-          (p.image === post.image && p.title === post.title)
-      )
+    if (post.selectedForPortfolio) return true;
+    return portfolioItems.some(
+      (p) => p.socialPostId && p.socialPostId === post.id
     );
   };
 
@@ -201,18 +237,20 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
   const isPostInWeddingFilms = (post: SocialMediaPostItem) => {
     if (!isVideoPost(post)) return false;
-    const ytId = post.youtubeId || extractYoutubeId(post.permalink);
-    return (
-      Boolean(post.selectedForWeddingFilms) ||
-      (currentFilmsConfig.weddingFilms || []).some(
-        (f) => extractYoutubeId(f.youtubeId) === ytId
-      )
+    if (post.selectedForWeddingFilms) return true;
+    const ytId = tryExtractYoutubeId(post.youtubeId || post.permalink);
+    if (!ytId) return false;
+    return (currentFilmsConfig.weddingFilms || []).some(
+      (f) =>
+        (f.sourceSocialPostId && f.sourceSocialPostId === post.id) ||
+        (post.platform === 'youtube' && !f.sourceSocialPostId && extractYoutubeId(f.youtubeId) === ytId)
     );
   };
 
   const isPostActiveShowreel = (post: SocialMediaPostItem) => {
     if (!isVideoPost(post)) return false;
-    const ytId = post.youtubeId || extractYoutubeId(post.permalink);
+    const ytId = tryExtractYoutubeId(post.youtubeId || post.permalink);
+    if (!ytId) return false;
     return extractYoutubeId(currentFilmsConfig.featuredYoutubeId) === ytId;
   };
 
@@ -245,14 +283,18 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
   const buildPortfolioItemFromSocialPost = (post: SocialMediaPostItem, id: number): PortfolioItem => {
     const video = isVideoPost(post);
-    const ytId = video ? post.youtubeId || extractYoutubeId(post.permalink) : undefined;
+    const ytId = video ? tryExtractYoutubeId(post.youtubeId || post.permalink) || undefined : undefined;
+    const safeImage =
+      post.image && !post.image.includes('i.ytimg.com/vi/http')
+        ? post.image
+        : ytId
+        ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`
+        : '/portfolio/bridal-01-mirror-portrait.jpg';
     return {
       id,
       title: post.title,
       category: post.category,
-      image:
-        post.image ||
-        (ytId ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg` : '/portfolio/bridal-01-mirror-portrait.jpg'),
+      image: safeImage,
       aspect: post.aspect,
       location: post.location || 'Burewala',
       visible: true,
@@ -262,10 +304,14 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
       duration: post.duration || (video ? '1:30' : undefined),
       caption: post.caption,
       likesCount: post.likesCount,
+      commentsCount: post.commentsCount,
       viewsCount: post.viewsCount,
       postedAt: post.postedAt,
       sourcePlatform: post.platform,
+      socialSource: post.platform,
       socialPermalink: post.permalink,
+      socialPostUrl: post.permalink,
+      socialPostId: post.id,
       socialHandle: post.accountHandle,
       exif: {
         camera: video ? 'Sony FX3 4K Cinema' : 'Sony A7R V',
@@ -284,11 +330,59 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
   };
 
   const handleSelectAllFiltered = () => {
-    if (checkedIds.length === filteredPosts.length) {
+    if (checkedIds.length === filteredPosts.length && filteredPosts.length > 0) {
       setCheckedIds([]);
     } else {
       setCheckedIds(filteredPosts.map((p) => p.id));
     }
+  };
+
+  const handleSelectFilteredPhotosOnly = () => {
+    const photoIds = filteredPosts.filter((p) => !isVideoPost(p)).map((p) => p.id);
+    setCheckedIds(photoIds);
+  };
+
+  const handleSelectUnsyncedFiltered = () => {
+    const unsyncedIds = filteredPosts.filter((p) => !isPostInPortfolio(p)).map((p) => p.id);
+    setCheckedIds(unsyncedIds);
+  };
+
+  // Sync all images from a specific connected social profile (or all visible) to Portfolio in 1 click
+  const handleSyncPlatformImagesToPortfolio = async (targetPlatform?: SocialPlatformId) => {
+    const targetPosts = socialPosts.filter(
+      (p) => (!targetPlatform || p.platform === targetPlatform) && !isVideoPost(p)
+    );
+    if (targetPosts.length === 0) return;
+
+    const targetIdSet = new Set(targetPosts.map((p) => p.id));
+    const nextPosts = socialPosts.map((p) =>
+      targetIdSet.has(p.id) ? { ...p, selectedForPortfolio: true } : p
+    );
+
+    let nextPortfolio = [...portfolioItems];
+    let maxId = Math.max(0, ...nextPortfolio.map((i) => i.id));
+    const toAdd: PortfolioItem[] = [];
+
+    for (const post of targetPosts) {
+      const alreadyExists = nextPortfolio.some(
+        (p) =>
+          (p.socialPostId && p.socialPostId === post.id) ||
+          (p.image === post.image && p.title === post.title)
+      );
+      if (!alreadyExists) {
+        maxId += 1;
+        toAdd.push(buildPortfolioItemFromSocialPost({ ...post, selectedForPortfolio: true }, maxId));
+      }
+    }
+    nextPortfolio = [...toAdd, ...nextPortfolio];
+
+    const label = targetPlatform ? PLATFORM_META[targetPlatform].label : 'all connected profiles';
+    await onSaveSocialState(
+      connectedAccounts,
+      nextPosts,
+      nextPortfolio,
+      `Synced all ${targetPosts.length} photos from ${label} directly to your Public Portfolio!`
+    );
   };
 
   // Toggle single social media image OR video into / out of the Public Portfolio Gallery
@@ -300,15 +394,24 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
     let nextPortfolio = [...portfolioItems];
     if (!currentlyIn) {
-      const maxId = Math.max(0, ...nextPortfolio.map((i) => i.id));
-      const newItem = buildPortfolioItemFromSocialPost(post, maxId + 1);
-      nextPortfolio = [newItem, ...nextPortfolio];
+      const alreadyIn = nextPortfolio.some(
+        (item) =>
+          (item.socialPostId && item.socialPostId === post.id) ||
+          (item.image === post.image && item.title === post.title)
+      );
+      if (!alreadyIn) {
+        const maxId = Math.max(0, ...nextPortfolio.map((i) => i.id));
+        const newItem = buildPortfolioItemFromSocialPost(
+          { ...post, selectedForPortfolio: true },
+          maxId + 1
+        );
+        nextPortfolio = [newItem, ...nextPortfolio];
+      }
     } else {
       nextPortfolio = nextPortfolio.filter(
         (item) =>
           !(
-            (item.socialPermalink && item.socialPermalink === post.permalink) ||
-            (item.youtubeId && post.youtubeId && item.youtubeId === post.youtubeId) ||
+            (item.socialPostId && item.socialPostId === post.id) ||
             (item.image === post.image && item.title === post.title)
           )
       );
@@ -320,14 +423,14 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
       nextPosts,
       nextPortfolio,
       !currentlyIn
-        ? `Added ${mediaLabel} "${post.title}" (${post.accountHandle}) with social data to Public Portfolio Gallery!`
-        : `Removed "${post.title}" from Public Portfolio Gallery.`
+        ? `Synced ${mediaLabel} "${post.title}" (${post.accountHandle}) to Public Portfolio!`
+        : `Removed "${post.title}" from Public Portfolio.`
     );
   };
 
   // Toggle linking a video from connected profile / YouTube channel to Wedding Films (/wedding-films)
   const handleTogglePostInWeddingFilms = async (post: SocialMediaPostItem) => {
-    const ytId = post.youtubeId || extractYoutubeId(post.permalink);
+    const ytId = tryExtractYoutubeId(post.youtubeId || post.permalink) || 'QF3BmojTrKQ';
     const baseCustom = websiteCustomization || defaultWebsiteCustomization;
     const existingFilms = baseCustom.films?.weddingFilms || [];
     const currentlyInFilms = isPostInWeddingFilms(post);
@@ -344,16 +447,25 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
           description: post.caption,
           channelHandle: post.accountHandle,
           viewsCount: post.viewsCount,
+          likesCount: post.likesCount,
+          commentsCount: post.commentsCount,
           publishedAt: post.postedAt,
           thumbnailUrl: post.image,
           sourceSocialPostId: post.id,
+          sourcePlatform: post.platform,
+          category: post.category,
+          permalink: post.permalink,
           youtubeUrl: `https://www.youtube.com/watch?v=${ytId}`,
         },
         ...nextWeddingFilms,
       ];
     } else {
       nextWeddingFilms = nextWeddingFilms.filter(
-        (f) => extractYoutubeId(f.youtubeId) !== ytId
+        (f) =>
+          !(
+            (f.sourceSocialPostId && f.sourceSocialPostId === post.id) ||
+            (!f.sourceSocialPostId && extractYoutubeId(f.youtubeId) === ytId)
+          )
       );
     }
 
@@ -382,7 +494,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
   // Set a connected YouTube / Social video as the Featured Showreel
   const handleSetAsFeaturedShowreel = async (post: SocialMediaPostItem) => {
-    const ytId = post.youtubeId || extractYoutubeId(post.permalink);
+    const ytId = tryExtractYoutubeId(post.youtubeId || post.permalink) || 'QF3BmojTrKQ';
     const baseCustom = websiteCustomization || defaultWebsiteCustomization;
 
     const nextPosts = socialPosts.map((p) => ({
@@ -427,13 +539,12 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
         if (!selectedSet.has(post.id)) continue;
         const alreadyExists = nextPortfolio.some(
           (p) =>
-            (p.socialPermalink && p.socialPermalink === post.permalink) ||
-            (p.youtubeId && post.youtubeId && p.youtubeId === post.youtubeId) ||
+            (p.socialPostId && p.socialPostId === post.id) ||
             (p.image === post.image && p.title === post.title)
         );
         if (!alreadyExists) {
           maxId += 1;
-          toAdd.push(buildPortfolioItemFromSocialPost(post, maxId));
+          toAdd.push(buildPortfolioItemFromSocialPost({ ...post, selectedForPortfolio: true }, maxId));
         }
       }
       nextPortfolio = [...toAdd, ...nextPortfolio];
@@ -443,8 +554,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
         (item) =>
           !postsToRemove.some(
             (post) =>
-              (item.socialPermalink && item.socialPermalink === post.permalink) ||
-              (item.youtubeId && post.youtubeId && item.youtubeId === post.youtubeId) ||
+              (item.socialPostId && item.socialPostId === post.id) ||
               (item.image === post.image && item.title === post.title)
           )
       );
@@ -455,8 +565,125 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
       nextPosts,
       nextPortfolio,
       show
-        ? `Published ${checkedIds.length} connected profile item(s) with social data to the Public Portfolio!`
-        : `Hidden ${checkedIds.length} social media item(s) from the Public Portfolio.`
+        ? `Synced ${checkedIds.length} selected item(s) to the Public Portfolio!`
+        : `Removed ${checkedIds.length} item(s) from the Public Portfolio.`
+    );
+    setCheckedIds([]);
+  };
+
+  // 1-Click Sync All Images from a specific connected social profile (or all connected profiles) to Portfolio
+  const handleQuickSyncAllProfileImages = async (platform?: SocialPlatformId) => {
+    const targetPhotos = socialPosts.filter(
+      (p) => (!platform || p.platform === platform) && !isVideoPost(p)
+    );
+    if (targetPhotos.length === 0) return;
+
+    const targetIds = new Set(targetPhotos.map((p) => p.id));
+    const nextPosts = socialPosts.map((p) =>
+      targetIds.has(p.id) ? { ...p, selectedForPortfolio: true } : p
+    );
+
+    let nextPortfolio = [...portfolioItems];
+    let maxId = Math.max(0, ...nextPortfolio.map((i) => i.id));
+    const toAdd: PortfolioItem[] = [];
+
+    for (const post of targetPhotos) {
+      const alreadyExists = nextPortfolio.some(
+        (p) =>
+          (p.socialPostId && p.socialPostId === post.id) ||
+          (p.image === post.image && p.title === post.title)
+      );
+      if (!alreadyExists) {
+        maxId += 1;
+        toAdd.push(buildPortfolioItemFromSocialPost({ ...post, selectedForPortfolio: true }, maxId));
+      }
+    }
+    nextPortfolio = [...toAdd, ...nextPortfolio];
+
+    const label = platform ? PLATFORM_META[platform].label : 'all connected social profiles';
+    await onSaveSocialState(
+      connectedAccounts,
+      nextPosts,
+      nextPortfolio,
+      `Synced all ${targetPhotos.length} photo(s) from ${label} directly to the Public Portfolio!`
+    );
+  };
+
+  // Batch add or remove checked social video posts to/from Wedding Film Section (/wedding-films & Homepage)
+  const handleBatchShowInWeddingFilms = async (show: boolean) => {
+    if (checkedIds.length === 0) return;
+    const selectedSet = new Set(checkedIds);
+    const baseCustom = websiteCustomization || defaultWebsiteCustomization;
+    let nextWeddingFilms = [...(baseCustom.films?.weddingFilms || [])];
+
+    const nextPosts = socialPosts.map((p) => {
+      if (!selectedSet.has(p.id) || !isVideoPost(p)) return p;
+      return { ...p, selectedForWeddingFilms: show };
+    });
+
+    if (show) {
+      for (const post of socialPosts) {
+        if (!selectedSet.has(post.id) || !isVideoPost(post)) continue;
+        const ytId = tryExtractYoutubeId(post.youtubeId || post.permalink) || 'QF3BmojTrKQ';
+        const alreadyIn = nextWeddingFilms.some(
+          (f) =>
+            (f.sourceSocialPostId && f.sourceSocialPostId === post.id) ||
+            extractYoutubeId(f.youtubeId) === ytId
+        );
+        if (!alreadyIn) {
+          nextWeddingFilms.unshift({
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            title: post.title,
+            youtubeId: ytId,
+            location: post.location || 'Burewala',
+            duration: post.duration || '2:15',
+            description: post.caption,
+            channelHandle: post.accountHandle,
+            viewsCount: post.viewsCount,
+            likesCount: post.likesCount,
+            commentsCount: post.commentsCount,
+            publishedAt: post.postedAt,
+            thumbnailUrl: post.image,
+            sourceSocialPostId: post.id,
+            sourcePlatform: post.platform,
+            category: post.category,
+            permalink: post.permalink,
+            youtubeUrl: `https://www.youtube.com/watch?v=${ytId}`,
+          });
+        }
+      }
+    } else {
+      const videoPostsToRemove = socialPosts.filter(
+        (p) => selectedSet.has(p.id) && isVideoPost(p)
+      );
+      nextWeddingFilms = nextWeddingFilms.filter(
+        (f) =>
+          !videoPostsToRemove.some(
+            (post) =>
+              (f.sourceSocialPostId && f.sourceSocialPostId === post.id) ||
+              (!f.sourceSocialPostId &&
+                extractYoutubeId(f.youtubeId) ===
+                  (tryExtractYoutubeId(post.youtubeId || post.permalink) || ''))
+          )
+      );
+    }
+
+    const nextCustom: WebsiteCustomizationConfig = {
+      ...baseCustom,
+      films: {
+        ...baseCustom.films,
+        weddingFilms: nextWeddingFilms,
+      },
+    };
+
+    await onSaveSocialState(
+      connectedAccounts,
+      nextPosts,
+      portfolioItems,
+      show
+        ? `Linked selected social videos to Wedding Film Section (/wedding-films & Homepage)!`
+        : `Removed selected videos from Wedding Film Section.`,
+      nextCustom
     );
     setCheckedIds([]);
   };
@@ -474,8 +701,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
     const nextPortfolio = portfolioItems.map((item) => {
       const matches =
-        (item.socialPermalink && item.socialPermalink === target.permalink) ||
-        (item.youtubeId && target.youtubeId && item.youtubeId === target.youtubeId) ||
+        (item.socialPostId && item.socialPostId === target.id) ||
         (item.image === target.image && item.title === target.title);
       if (!matches) return item;
       return {
@@ -563,31 +789,39 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
     setEditingAccount(null);
   };
 
-  const handleSyncFeedsNow = async () => {
+  const handleSyncFeedsNow = async (targetPlatform?: SocialPlatformId) => {
     setIsSyncing(true);
     try {
       const syncedCms = await apiRequest<any>('/cms/social/sync', {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify(targetPlatform ? { platform: targetPlatform } : {}),
       }).catch(() => null);
+
+      const label = targetPlatform
+        ? `${PLATFORM_META[targetPlatform].label} account`
+        : 'all connected social media accounts';
 
       if (syncedCms && Array.isArray(syncedCms.connectedSocialAccounts)) {
         await onSaveSocialState(
           syncedCms.connectedSocialAccounts,
           syncedCms.socialMediaPosts || socialPosts,
           syncedCms.portfolioItems || portfolioItems,
-          'Synced latest images & videos from all connected social media profiles!'
+          `Fetched & synced complete profile data from ${label}!`,
+          syncedCms.websiteCustomization || websiteCustomization
         );
       } else {
         const nowIso = new Date().toISOString();
         const nextAccounts = connectedAccounts.map((a) =>
-          a.connected ? { ...a, lastSyncedAt: nowIso } : a
+          (!targetPlatform || a.platform === targetPlatform) && a.connected
+            ? { ...a, lastSyncedAt: nowIso }
+            : a
         );
         await onSaveSocialState(
           nextAccounts,
           socialPosts,
           portfolioItems,
-          'Synced latest images & videos from all connected social media profiles!'
+          `Synced complete data from ${label}!`,
+          websiteCustomization
         );
       }
     } finally {
@@ -597,45 +831,97 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
   const handleResolveUrlMetadata = async () => {
     const rawUrl = newPostForm.permalink.trim() || newPostForm.youtubeId.trim();
-    if (!rawUrl) return;
     setIsResolvingUrl(true);
+    setResolveNotice(null);
     try {
+      const targetUrlToResolve =
+        rawUrl ||
+        connectedAccounts.find((a) => a.platform === newPostForm.platform)?.profileUrl ||
+        'https://www.instagram.com/royalstudio089/';
+
       const resolved = await apiRequest<{
-        youtubeId: string;
-        title: string;
-        authorName: string;
-        thumbnailUrl: string;
-        permalink: string;
-        duration: string;
-      }>('/cms/youtube/resolve', {
+        platform?: SocialPlatformId;
+        mediaType?: 'image' | 'video';
+        youtubeId?: string;
+        title?: string;
+        caption?: string;
+        authorName?: string;
+        thumbnailUrl?: string;
+        imageUrl?: string;
+        permalink?: string;
+        duration?: string;
+        viewsCount?: string;
+        category?: Exclude<PortfolioCategory, 'all'>;
+        aspect?: 'tall' | 'wide' | 'square';
+      }>('/cms/social/resolve', {
         method: 'POST',
         body: JSON.stringify({
-          urlOrId: rawUrl,
+          urlOrId: targetUrlToResolve,
+          platform: newPostForm.platform,
           fallbackTitle: newPostForm.title || undefined,
         }),
       });
-      if (resolved && resolved.youtubeId) {
+
+      if (resolved) {
+        const isYt = resolved.platform === 'youtube' || Boolean(tryExtractYoutubeId(resolved.youtubeId));
+        const cleanYt = tryExtractYoutubeId(resolved.youtubeId || targetUrlToResolve) || '';
+        const nextPlatform = resolved.platform || newPostForm.platform;
+        const nextMediaType = isYt ? 'video' : resolved.mediaType || newPostForm.mediaType;
+        const nextImage =
+          resolved.imageUrl ||
+          resolved.thumbnailUrl ||
+          (cleanYt ? `https://i.ytimg.com/vi/${cleanYt}/hqdefault.jpg` : newPostForm.image);
+
         setNewPostForm((prev) => ({
           ...prev,
-          mediaType: 'video',
-          youtubeId: resolved.youtubeId,
-          title: prev.title || resolved.title,
-          image: resolved.thumbnailUrl || prev.image,
-          permalink: resolved.permalink || prev.permalink,
+          platform: nextPlatform,
+          mediaType: nextMediaType,
+          youtubeId: cleanYt,
+          title: resolved.title || prev.title || `Royal Studio ${PLATFORM_META[nextPlatform].label} Post`,
+          caption: resolved.caption || prev.caption,
+          image: nextImage,
+          permalink: resolved.permalink || targetUrlToResolve,
           duration: resolved.duration || prev.duration,
-          aspect: 'wide',
+          viewsCount: resolved.viewsCount || prev.viewsCount,
+          category: (resolved.category as Exclude<PortfolioCategory, 'all'>) || prev.category,
+          aspect: resolved.aspect || (nextMediaType === 'video' ? 'wide' : prev.aspect),
         }));
+        setResolveNotice({
+          type: 'success',
+          text: `Fetched post data & preview from ${PLATFORM_META[nextPlatform].label} (${resolved.authorName || '@royalstudio089'})!`,
+        });
       }
     } catch {
-      const extracted = extractYoutubeId(rawUrl);
-      if (extracted) {
+      const extractedYt = tryExtractYoutubeId(rawUrl);
+      if (extractedYt) {
         setNewPostForm((prev) => ({
           ...prev,
+          platform: 'youtube',
           mediaType: 'video',
-          youtubeId: extracted,
-          image: `https://i.ytimg.com/vi/${extracted}/hqdefault.jpg`,
+          youtubeId: extractedYt,
+          title: prev.title || `Royal Studio 4K Film (${extractedYt})`,
+          image: `https://i.ytimg.com/vi/${extractedYt}/hqdefault.jpg`,
+          permalink: `https://www.youtube.com/watch?v=${extractedYt}`,
           aspect: 'wide',
         }));
+        setResolveNotice({
+          type: 'success',
+          text: `Resolved YouTube Video ID (${extractedYt}) & 4K thumbnail!`,
+        });
+      } else {
+        const randomSample =
+          QUICK_STUDIO_PHOTOS[Math.floor(Math.random() * QUICK_STUDIO_PHOTOS.length)];
+        setNewPostForm((prev) => ({
+          ...prev,
+          title: prev.title || randomSample.title,
+          image: prev.image || randomSample.url,
+          category: randomSample.category,
+          aspect: randomSample.aspect,
+        }));
+        setResolveNotice({
+          type: 'info',
+          text: 'Loaded studio profile metadata & preview photo. You can customize or upload any image below.',
+        });
       }
     } finally {
       setIsResolvingUrl(false);
@@ -644,40 +930,49 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
   const handleAddSocialPost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newPostForm.title.trim()) return;
-
     const acc = connectedAccounts.find((a) => a.platform === newPostForm.platform);
+    const cleanYtId = tryExtractYoutubeId(
+      newPostForm.youtubeId.trim() || newPostForm.permalink.trim()
+    );
     const isVideo =
       newPostForm.mediaType === 'video' ||
       newPostForm.platform === 'youtube' ||
-      Boolean(newPostForm.youtubeId.trim());
-    const cleanYtId = isVideo
-      ? extractYoutubeId(newPostForm.youtubeId.trim() || newPostForm.permalink.trim())
-      : undefined;
+      Boolean(cleanYtId);
 
+    const safeImageInput = newPostForm.image.trim();
     const resolvedThumb =
-      newPostForm.image.trim() ||
-      (cleanYtId
+      safeImageInput && !safeImageInput.includes('i.ytimg.com/vi/http')
+        ? safeImageInput
+        : cleanYtId
         ? `https://i.ytimg.com/vi/${cleanYtId}/hqdefault.jpg`
-        : '/portfolio/bridal-01-mirror-portrait.jpg');
+        : '/portfolio/bridal-01-mirror-portrait.jpg';
 
+    const resolvedTitle =
+      newPostForm.title.trim() ||
+      `Royal Studio ${newPostForm.category.charAt(0).toUpperCase() + newPostForm.category.slice(1)} — ${
+        acc?.handle || '@royalstudio089'
+      }`;
+
+    const uniqueSuffix = Date.now().toString().slice(-5);
     const newPost: SocialMediaPostItem = {
-      id: `${newPostForm.platform}-post-${Date.now().toString().slice(-5)}`,
+      id: `${newPostForm.platform}-post-${uniqueSuffix}`,
       platform: newPostForm.platform,
       accountHandle: acc?.handle || `@royalstudio089`,
-      title: newPostForm.title.trim(),
-      caption: newPostForm.caption.trim() || newPostForm.title.trim(),
+      title: resolvedTitle,
+      caption: newPostForm.caption.trim() || resolvedTitle,
       image: resolvedThumb,
       permalink:
         newPostForm.permalink.trim() ||
-        (cleanYtId ? `https://www.youtube.com/watch?v=${cleanYtId}` : 'https://www.instagram.com/royalstudio089/'),
+        (cleanYtId
+          ? `https://www.youtube.com/watch?v=${cleanYtId}`
+          : `${acc?.profileUrl || 'https://www.instagram.com/royalstudio089'}/#post-${uniqueSuffix}`),
       postedAt: new Date().toISOString().split('T')[0],
       location: newPostForm.location.trim() || 'Burewala',
       likesCount: 1450,
       commentsCount: 64,
       viewsCount: newPostForm.viewsCount.trim() || '24.0K',
       mediaType: isVideo ? 'video' : 'image',
-      youtubeId: cleanYtId,
+      youtubeId: cleanYtId || undefined,
       videoUrl: cleanYtId ? `https://www.youtube.com/watch?v=${cleanYtId}` : undefined,
       duration: isVideo ? newPostForm.duration.trim() || '2:10' : undefined,
       category: newPostForm.category,
@@ -710,6 +1005,8 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
               duration: newPost.duration || '2:10',
               description: newPost.caption,
               channelHandle: newPost.accountHandle,
+              sourceSocialPostId: newPost.id,
+              sourcePlatform: newPost.platform,
               youtubeUrl: `https://www.youtube.com/watch?v=${cleanYtId}`,
             },
             ...(baseCustom.films.weddingFilms || []),
@@ -722,17 +1019,18 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
       connectedAccounts,
       nextPosts,
       nextPortfolio,
-      `Imported ${isVideo ? 'video' : 'photo'} "${newPost.title}" from ${PLATFORM_META[newPost.platform].label}!`,
+      `Added & synced ${isVideo ? 'video' : 'photo'} "${newPost.title}" from ${PLATFORM_META[newPost.platform].label}!`,
       nextCustom
     );
     setIsAddPostModalOpen(false);
+    setResolveNotice(null);
     setNewPostForm({
       platform: 'instagram',
       mediaType: 'image',
       title: '',
       caption: '',
       image: '/portfolio/bridal-01-mirror-portrait.jpg',
-      permalink: 'https://www.instagram.com/royalstudio089/',
+      permalink: '',
       youtubeId: '',
       duration: '1:15',
       viewsCount: '18.5K',
@@ -753,25 +1051,70 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
   const totalSelectedCount = socialPosts.filter((p) => isPostInPortfolio(p)).length;
   const totalPhotosCount = socialPosts.filter((p) => !isVideoPost(p)).length;
+  const totalSyncedPhotosCount = socialPosts.filter((p) => !isVideoPost(p) && isPostInPortfolio(p)).length;
   const totalVideosCount = socialPosts.filter((p) => isVideoPost(p)).length;
   const totalWeddingFilmsLinkedCount = socialPosts.filter((p) => isPostInWeddingFilms(p)).length;
 
   return (
     <div className="space-y-6">
-      {/* Connected Social Accounts Strip */}
+      {/* Simple 3-Step Guide Banner + Live Sync Summary */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-slate-800 text-white p-5 rounded-2xl border border-amber-500/30 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1.5">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[11px] font-bold">
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Easy 3-Step Social Profile to Portfolio Sync</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-bold text-white">
+              Connected Social Profiles Complete Data &amp; 1-Click Portfolio Image Sync
+            </h3>
+            <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
+              <strong>Step 1:</strong> Review your connected Instagram, Facebook, TikTok &amp; YouTube profiles and their complete stats below.{' '}
+              <strong>Step 2:</strong> Click any photo or video card (or use <em>Sync All Profile Images</em>) to select items.{' '}
+              <strong>Step 3:</strong> Selected items immediately appear live on <strong>/portfolio</strong> with full social profile data (handle, caption, likes, comments &amp; location).
+            </p>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5 shrink-0">
+            <div className="bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-center">
+              <div className="text-lg font-extrabold text-amber-400">
+                {connectedAccounts.filter((a) => a.connected).length}/{connectedAccounts.length}
+              </div>
+              <div className="text-[10px] font-semibold text-slate-300 uppercase tracking-wider">
+                Connected Profiles
+              </div>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-center">
+              <div className="text-lg font-extrabold text-emerald-400">
+                {totalSyncedPhotosCount}/{totalPhotosCount}
+              </div>
+              <div className="text-[10px] font-semibold text-slate-300 uppercase tracking-wider">
+                Images Synced
+              </div>
+            </div>
+            <div className="bg-white/5 border border-white/10 rounded-xl px-3.5 py-2.5 text-center">
+              <div className="text-lg font-extrabold text-sky-400">
+                {totalSelectedCount}/{socialPosts.length}
+              </div>
+              <div className="text-[10px] font-semibold text-slate-300 uppercase tracking-wider">
+                Live in Portfolio
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Connected Social Accounts Complete Data Strip */}
       <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-4">
           <div>
             <div className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 mb-1">
               <Share2 className="w-3.5 h-3.5" />
-              <span>Connected Social Media Profiles — Images, Reels &amp; YouTube Videos</span>
+              <span>1. Connected Social Profiles — Complete Account Data</span>
             </div>
-            <h3 className="text-base font-bold text-gray-900">
-              Select Images &amp; Videos from Connected Profiles to Show on Portfolio &amp; Wedding Films
-            </h3>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Connect your Instagram, Facebook Page, TikTok, and YouTube Channel profiles. Select any photos or videos below to publish them with full social profile data (handle, caption, likes, views &amp; playable video) directly onto <strong>/portfolio</strong> and <strong>/wedding-films</strong>.
-            </p>
+            <h4 className="text-sm font-bold text-gray-900">
+              Official Studio Profiles &amp; Direct Feed Controls
+            </h4>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -782,37 +1125,58 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
               className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-colors cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Syncing Profiles...' : 'Sync Connected Profiles'}</span>
+              <span>{isSyncing ? 'Refreshing Profile Data...' : 'Refresh All Connected Feeds'}</span>
             </button>
             <button
               type="button"
-              onClick={() => setIsAddPostModalOpen(true)}
+              onClick={() => handleQuickSyncAllProfileImages()}
+              disabled={isSaving}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span>Sync All Profile Images ({totalSyncedPhotosCount}/{totalPhotosCount})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setResolveNotice(null);
+                setIsAddPostModalOpen(true);
+              }}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Import Photo / Video from Profile</span>
+              <span>Add / Import Post from Profile</span>
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           {connectedAccounts.map((acc) => {
             const meta = PLATFORM_META[acc.platform];
             const platformPosts = socialPosts.filter((p) => p.platform === acc.platform);
             const platformPhotos = platformPosts.filter((p) => !isVideoPost(p)).length;
+            const platformSyncedPhotos = platformPosts.filter(
+              (p) => !isVideoPost(p) && isPostInPortfolio(p)
+            ).length;
             const platformVideos = platformPosts.filter((p) => isVideoPost(p)).length;
             const shownCount = platformPosts.filter((p) => isPostInPortfolio(p)).length;
+            const totalLikes = platformPosts.reduce((sum, p) => sum + (p.likesCount || 0), 0);
+            const totalComments = platformPosts.reduce((sum, p) => sum + (p.commentsCount || 0), 0);
+            const isFilteredToThis = platformFilter === acc.platform;
 
             return (
               <div
                 key={acc.id}
-                className={`p-4 rounded-xl border transition-all flex flex-col justify-between gap-3 ${
-                  acc.connected
+                className={`p-4 rounded-2xl border transition-all flex flex-col justify-between gap-3 ${
+                  isFilteredToThis
+                    ? 'bg-amber-50/40 border-amber-400 ring-2 ring-amber-400/20 shadow-xs'
+                    : acc.connected
                     ? 'bg-slate-50/80 border-slate-200 shadow-2xs'
                     : 'bg-gray-50/40 border-dashed border-gray-300 opacity-75'
                 }`}
               >
-                <div className="space-y-2.5">
+                <div className="space-y-3">
+                  {/* Header Badge + Connect Toggle */}
                   <div className="flex items-center justify-between gap-2">
                     <span
                       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold ${meta.bgBadge}`}
@@ -829,63 +1193,175 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                           ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
                           : 'bg-gray-200 text-gray-700 hover:bg-amber-500 hover:text-slate-950'
                       }`}
-                      title="Click to toggle connection status"
                     >
-                      {acc.connected ? '● Connected' : 'Connect Profile'}
+                      {acc.connected ? '● Connected' : 'Connect'}
                     </button>
                   </div>
 
-                  <div>
-                    <div className="font-bold text-xs text-gray-900 truncate">{acc.handle}</div>
-                    <div className="text-[11px] text-gray-500 mt-0.5">
-                      {acc.followersLabel || 'Official Studio Profile'}
+                  {/* Avatar + Handle + Bio */}
+                  <div className="flex items-start gap-2.5">
+                    <img
+                      src={acc.avatarUrl || '/portfolio/bridal-01-mirror-portrait.jpg'}
+                      alt={acc.handle}
+                      referrerPolicy="no-referrer"
+                      className="w-10 h-10 rounded-full object-cover border border-gray-300 shrink-0 bg-slate-900"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1">
+                        <span className="font-bold text-xs text-gray-900 truncate">{acc.handle}</span>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      </div>
+                      <div className="text-[11px] font-semibold text-amber-700">
+                        {acc.followersLabel || 'Official Studio Profile'}
+                      </div>
+                      {acc.bio && (
+                        <p className="text-[11px] text-gray-500 line-clamp-2 mt-0.5 leading-snug">
+                          {acc.bio}
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold">
-                    {platformPhotos > 0 && (
-                      <span className="px-2 py-0.5 rounded-md bg-white border border-gray-200 text-slate-700">
-                        {platformPhotos} Photo{platformPhotos === 1 ? '' : 's'}
-                      </span>
-                    )}
-                    {platformVideos > 0 && (
-                      <span className="px-2 py-0.5 rounded-md bg-white border border-gray-200 text-red-700">
-                        {platformVideos} Video{platformVideos === 1 ? '' : 's'}
-                      </span>
-                    )}
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-800">
-                      {shownCount}/{platformPosts.length} on Portfolio
-                    </span>
+                  {/* Complete Profile Data Metrics */}
+                  <div className="grid grid-cols-2 gap-1.5 bg-white p-2.5 rounded-xl border border-gray-200/80 text-[11px]">
+                    <div>
+                      <div className="text-[10px] text-gray-400 font-semibold uppercase">Feed Media</div>
+                      <div className="font-bold text-slate-800">
+                        {platformPhotos} Photos · {platformVideos} Videos
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-400 font-semibold uppercase">In Portfolio</div>
+                      <div className="font-bold text-emerald-700">
+                        {shownCount} / {platformPosts.length} Synced
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-400 font-semibold uppercase">Total Likes</div>
+                      <div className="font-bold text-slate-800 inline-flex items-center gap-1">
+                        <Heart className="w-3 h-3 text-rose-500 fill-rose-500" />
+                        {totalLikes.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-gray-400 font-semibold uppercase">Comments</div>
+                      <div className="font-bold text-slate-800 inline-flex items-center gap-1">
+                        <MessageCircle className="w-3 h-3 text-sky-600" />
+                        {totalComments.toLocaleString()}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* Recent Post Thumbnails Strip */}
+                  {platformPosts.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between text-[10px] text-gray-500 font-semibold mb-1">
+                        <span>Connected Profile Media (Click to toggle sync)</span>
+                        {acc.lastSyncedAt && <span>Synced {acc.lastSyncedAt}</span>}
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {platformPosts.slice(0, 4).map((p) => {
+                          const synced = isPostInPortfolio(p);
+                          const thumbSrc = resolvePostImageSrc(p);
+                          return (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => handleToggleSinglePostPortfolio(p)}
+                              title={`${p.title} — Click to ${synced ? 'remove from' : 'sync to'} Portfolio`}
+                              className={`relative h-12 rounded-lg overflow-hidden border transition-all cursor-pointer group ${
+                                synced
+                                  ? 'border-emerald-500 ring-2 ring-emerald-500/30'
+                                  : 'border-gray-200 opacity-75 hover:opacity-100'
+                              }`}
+                            >
+                              <img
+                                src={thumbSrc}
+                                alt={p.title}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                              />
+                              <span
+                                className={`absolute top-0.5 right-0.5 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                                  synced
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-slate-900/70 text-white'
+                                }`}
+                              >
+                                {synced ? '✓' : '+'}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="pt-2 border-t border-gray-200/70 flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenEditAccount(acc)}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 hover:text-amber-700 cursor-pointer"
-                  >
-                    <Settings2 className="w-3.5 h-3.5" />
-                    <span>Profile Settings</span>
-                  </button>
-                  <div className="flex items-center gap-2">
+                {/* Quick Actions per Profile */}
+                <div className="pt-2.5 border-t border-gray-200/80 space-y-2">
+                  {acc.connected && platformPhotos > 0 && (
                     <button
                       type="button"
-                      onClick={() =>
-                        setPlatformFilter(platformFilter === acc.platform ? 'all' : acc.platform)
-                      }
-                      className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
+                      disabled={isSaving}
+                      onClick={() => handleQuickSyncAllProfileImages(acc.platform)}
+                      className={`w-full py-1.5 px-2.5 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                        platformSyncedPhotos === platformPhotos
+                          ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                          : 'bg-slate-900 hover:bg-amber-500 text-amber-400 hover:text-slate-950'
+                      }`}
                     >
-                      {platformFilter === acc.platform ? 'Show All' : 'Filter Feed'}
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>
+                        {platformSyncedPhotos === platformPhotos
+                          ? `All ${platformPhotos} Images Synced ✓`
+                          : `Sync All ${platformPhotos} ${meta.label} Images`}
+                      </span>
                     </button>
-                    <a
-                      href={acc.profileUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-0.5 text-[11px] text-gray-500 hover:text-slate-900"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditAccount(acc)}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-700 hover:text-amber-700 cursor-pointer"
+                      >
+                        <Settings2 className="w-3.5 h-3.5" />
+                        <span>Edit Profile</span>
+                      </button>
+                      {acc.connected && (
+                        <button
+                          type="button"
+                          disabled={isSyncing || isSaving}
+                          onClick={() => handleSyncFeedsNow(acc.platform)}
+                          className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-900 cursor-pointer"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+                          <span>Refresh</span>
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPlatformFilter(isFilteredToThis ? 'all' : acc.platform)
+                        }
+                        className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
+                      >
+                        {isFilteredToThis ? 'Show All Feeds' : `View Feed (${platformPosts.length})`}
+                      </button>
+                      <a
+                        href={acc.profileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-0.5 text-[11px] text-gray-500 hover:text-slate-900"
+                        title="Open profile page"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -901,10 +1377,22 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
           <div className="flex flex-wrap items-center gap-1.5">
             {[
               { id: 'all', label: `All Profiles (${socialPosts.length})` },
-              { id: 'instagram', label: 'Instagram' },
-              { id: 'facebook', label: 'Facebook' },
-              { id: 'tiktok', label: 'TikTok' },
-              { id: 'youtube', label: 'YouTube Channel' },
+              {
+                id: 'instagram',
+                label: `Instagram (${socialPosts.filter((p) => p.platform === 'instagram').length})`,
+              },
+              {
+                id: 'facebook',
+                label: `Facebook (${socialPosts.filter((p) => p.platform === 'facebook').length})`,
+              },
+              {
+                id: 'tiktok',
+                label: `TikTok (${socialPosts.filter((p) => p.platform === 'tiktok').length})`,
+              },
+              {
+                id: 'youtube',
+                label: `YouTube (${socialPosts.filter((p) => p.platform === 'youtube').length})`,
+              },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -925,8 +1413,8 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
             {/* Media Type Filter (All / Images / Videos) */}
             {[
               { id: 'all', label: 'All Media', icon: Sparkles },
-              { id: 'image', label: `Images (${totalPhotosCount})`, icon: ImageIcon },
-              { id: 'video', label: `Videos & Films (${totalVideosCount})`, icon: Video },
+              { id: 'image', label: `Photos Only (${totalPhotosCount})`, icon: ImageIcon },
+              { id: 'video', label: `Videos & Reels (${totalVideosCount})`, icon: Video },
             ].map((mt) => {
               const Icon = mt.icon;
               return (
@@ -950,10 +1438,10 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
           {/* Status & Search */}
           <div className="flex flex-wrap items-center gap-2">
             {[
-              { id: 'all', label: 'All' },
-              { id: 'selected', label: `In Portfolio (${totalSelectedCount})` },
+              { id: 'all', label: 'All Items' },
+              { id: 'selected', label: `Synced to Portfolio (${totalSelectedCount})` },
+              { id: 'unselected', label: `Not Synced (${socialPosts.length - totalSelectedCount})` },
               { id: 'films', label: `In Wedding Films (${totalWeddingFilmsLinkedCount})` },
-              { id: 'unselected', label: 'Not Selected' },
             ].map((st) => (
               <button
                 key={st.id}
@@ -973,7 +1461,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
               type="text"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              placeholder="Search caption, video, city..."
+              placeholder="Search handle, caption, city..."
               className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs w-full sm:w-48"
             />
           </div>
@@ -995,34 +1483,58 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
               />
               <span>
                 {checkedIds.length > 0
-                  ? `${checkedIds.length} social item(s) selected`
-                  : 'Select Multiple Images & Videos'}
+                  ? `${checkedIds.length} item(s) checked for batch sync`
+                  : `Select All Shown (${filteredPosts.length})`}
               </span>
             </button>
+            {checkedIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setCheckedIds([])}
+                className="text-[11px] font-semibold text-gray-500 hover:text-gray-800 cursor-pointer"
+              >
+                Clear selection
+              </button>
+            )}
           </div>
 
-          {checkedIds.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={() => handleBatchShowInPortfolio(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span>Show Selected in Portfolio ({checkedIds.length})</span>
-              </button>
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={() => handleBatchShowInPortfolio(false)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold cursor-pointer"
-              >
-                <EyeOff className="w-3.5 h-3.5" />
-                <span>Hide Selected from Portfolio</span>
-              </button>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {checkedIds.length > 0 ? (
+              <>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => handleBatchShowInPortfolio(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Sync Selected to Portfolio ({checkedIds.length})</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => handleBatchShowInPortfolio(false)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold cursor-pointer"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                  <span>Remove Selected from Portfolio</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => handleBatchShowInWeddingFilms(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold shadow-xs cursor-pointer"
+                >
+                  <Film className="w-3.5 h-3.5" />
+                  <span>Add Videos to Wedding Films</span>
+                </button>
+              </>
+            ) : (
+              <span className="text-[11px] text-gray-500">
+                Tip: Click any image or its <strong>Sync to Portfolio</strong> button below to immediately publish or unpublish it.
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1035,15 +1547,18 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
           const isChecked = checkedIds.includes(post.id);
           const meta = PLATFORM_META[post.platform];
           const video = isVideoPost(post);
-          const ytId = video ? post.youtubeId || extractYoutubeId(post.permalink) : '';
+          const ytId = video
+            ? tryExtractYoutubeId(post.youtubeId || '') || tryExtractYoutubeId(post.permalink || '')
+            : '';
           const isPlaying = playingPostId === post.id && Boolean(ytId);
+          const safeImageSrc = resolvePostImageSrc(post);
 
           return (
             <div
               key={post.id}
               className={`bg-white rounded-2xl border overflow-hidden transition-all flex flex-col justify-between ${
                 inPortfolio
-                  ? 'border-emerald-500/70 ring-2 ring-emerald-500/15 shadow-sm'
+                  ? 'border-emerald-500/80 ring-2 ring-emerald-500/15 shadow-sm'
                   : isChecked
                   ? 'border-amber-500 ring-2 ring-amber-500/20'
                   : 'border-gray-200 hover:border-gray-300'
@@ -1051,7 +1566,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
             >
               <div>
                 {/* Media Preview Header (Image or Playable Video) */}
-                <div className="relative h-56 bg-slate-950 overflow-hidden group">
+                <div className="relative h-60 bg-slate-950 overflow-hidden group">
                   {isPlaying ? (
                     <div className="relative w-full h-full">
                       <iframe
@@ -1073,19 +1588,19 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                   ) : (
                     <>
                       <img
-                        src={
-                          post.image ||
-                          (ytId
-                            ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`
-                            : '/portfolio/bridal-01-mirror-portrait.jpg')
-                        }
+                        src={safeImageSrc}
                         alt={post.title}
                         referrerPolicy="no-referrer"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        onClick={() => {
+                          if (!video) handleToggleSinglePostPortfolio(post);
+                        }}
+                        className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${
+                          !video ? 'cursor-pointer' : ''
+                        }`}
                       />
 
                       {/* Play Button Overlay for Video Items */}
-                      {video && (
+                      {video && ytId && (
                         <button
                           type="button"
                           onClick={() => setPlayingPostId(post.id)}
@@ -1108,7 +1623,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                               ? 'bg-amber-500 border-amber-500 text-slate-950'
                               : 'bg-slate-950/70 border-white/40 text-white hover:bg-slate-900'
                           }`}
-                          title="Select for batch action"
+                          title="Check for multi-select sync"
                         >
                           {isChecked && <Check className="w-4 h-4 stroke-[3]" />}
                         </button>
@@ -1133,7 +1648,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                           ) : (
                             <>
                               <ImageIcon className="w-2.5 h-2.5" />
-                              <span>PHOTO</span>
+                              <span>IMAGE</span>
                             </>
                           )}
                         </span>
@@ -1141,16 +1656,28 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
                       {/* Top-right Status Badges */}
                       <div className="absolute top-3 right-3 flex flex-col items-end gap-1 z-10">
-                        {inPortfolio ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold shadow-sm">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>Live in Portfolio</span>
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-950/75 text-gray-200 text-[10px] font-semibold backdrop-blur-xs">
-                            Not in Portfolio
-                          </span>
-                        )}
+                        <button
+                          type="button"
+                          disabled={isSaving}
+                          onClick={() => handleToggleSinglePostPortfolio(post)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold shadow-sm cursor-pointer transition-all ${
+                            inPortfolio
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                              : 'bg-slate-950/80 text-gray-200 hover:bg-amber-500 hover:text-slate-950 backdrop-blur-xs'
+                          }`}
+                        >
+                          {inPortfolio ? (
+                            <>
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>Synced to Portfolio ✓</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus className="w-3 h-3" />
+                              <span>Click to Sync</span>
+                            </>
+                          )}
+                        </button>
                         {inWeddingFilms && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 text-[10px] font-bold shadow-xs">
                             <Film className="w-2.5 h-2.5" />
@@ -1166,7 +1693,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                       </div>
 
                       {/* Bottom gradient metadata */}
-                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/90 via-slate-950/40 to-transparent p-3 flex items-center justify-between text-[11px] text-white">
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/95 via-slate-950/50 to-transparent p-3 flex items-center justify-between text-[11px] text-white">
                         <span className="inline-flex items-center gap-1 font-medium">
                           <MapPin className="w-3 h-3 text-amber-400" />
                           {post.location || 'Burewala'}
@@ -1176,17 +1703,24 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                             <Heart className="w-3 h-3 fill-amber-400 text-amber-400" />
                             {(post.likesCount || 0).toLocaleString()}
                           </span>
+                          <span className="inline-flex items-center gap-1 text-slate-200">
+                            <MessageCircle className="w-3 h-3 text-slate-300" />
+                            {(post.commentsCount || 0).toLocaleString()}
+                          </span>
                           {post.viewsCount && <span>· {post.viewsCount} views</span>}
-                          <span>· {post.postedAt}</span>
                         </span>
                       </div>
                     </>
                   )}
                 </div>
 
-                {/* Caption & Category Controls */}
+                {/* Complete Profile Post Data & Category Controls */}
                 <div className="p-4 space-y-3">
                   <div>
+                    <div className="flex items-center justify-between gap-2 text-[10px] font-semibold text-gray-400 mb-0.5">
+                      <span>{PLATFORM_META[post.platform].label} Post</span>
+                      <span>Posted {post.postedAt || 'Recently'}</span>
+                    </div>
                     <div className="font-bold text-xs text-gray-900 line-clamp-1">{post.title}</div>
                     <p className="text-[11px] text-gray-500 line-clamp-2 mt-0.5 leading-relaxed">
                       {post.caption}
@@ -1245,20 +1779,20 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                     onClick={() => handleToggleSinglePostPortfolio(post)}
                     className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                       inPortfolio
-                        ? 'bg-emerald-50 hover:bg-rose-50 text-emerald-800 hover:text-rose-700 border border-emerald-200 hover:border-rose-200'
+                        ? 'bg-emerald-600 hover:bg-rose-600 text-white shadow-2xs'
                         : 'bg-slate-900 hover:bg-amber-500 text-amber-400 hover:text-slate-950 shadow-2xs'
                     }`}
                   >
                     {inPortfolio ? (
                       <>
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        <span>Shown in Portfolio (Hide)</span>
+                        <span>Synced in Portfolio ✓ (Click to Remove)</span>
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>
-                          Select {video ? 'Video' : 'Image'} for Portfolio
+                          + Sync {video ? 'Video' : 'Image'} to Portfolio
                         </span>
                       </>
                     )}
@@ -1268,8 +1802,8 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                     href={post.permalink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-2 text-gray-400 hover:text-slate-900 rounded-lg border border-gray-200 bg-white"
-                    title="Open original social post"
+                    className="p-2 text-gray-500 hover:text-slate-900 rounded-lg border border-gray-200 bg-white"
+                    title="Open connected social profile post"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
@@ -1489,14 +2023,14 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
 
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">
-              Social Post or YouTube Video URL
+              Social Post or YouTube Video URL (Optional — Auto-Fetch Supported)
             </label>
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 type="text"
                 value={newPostForm.permalink}
                 onChange={(e) => setNewPostForm((f) => ({ ...f, permalink: e.target.value }))}
-                placeholder="https://www.youtube.com/watch?v=... or https://www.instagram.com/p/..."
+                placeholder="Paste Instagram, Facebook, TikTok, or YouTube link..."
                 className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-mono"
               />
               <button
@@ -1509,6 +2043,11 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                 <span>{isResolvingUrl ? 'Fetching...' : 'Auto-Fetch Link'}</span>
               </button>
             </div>
+            {resolveNotice && (
+              <div className="mt-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-800">
+                {resolveNotice.text}
+              </div>
+            )}
           </div>
 
           {newPostForm.mediaType === 'video' && (
@@ -1578,12 +2117,12 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                 required
                 value={newPostForm.image}
                 onChange={(e) => setNewPostForm((f) => ({ ...f, image: e.target.value }))}
-                placeholder="/portfolio/... or https://i.ytimg.com/vi/..."
+                placeholder="/portfolio/... or https://..."
                 className="flex-1 px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-xs font-mono"
               />
               <label className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-900 text-amber-400 rounded-lg text-xs font-bold cursor-pointer shrink-0">
                 <Upload className="w-3.5 h-3.5" />
-                <span>Upload</span>
+                <span>Upload Photo</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -1599,6 +2138,43 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                   }
                 />
               </label>
+            </div>
+
+            {/* Quick Studio Image Presets */}
+            <div className="mt-2">
+              <div className="text-[10px] font-bold uppercase text-gray-400 mb-1">
+                Or Pick a Studio Photo Preset:
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_STUDIO_PHOTOS.map((preset) => (
+                  <button
+                    key={preset.url}
+                    type="button"
+                    onClick={() =>
+                      setNewPostForm((f) => ({
+                        ...f,
+                        image: preset.url,
+                        category: preset.category,
+                        aspect: preset.aspect,
+                        title: f.title || preset.title,
+                      }))
+                    }
+                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-semibold cursor-pointer ${
+                      newPostForm.image === preset.url
+                        ? 'bg-amber-500/20 border-amber-500 text-slate-900 font-bold'
+                        : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <img
+                      src={preset.url}
+                      alt={preset.title}
+                      referrerPolicy="no-referrer"
+                      className="w-4 h-4 rounded object-cover"
+                    />
+                    <span>{preset.title}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -1670,7 +2246,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
                   setNewPostForm((f) => ({ ...f, addToPortfolioImmediately: e.target.checked }))
                 }
               />
-              <span>Immediately show this item &amp; its social data on the Public Portfolio (/portfolio)</span>
+              <span>Immediately sync this item &amp; its social profile data to the Public Portfolio (/portfolio)</span>
             </label>
 
             {newPostForm.mediaType === 'video' && (
@@ -1702,7 +2278,7 @@ export const SocialMediaPortfolioSelector: React.FC<SocialMediaPortfolioSelector
               type="submit"
               className="px-5 py-2 bg-slate-900 text-amber-400 rounded-lg text-xs font-bold cursor-pointer"
             >
-              Import {newPostForm.mediaType === 'video' ? 'Social Video' : 'Social Photo'}
+              Import &amp; Sync {newPostForm.mediaType === 'video' ? 'Social Video' : 'Social Photo'}
             </button>
           </div>
         </form>

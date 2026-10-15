@@ -460,19 +460,45 @@ export const IntegratedBookingModal: React.FC<IntegratedBookingModalProps> = ({
   };
 
   const handleQuickCreateCustomer = async () => {
-    if (!newClientName.trim() || !newClientPhone.trim()) {
+    const cleanName = newClientName.trim();
+    const cleanPhone = newClientPhone.trim();
+    const cleanEmail = newClientEmail.trim().toLowerCase();
+    if (!cleanName || !cleanPhone) {
       addToast('Customer Name and Phone Number are required.', 'error');
       return;
     }
     setIsCreatingClient(true);
     try {
+      const normPhone = cleanPhone.replace(/[^0-9]/g, '');
+      const existingMatch = clients.find((c) => {
+        if (c.name.trim().toLowerCase() === cleanName.toLowerCase()) return true;
+        const cDigits = (c.phone || '').replace(/[^0-9]/g, '');
+        if (normPhone.length >= 7 && cDigits === normPhone) return true;
+        if (cleanEmail && c.email && c.email.trim().toLowerCase() === cleanEmail) return true;
+        return false;
+      });
+      if (existingMatch) {
+        setSelectedClientId(existingMatch.id);
+        setCity(existingMatch.city || 'Burewala');
+        if (!title.trim()) {
+          setTitle(`${existingMatch.name} — ${category} Booking`);
+        }
+        setIsQuickAddClient(false);
+        setNewClientName('');
+        setNewClientPhone('');
+        setNewClientEmail('');
+        addToast(`Selected existing client profile: ${existingMatch.name}`);
+        return;
+      }
       const created = await createClient({
-        name: newClientName.trim(),
-        phone: newClientPhone.trim(),
-        whatsapp: newClientPhone.trim(),
-        email: newClientEmail.trim(),
+        name: cleanName,
+        phone: cleanPhone,
+        whatsapp: cleanPhone,
+        email: cleanEmail,
         city: newClientCity.trim() || 'Burewala',
         address: newClientAddress.trim() || newClientCity.trim() || 'Burewala',
+        hasLogin: false,
+        loginStatus: 'NONE',
       });
       setSelectedClientId(created.id);
       setCity(created.city || 'Burewala');

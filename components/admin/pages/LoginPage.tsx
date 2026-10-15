@@ -129,7 +129,7 @@ export const LoginPage: React.FC = () => {
               <img
                 src={logoSrc}
                 alt={studioName}
-                className="h-14 w-auto object-contain rounded-xl bg-[#111111] p-1.5 border border-border"
+                className="h-14 w-auto object-contain bg-transparent p-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).src = '/RoyalLogo.png';
                 }}
@@ -144,7 +144,7 @@ export const LoginPage: React.FC = () => {
             {studioName}
           </h1>
           <p className="text-[11px] uppercase tracking-[0.22em] text-accent font-semibold mt-1">
-            Executive ERP · Staff · Client Portal
+            Executive ERP · Admin &amp; Staff Portal
           </p>
           <p className="text-xs text-text-muted mt-2">{tagline}</p>
         </div>
@@ -187,7 +187,7 @@ export const LoginPage: React.FC = () => {
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
           <div>
             <label htmlFor="admin-email" className="block text-xs font-semibold text-primary mb-1.5">
-              Login Email (Admin, Staff, or Booked Client)
+              Studio Login Email (Admin or Staff)
             </label>
             <div className="relative">
               <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
@@ -262,6 +262,15 @@ export const LoginPage: React.FC = () => {
             )}
           </button>
         </form>
+
+        <div className="mt-4 pt-4 border-t border-border">
+          <Link
+            href="/client-portal"
+            className="w-full py-2.5 px-4 rounded-xl border border-accent/40 bg-accent/10 hover:bg-accent/20 text-accent text-xs font-bold flex items-center justify-center gap-2 transition-colors"
+          >
+            <span>Booked Client? Open Interactive Client Portal →</span>
+          </Link>
+        </div>
 
         <div className="mt-5 flex items-center justify-between text-xs">
           <span className="inline-flex items-center gap-1.5 text-text-muted text-[11px]">

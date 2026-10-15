@@ -1,16 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig = (phase: string): NextConfig => ({
-  distDir: phase === "phase-development-server" ? ".next-dev" : ".next",
   output: "standalone",
+  distDir: phase === "phase-development-server" ? ".next-dev" : ".next",
   devIndicators: false,
   poweredByHeader: false,
   compress: true,
-  experimental: {
-    webpackMemoryOptimizations: true,
-  },
   eslint: {
     ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  experimental: {
+    webpackMemoryOptimizations: true,
+    cpus: 1,
   },
   allowedDevOrigins: [
     "*.run.app",

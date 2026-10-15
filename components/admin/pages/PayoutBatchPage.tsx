@@ -149,27 +149,19 @@ export const PayoutBatchPage: React.FC<PayoutBatchPageProps> = ({ navigate }) =>
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Batch Crew Payout System</h2>
-          <p className="text-xs text-gray-500">
-            Select crew members, audit payout figures, execute multi-disbursals, and generate bank files.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => selectAll(true)}
-            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-semibold"
-          >
-            Select All
-          </button>
-          <button
-            onClick={() => selectAll(false)}
-            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-semibold"
-          >
-            Deselect All
-          </button>
-        </div>
+      <div className="flex items-center justify-end gap-2">
+        <button
+          onClick={() => selectAll(true)}
+          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-semibold"
+        >
+          Select All
+        </button>
+        <button
+          onClick={() => selectAll(false)}
+          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-semibold"
+        >
+          Deselect All
+        </button>
       </div>
 
       {batchResult && (

@@ -21,7 +21,9 @@ import {
   TeamPayment,
   AdminProfile,
   TempHireRecommendation,
-  AuditLogEntry
+  AuditLogEntry,
+  EventMediaDeliveryVault,
+  AdminOnlyGoogleDriveCredentials,
 } from '@/components/admin/types';
 import { calculateEventTotals, computeInvoiceStatus } from '@/components/admin/utils/calculations';
 import {
@@ -377,71 +379,7 @@ function getInitialData(): DatabaseSchema {
 
   const profile: AdminProfile = getDefaultStudioProfile();
 
-  const clients: Client[] = [
-    {
-      id: 'cli-001',
-      name: 'Tariq Mehmood & Family',
-      phone: '+92 300 9876543',
-      whatsapp: '+92 300 9876543',
-      email: 'tariq.mehmood@example.com',
-      address: 'House 14-A, DHA Phase 5',
-      city: 'Lahore',
-      notes: 'High profile wedding. Require top cinematography and live drone coverage.',
-      createdDate: '2026-08-10T10:00:00.000Z',
-      createdBy: 'usr-admin',
-      hasLogin: true,
-      userId: 'usr-client',
-      loginStatus: 'ACTIVE',
-    },
-    {
-      id: 'cli-002',
-      name: 'Dr. Ayesha Siddiqui',
-      phone: '+92 321 5566778',
-      whatsapp: '+92 321 5566778',
-      email: 'ayesha.siddiqui@example.pk',
-      address: 'Sector F-7/2',
-      city: 'Islamabad',
-      notes: 'Nikah & Reception. Prefers soft pastel aesthetic and candid documentary style.',
-      createdDate: '2026-08-15T11:30:00.000Z',
-      createdBy: 'usr-admin'
-    },
-    {
-      id: 'cli-003',
-      name: 'Nexus Tech Global',
-      phone: '+92 42 35789012',
-      whatsapp: '+92 333 1122334',
-      email: 'events@nexustech.pk',
-      address: 'Arfa Software Technology Park, Ferozepur Road',
-      city: 'Lahore',
-      notes: 'Corporate tech summit and annual award banquet. Fast turnaround needed for PR reels.',
-      createdDate: '2026-08-20T14:15:00.000Z',
-      createdBy: 'usr-admin'
-    },
-    {
-      id: 'cli-004',
-      name: 'Omer Farooq & Hina Sheikh',
-      phone: '+92 345 8899001',
-      whatsapp: '+92 345 8899001',
-      email: 'omer.sheikh@example.com',
-      address: 'Clifton Block 4',
-      city: 'Karachi',
-      notes: 'Beach destination engagement shoot and sunset portraits.',
-      createdDate: '2026-09-01T09:40:00.000Z',
-      createdBy: 'usr-staff'
-    },
-    {
-      id: 'cli-005',
-      name: 'Al-Haram Developers',
-      phone: '+92 301 2233445',
-      whatsapp: '+92 301 2233445',
-      email: 'media@alharamdev.pk',
-      address: 'Bahria Town Sector C',
-      city: 'Lahore',
-      notes: 'Commercial architecture portfolio and aerial 4K video.',
-      createdDate: '2026-09-05T16:00:00.000Z',
-      createdBy: 'usr-admin'
-    }
-  ];
+  const clients: Client[] = [];
 
   const packages: Package[] = [
     {
@@ -543,128 +481,7 @@ function getInitialData(): DatabaseSchema {
     }
   ];
 
-  const teamMembers: TeamMember[] = [
-    {
-      id: 'tm-001',
-      name: 'Hamza Tariq',
-      phone: '+92 321 4455667',
-      whatsapp: '+92 321 4455667',
-      email: 'hamza.photo@royalstudio.pk',
-      role: 'Photographer',
-      specialization: 'Fine-art Bridal & Stage Portraits',
-      dailyRate: 12000,
-      eventRate: 15000,
-      availabilityStatus: 'Available',
-      isActive: true,
-      joiningDate: '2023-01-15',
-      notes: 'Lead photographer with 8+ years experience in high-end Pakistani weddings.'
-    },
-    {
-      id: 'tm-002',
-      name: 'Daniyal Raza',
-      phone: '+92 333 5566778',
-      whatsapp: '+92 333 5566778',
-      email: 'daniyal.candid@royalstudio.pk',
-      role: 'Photographer',
-      specialization: 'Candid Moments & Ambient Light',
-      dailyRate: 10000,
-      eventRate: 12000,
-      availabilityStatus: 'Available',
-      isActive: true,
-      joiningDate: '2023-06-01',
-      notes: 'Expert in street documentary and candid emotional captures.'
-    },
-    {
-      id: 'tm-003',
-      name: 'Usman Farooq',
-      phone: '+92 300 7788990',
-      whatsapp: '+92 300 7788990',
-      email: 'usman.cine@royalstudio.pk',
-      role: 'Videographer',
-      specialization: 'Cinematic Gimbal Movement & Storytelling',
-      dailyRate: 14000,
-      eventRate: 16000,
-      availabilityStatus: 'Available',
-      isActive: true,
-      joiningDate: '2022-11-10',
-      notes: 'Primary director of photography on FX3 and Ronin rigs.'
-    },
-    {
-      id: 'tm-004',
-      name: 'Waleed Javed',
-      phone: '+92 312 9900112',
-      whatsapp: '+92 312 9900112',
-      email: 'waleed.video@royalstudio.pk',
-      role: 'Videographer',
-      specialization: 'Stage Audio & Dual Camera Sync',
-      dailyRate: 11000,
-      eventRate: 13000,
-      availabilityStatus: 'Available',
-      isActive: true,
-      joiningDate: '2024-02-15',
-      notes: 'Second cinema shooter.'
-    },
-    {
-      id: 'tm-005',
-      name: 'Shahbaz Ahmed',
-      phone: '+92 345 3344556',
-      whatsapp: '+92 345 3344556',
-      email: 'shahbaz.drone@royalstudio.pk',
-      role: 'Drone Operator',
-      specialization: 'High Speed Aerial Tracking & Cinematic Reveales',
-      dailyRate: 12000,
-      eventRate: 14000,
-      availabilityStatus: 'Available',
-      isActive: true,
-      joiningDate: '2023-03-20',
-      notes: 'Certified drone pilot for DJI Mavic 3 Cine and Inspire.'
-    },
-    {
-      id: 'tm-006',
-      name: 'Kamran Butt',
-      phone: '+92 301 6677889',
-      whatsapp: '+92 301 6677889',
-      email: 'kamran.crew@royalstudio.pk',
-      role: 'Assistant',
-      specialization: 'Studio Strobes, Off-camera Flash & Rigging',
-      dailyRate: 4000,
-      eventRate: 5000,
-      availabilityStatus: 'Available',
-      isActive: true,
-      joiningDate: '2024-01-10',
-      notes: 'Reliable gear wrangler and boom operator.'
-    },
-    {
-      id: 'tm-007',
-      name: 'Zainab Ali',
-      phone: '+92 334 2233445',
-      whatsapp: '+92 334 2233445',
-      email: 'zainab.edit@royalstudio.pk',
-      role: 'Editor',
-      specialization: 'DaVinci Resolve Color Grading & Teaser Edits',
-      dailyRate: 8000,
-      eventRate: 8000,
-      availabilityStatus: 'Available',
-      isActive: true,
-      joiningDate: '2022-09-01',
-      notes: 'In-house post-production lead.'
-    },
-    {
-      id: 'tm-008',
-      name: 'Sarah Sheikh',
-      phone: '+92 322 8899112',
-      whatsapp: '+92 322 8899112',
-      email: 'sarah.design@royalstudio.pk',
-      role: 'Album Designer',
-      specialization: 'Minimalist Layouts & Typography',
-      dailyRate: 6000,
-      eventRate: 7000,
-      availabilityStatus: 'Available',
-      isActive: true,
-      joiningDate: '2023-08-01',
-      notes: 'Designs luxury Italian & Turkish flushmount books.'
-    }
-  ];
+  const teamMembers: TeamMember[] = [];
 
   const equipment: Equipment[] = [
     {
@@ -789,520 +606,23 @@ function getInitialData(): DatabaseSchema {
     }
   ];
 
-  const maintenanceLogs: EquipmentMaintenanceLog[] = [
-    {
-      id: 'mnt-001',
-      equipmentId: 'eq-001',
-      date: '2026-09-20',
-      issue: 'Routine Service & Shutter Calibration Required',
-      description: 'Camera passed 20 wedding uses. Sensor has minor dust spots visible above f/8.',
-      reportedBy: 'Hamza Tariq',
-      cost: 4500,
-      status: 'Pending',
-      repairNotes: 'Scheduled with official Sony Alpha Service Center in Mall Road, Lahore.'
-    }
-  ];
-
-  // Realistic Complete Wedding Demo Event (Section 62 Scenario)
-  const event1: Event = {
-    id: 'evt-001',
-    clientId: 'cli-001',
-    title: 'Tariq Mehmood & Ayesha Wedding Celebration',
-    category: 'Wedding',
-    weddingSubtype: 'Barat',
-    packageId: 'pkg-001',
-    eventDate: '2026-10-15',
-    startTime: '18:00',
-    endTime: '23:30',
-    venue: 'Royal Palm Golf & Country Club / PC Grand Ballroom',
-    city: 'Lahore',
-    status: 'Confirmed',
-    packagePrice: 370000,
-    advancePaid: 150000,
-    discount: 0,
-    tax: 0,
-    notes: 'Premier 3-day wedding celebration. Drone clearance approved by venue security.',
-    createdBy: 'usr-admin',
-    createdDate: '2026-08-11T12:00:00.000Z',
-    updatedDate: '2026-09-28T15:30:00.000Z',
-    isMultiDay: true,
-    staffCost: 88000,
-    rentalCost: 32000,
-    eventExpenses: 34500,
-    netProfit: 215500,
-    netMargin: 58.2,
-    totalClientPayments: 150000,
-    remainingBalance: 220000
-  };
-
-  const daySchedules: EventDaySchedule[] = [
-    {
-      id: 'day-001',
-      eventId: 'evt-001',
-      dayNumber: 1,
-      date: '2026-10-14',
-      eventType: 'Mehndi',
-      venue: 'Royal Palm Fairways Hall, Lahore',
-      startTime: '19:00',
-      endTime: '23:30',
-      callTime: '17:30',
-      dressCode: 'Traditional Mustard & Emerald Green',
-      notes: 'High tempo dance performances. Stage lighting needs extra warm strobes.',
-      customPrice: 100000
-    },
-    {
-      id: 'day-002',
-      eventId: 'evt-001',
-      dayNumber: 2,
-      date: '2026-10-15',
-      eventType: 'Barat',
-      venue: 'Pearl Continental Grand Crystal Ballroom, Lahore',
-      startTime: '18:30',
-      endTime: '23:45',
-      callTime: '16:30',
-      dressCode: 'Formal Black Tie / Sherwani',
-      notes: 'Bride entrance with traditional chadar. Full drone entry shot outside ballroom.',
-      customPrice: 150000
-    },
-    {
-      id: 'day-003',
-      eventId: 'evt-001',
-      dayNumber: 3,
-      date: '2026-10-16',
-      eventType: 'Walima',
-      venue: 'Garrison Golf & Country Club Banquet, Lahore',
-      startTime: '19:00',
-      endTime: '23:00',
-      callTime: '17:30',
-      dressCode: 'Contemporary Pastel / Western Formals',
-      notes: 'Family portraits before dinner. Couple outdoor sunset shoot on fairway.',
-      customPrice: 120000
-    }
-  ];
-
-  const teamAssignments: EventTeamAssignment[] = [
-    {
-      id: 'eta-001',
-      eventId: 'evt-001',
-      teamMemberId: 'tm-001',
-      role: 'Photographer',
-      date: '2026-10-15',
-      hours: 18,
-      rate: 15000,
-      cost: 25000,
-      notes: 'Lead photographer for all 3 days',
-      assignmentStatus: 'Confirmed'
-    },
-    {
-      id: 'eta-002',
-      eventId: 'evt-001',
-      teamMemberId: 'tm-002',
-      role: 'Photographer',
-      date: '2026-10-15',
-      hours: 18,
-      rate: 12000,
-      cost: 18000,
-      notes: 'Second candid photographer',
-      assignmentStatus: 'Confirmed'
-    },
-    {
-      id: 'eta-003',
-      eventId: 'evt-001',
-      teamMemberId: 'tm-003',
-      role: 'Videographer',
-      date: '2026-10-15',
-      hours: 18,
-      rate: 16000,
-      cost: 22000,
-      notes: 'Cinema director on FX3',
-      assignmentStatus: 'Confirmed'
-    },
-    {
-      id: 'eta-004',
-      eventId: 'evt-001',
-      teamMemberId: 'tm-005',
-      role: 'Drone Operator',
-      date: '2026-10-15',
-      hours: 8,
-      rate: 14000,
-      cost: 14000,
-      notes: 'Aerial coverage on Barat & Walima',
-      assignmentStatus: 'Confirmed'
-    },
-    {
-      id: 'eta-005',
-      eventId: 'evt-001',
-      teamMemberId: 'tm-006',
-      role: 'Assistant',
-      date: '2026-10-15',
-      hours: 18,
-      rate: 5000,
-      cost: 9000,
-      notes: 'Lighting assistant for 3 days',
-      assignmentStatus: 'Confirmed'
-    }
-  ];
-
-  const equipmentAssignments: EventEquipmentAssignment[] = [
-    {
-      id: 'eea-001',
-      eventId: 'evt-001',
-      equipmentId: 'eq-001',
-      quantity: 1,
-      rentalRate: 5000,
-      rentalCost: 5000,
-      isCheckedOut: true,
-      isCheckedIn: false,
-      notes: 'Hamza lead camera'
-    },
-    {
-      id: 'eea-002',
-      eventId: 'evt-001',
-      equipmentId: 'eq-002',
-      quantity: 1,
-      rentalRate: 8000,
-      rentalCost: 8000,
-      isCheckedOut: true,
-      isCheckedIn: false,
-      notes: 'Usman primary FX3 rig'
-    },
-    {
-      id: 'eea-003',
-      eventId: 'evt-001',
-      equipmentId: 'eq-003',
-      quantity: 1,
-      rentalRate: 3500,
-      rentalCost: 3500,
-      isCheckedOut: true,
-      isCheckedIn: false,
-      notes: '24-70mm GM II lens'
-    },
-    {
-      id: 'eea-004',
-      eventId: 'evt-001',
-      equipmentId: 'eq-005',
-      quantity: 1,
-      rentalRate: 9000,
-      rentalCost: 9000,
-      isCheckedOut: false,
-      isCheckedIn: false,
-      notes: 'DJI Mavic 3 Cine kit'
-    },
-    {
-      id: 'eea-005',
-      eventId: 'evt-001',
-      equipmentId: 'eq-006',
-      quantity: 1,
-      rentalRate: 4000,
-      rentalCost: 4000,
-      isCheckedOut: true,
-      isCheckedIn: false,
-      notes: 'Godox AD600 Pro strobe'
-    },
-    {
-      id: 'eea-006',
-      eventId: 'evt-001',
-      equipmentId: 'eq-007',
-      quantity: 1,
-      rentalRate: 2500,
-      rentalCost: 2500,
-      isCheckedOut: true,
-      isCheckedIn: false,
-      notes: 'Rode Wireless PRO system'
-    }
-  ];
-
-  const eventExpenses: EventExpense[] = [
-    {
-      id: 'exp-001',
-      eventId: 'evt-001',
-      category: 'Fuel',
-      description: 'Fuel for crew van across Lahore venues (Mehndi, Barat, Walima)',
-      amount: 14000,
-      date: '2026-10-14',
-      paidBy: 'Hamza Tariq',
-      notes: 'PSO receipt attached'
-    },
-    {
-      id: 'exp-002',
-      eventId: 'evt-001',
-      category: 'Catering',
-      description: 'Dinner & refreshments for 5 crew members for 3 event days',
-      amount: 15500,
-      date: '2026-10-15',
-      paidBy: 'Royal Studio',
-      notes: 'Dinner at PC and venue lounge'
-    },
-    {
-      id: 'exp-003',
-      eventId: 'evt-001',
-      category: 'Travel',
-      description: 'Toll plaza & parking charges for 3 days',
-      amount: 5000,
-      date: '2026-10-16',
-      paidBy: 'Kamran Butt',
-      notes: 'VIP parking pass at Garrison'
-    }
-  ];
-
-  const invoices: Invoice[] = [
-    {
-      id: 'inv-001',
-      invoiceNumber: 'RS-INV-1001',
-      clientId: 'cli-001',
-      eventId: 'evt-001',
-      issueDate: '2026-08-11',
-      dueDate: '2026-10-10',
-      subtotal: 370000,
-      discount: 0,
-      tax: 0,
-      total: 370000,
-      paidAmount: 150000,
-      remainingAmount: 220000,
-      paymentTerms: '50% Advance at booking, remaining before event',
-      notes: 'First advance received via Meezan Bank online transfer.',
-      status: 'Partially Paid',
-      createdBy: 'usr-admin'
-    },
-    {
-      id: 'inv-002',
-      invoiceNumber: 'RS-INV-1002',
-      clientId: 'cli-003',
-      eventId: 'evt-003',
-      issueDate: '2026-08-25',
-      dueDate: '2026-09-15', // Past due date!
-      subtotal: 85000,
-      discount: 0,
-      tax: 0,
-      total: 85000,
-      paidAmount: 0,
-      remainingAmount: 85000,
-      paymentTerms: 'Net 15 days corporate payment terms',
-      notes: 'Pending procurement clearance from client finance department.',
-      status: 'Overdue',
-      createdBy: 'usr-admin'
-    }
-  ];
-
-  const payments: Payment[] = [
-    {
-      id: 'pay-001',
-      paymentId: 'PAY-2026-001',
-      eventId: 'evt-001',
-      invoiceId: 'inv-001',
-      amount: 150000,
-      paymentDate: '2026-08-12',
-      method: 'Bank Transfer',
-      reference: 'TXN-MEEZ-994821',
-      notes: '50% Booking advance confirmed in Meezan Bank account',
-      createdBy: 'usr-admin'
-    }
-  ];
-
-  const quotations: Quotation[] = [
-    {
-      id: 'quo-001',
-      quotationNumber: 'RS-QUO-0001',
-      clientId: 'cli-001',
-      eventId: 'evt-001',
-      issueDate: '2026-08-10',
-      validUntil: '2026-09-10',
-      subtotal: 370000,
-      discount: 0,
-      tax: 0,
-      total: 370000,
-      paymentTerms: '50% advance booking deposit required to lock dates.',
-      notes: 'Includes custom luxury Italian leather album and drone cinematography.',
-      createdBy: 'usr-admin'
-    }
-  ];
-
-  const tasks: EventTask[] = [
-    {
-      id: 'tsk-001',
-      eventId: 'evt-001',
-      title: 'Drone Route Planning & Venue Clearance',
-      assigneeId: 'tm-005',
-      dueDate: '2026-10-10',
-      priority: 'Urgent',
-      status: 'In Progress',
-      description: 'Obtain venue clearance from PC Ballroom and Royal Palm golf management for Mavic 3 aerial filming.',
-      createdDate: '2026-08-15'
-    },
-    {
-      id: 'tsk-002',
-      eventId: 'evt-001',
-      title: 'Shot List & Family Stage Hierarchy Meeting',
-      assigneeId: 'tm-001',
-      dueDate: '2026-10-11',
-      priority: 'High',
-      status: 'Pending',
-      description: 'Review VIP guest list, key family portraits, and special entrance requests with bride and groom.',
-      createdDate: '2026-08-15'
-    },
-    {
-      id: 'tsk-003',
-      eventId: 'evt-001',
-      title: 'Same-Day Social Media Reel Delivery',
-      assigneeId: 'tm-007',
-      dueDate: '2026-10-16',
-      priority: 'Urgent',
-      status: 'Pending',
-      description: 'Edit 60-second viral Instagram teaser within 24 hours of Barat event.',
-      createdDate: '2026-08-15'
-    },
-    {
-      id: 'tsk-004',
-      eventId: 'evt-001',
-      title: 'Master Color Grading & 4K Cinema Cut',
-      assigneeId: 'tm-007',
-      dueDate: '2026-11-05',
-      priority: 'Normal',
-      status: 'Pending',
-      description: 'Complete DaVinci Resolve color grade and audio mix for full documentary film.',
-      createdDate: '2026-08-15'
-    }
-  ];
-
-  // Loss Leader Event (Net Profit < 0) as explicitly required by Section 31 & 60!
-  const eventLossLeader: Event = {
-    id: 'evt-002',
-    clientId: 'cli-004',
-    title: 'Clifton Beach Destination Engagement & Fashion Teaser',
-    category: 'Engagement',
-    packageId: 'pkg-003',
-    eventDate: '2026-09-25',
-    startTime: '15:00',
-    endTime: '20:00',
-    venue: 'Do Darya & French Beach',
-    city: 'Karachi',
-    status: 'Shoot Done',
-    packagePrice: 65000,
-    advancePaid: 65000,
-    discount: 10000,
-    tax: 0,
-    notes: 'Promotional portfolio shoot. Extra travel and high-speed equipment resulted in operational loss.',
-    createdBy: 'usr-admin',
-    createdDate: '2026-08-28T09:00:00.000Z',
-    updatedDate: '2026-09-26T18:00:00.000Z',
-    isMultiDay: false,
-    staffCost: 45000,
-    rentalCost: 21500,
-    eventExpenses: 18000,
-    netProfit: -19500, // NET PROFIT < 0!
-    netMargin: -30.0,
-    totalClientPayments: 65000,
-    remainingBalance: 0
-  };
-
-  const eventCorporate: Event = {
-    id: 'evt-003',
-    clientId: 'cli-003',
-    title: 'Nexus Tech Global Summit & Innovation Awards',
-    category: 'Corporate',
-    packageId: 'pkg-004',
-    eventDate: '2026-10-05',
-    startTime: '09:00',
-    endTime: '17:00',
-    venue: 'Arfa Software Technology Park Auditorium',
-    city: 'Lahore',
-    status: 'Shoot Scheduled',
-    packagePrice: 85000,
-    advancePaid: 0,
-    discount: 0,
-    tax: 0,
-    notes: 'Keynotes, panel discussions, and evening award gala.',
-    createdBy: 'usr-admin',
-    createdDate: '2026-08-22T10:00:00.000Z',
-    updatedDate: '2026-09-27T11:00:00.000Z',
-    isMultiDay: false,
-    staffCost: 26000,
-    rentalCost: 11000,
-    eventExpenses: 7500,
-    netProfit: 40500,
-    netMargin: 47.6,
-    totalClientPayments: 0,
-    remainingBalance: 85000
-  };
-
-  const studioExpenses: StudioExpense[] = [
-    {
-      id: 'sexp-001',
-      category: 'Rent',
-      description: 'Monthly Studio Office Rent - Main Boulevard Gulberg III',
-      amount: 140000,
-      date: '2026-09-01',
-      paymentMethod: 'Bank Transfer',
-      recurring: true,
-      notes: 'Paid via Meezan corporate cheque',
-      createdBy: 'usr-admin'
-    },
-    {
-      id: 'sexp-002',
-      category: 'Utilities',
-      description: 'Electricity & Studio Cooling Bill (LESCO)',
-      amount: 45000,
-      date: '2026-09-05',
-      paymentMethod: 'JazzCash',
-      recurring: true,
-      notes: 'Peak summer studio editing air conditioning',
-      createdBy: 'usr-admin'
-    },
-    {
-      id: 'sexp-003',
-      category: 'Internet',
-      description: 'StormFiber Enterprise 100Mbps dedicated fiber line',
-      amount: 12500,
-      date: '2026-09-07',
-      paymentMethod: 'Bank Transfer',
-      recurring: true,
-      notes: 'For fast 4K raw cloud uploads & client galleries',
-      createdBy: 'usr-admin'
-    },
-    {
-      id: 'sexp-004',
-      category: 'Software',
-      description: 'Adobe Creative Cloud Team License & Frame.io storage',
-      amount: 28000,
-      date: '2026-09-10',
-      paymentMethod: 'Bank Transfer',
-      recurring: true,
-      notes: 'Annual recurring suite for 3 editing stations',
-      createdBy: 'usr-admin'
-    }
-  ];
-
-  const teamPayments: TeamPayment[] = [
-    {
-      id: 'tp-001',
-      teamMemberId: 'tm-001',
-      eventId: 'evt-001',
-      paymentType: 'Advance',
-      amount: 15000,
-      date: '2026-09-15',
-      paymentMethod: 'Bank Transfer',
-      reference: 'TXN-TP-8841',
-      notes: 'Advance for Tariq wedding shoot preparation',
-      createdBy: 'usr-admin'
-    },
-    {
-      id: 'tp-002',
-      teamMemberId: 'tm-007',
-      paymentType: 'Salary',
-      amount: 65000,
-      date: '2026-09-01',
-      paymentMethod: 'Bank Transfer',
-      reference: 'SAL-SEP-2026',
-      notes: 'Monthly in-house editor retainer',
-      createdBy: 'usr-admin'
-    }
-  ];
+  const maintenanceLogs: EquipmentMaintenanceLog[] = [];
+  const daySchedules: EventDaySchedule[] = [];
+  const teamAssignments: EventTeamAssignment[] = [];
+  const equipmentAssignments: EventEquipmentAssignment[] = [];
+  const eventExpenses: EventExpense[] = [];
+  const invoices: Invoice[] = [];
+  const payments: Payment[] = [];
+  const quotations: Quotation[] = [];
+  const tasks: EventTask[] = [];
+  const studioExpenses: StudioExpense[] = [];
+  const teamPayments: TeamPayment[] = [];
 
   return {
     users: [adminUser],
     profile,
     clients,
-    events: [event1, eventLossLeader, eventCorporate],
+    events: [],
     daySchedules,
     packages,
     teamMembers,
@@ -1319,6 +639,22 @@ function getInitialData(): DatabaseSchema {
     tasks,
     tempHireRecommendations: []
   };
+}
+
+export function deriveDefaultPinForEvent(eventId: string): string {
+  const presetMap: Record<string, string> = {
+    'evt-001': '4821',
+    'evt-002': '7392',
+    'evt-003': '6154',
+    'evt-004': '9048',
+  };
+  if (presetMap[eventId]) return presetMap[eventId];
+  let hash = 0;
+  for (let i = 0; i < eventId.length; i++) {
+    hash = (hash * 31 + eventId.charCodeAt(i)) % 9000;
+  }
+  const code = String(1000 + Math.abs(hash));
+  return code === '1234' ? '5829' : code;
 }
 
 export function getDefaultProofingGalleryForEvent(eventId: string, title?: string) {
@@ -1466,14 +802,349 @@ export function getDefaultProofingGalleryForEvent(eventId: string, title?: strin
   ];
 
   return {
-    pinCode: '1234',
+    pinCode: deriveDefaultPinForEvent(eventId),
+    isPinProtected: false,
     isPublished: true,
     targetCountMin: 100,
     targetCountMax: 150,
+    minAlbumSelection: 100,
+    maxAlbumSelection: 150,
     selectionStatus: 'Open' as const,
     clientSubmissionNote: title ? `Luxury Storybook Album Selection for ${title}` : '',
     photos: defaultPhotos,
   };
+}
+
+export function extractYoutubePlaylistId(rawUrl: string): string {
+  const input = (rawUrl || '').trim();
+  if (!input) return '';
+  const listMatch = input.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+  if (listMatch && listMatch[1]) return listMatch[1];
+  if (/^PL[a-zA-Z0-9_-]{10,}$/.test(input)) return input;
+  return '';
+}
+
+export function buildDefaultMediaDeliveryVault(
+  event: Event,
+  client?: Client
+): EventMediaDeliveryVault {
+  const evtSlug = (event.id || 'evt-001').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const clientSlug = (client?.name || event.title || 'client')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '.')
+    .replace(/^\.+|\.+$/g, '')
+    .slice(0, 22);
+  const pin = deriveDefaultPinForEvent(event.id);
+  const googleAccountEmail = `royalstudio.${evtSlug}.${clientSlug}@gmail.com`;
+  const googleAccountPassword = `RS#Drive2026!${pin}`;
+  const folderHash = `1RS_${evtSlug.toUpperCase()}_${pin}x9K2mQvL8p`;
+  const defaultDriveFolderUrl = `https://drive.google.com/drive/folders/${folderHash}?usp=sharing`;
+  const driveFolderUrl =
+    client?.mediaDelivery?.driveFolderUrl ||
+    client?.googleDriveFolderUrl ||
+    defaultDriveFolderUrl;
+  const nowIso = event.updatedDate || event.createdDate || new Date().toISOString();
+
+  const isCorporate = event.category === 'Corporate';
+  const defaultSubfolders = isCorporate
+    ? [
+        {
+          id: `${event.id}-gdf-01`,
+          folderName: '01 · High-Resolution Keynote & Press Gallery (JPEG)',
+          folderType: 'High-Res Edited',
+          folderUrl: `${driveFolderUrl}&folder=01-highres-press`,
+          driveUrl: `${driveFolderUrl}&folder=01-highres-press`,
+          fileCount: 640,
+          sizeGb: 4.2,
+          transferStatus: 'Verified' as const,
+          status: 'Synced',
+          updatedAt: nowIso,
+          uploadedAt: nowIso,
+        },
+        {
+          id: `${event.id}-gdf-02`,
+          folderName: '02 · Uncompressed Master RAW Camera Archives (Sony ARW)',
+          folderType: 'RAW Archive',
+          folderUrl: `${driveFolderUrl}&folder=02-raw-masters`,
+          driveUrl: `${driveFolderUrl}&folder=02-raw-masters`,
+          fileCount: 920,
+          sizeGb: 7.4,
+          transferStatus: 'Transferred' as const,
+          status: 'Synced',
+          updatedAt: nowIso,
+          uploadedAt: nowIso,
+        },
+      ]
+    : [
+        {
+          id: `${event.id}-gdf-01`,
+          folderName: '01 · Master High-Resolution Edited Gallery (300 DPI JPEG)',
+          folderType: 'High-Res Edited',
+          folderUrl: `${driveFolderUrl}&folder=01-edited-highres`,
+          driveUrl: `${driveFolderUrl}&folder=01-edited-highres`,
+          fileCount: 950,
+          sizeGb: 4.8,
+          transferStatus: 'Verified' as const,
+          status: 'Synced',
+          updatedAt: nowIso,
+          uploadedAt: nowIso,
+        },
+        {
+          id: `${event.id}-gdf-02`,
+          folderName: '02 · Multi-Day Uncompressed RAW Camera Archives (ARW / CR3)',
+          folderType: 'RAW Archive',
+          folderUrl: `${driveFolderUrl}&folder=02-raw-masters`,
+          driveUrl: `${driveFolderUrl}&folder=02-raw-masters`,
+          fileCount: 1420,
+          sizeGb: 7.1,
+          transferStatus: 'Transferred' as const,
+          status: 'Synced',
+          updatedAt: nowIso,
+          uploadedAt: nowIso,
+        },
+        {
+          id: `${event.id}-gdf-03`,
+          folderName: '03 · Luxury Italian Storybook Album Spreads (Print Master)',
+          folderType: 'Album Print Ready',
+          folderUrl: `${driveFolderUrl}&folder=03-album-spreads`,
+          driveUrl: `${driveFolderUrl}&folder=03-album-spreads`,
+          fileCount: 50,
+          sizeGb: 1.2,
+          transferStatus: 'Verified' as const,
+          status: 'Synced',
+          updatedAt: nowIso,
+          uploadedAt: nowIso,
+        },
+      ];
+
+  const subfolders =
+    client?.mediaDelivery?.driveSubfolders &&
+    client.mediaDelivery.driveSubfolders.length > 0
+      ? client.mediaDelivery.driveSubfolders.map((f) => ({
+          ...f,
+          folderUrl: f.folderUrl || f.driveUrl || driveFolderUrl,
+          driveUrl: f.driveUrl || f.folderUrl || driveFolderUrl,
+          folderType: f.folderType || 'High-Res Edited',
+          transferStatus: f.transferStatus || 'Verified',
+          updatedAt: f.updatedAt || f.uploadedAt || nowIso,
+        }))
+      : defaultSubfolders;
+
+  const totalGb =
+    client?.mediaDelivery?.totalDataVolumeGb ||
+    Number(
+      subfolders.reduce((sum, f) => sum + Number(f.sizeGb || 0), 0).toFixed(1)
+    );
+  const totalPhotos = subfolders.reduce((sum, f) => sum + Number(f.fileCount || 0), 0);
+
+  const defaultUnlistedVideos = [
+    {
+      id: `${event.id}-yt-01`,
+      title: `${event.title} — Official 4K Wedding Highlight Teaser`,
+      videoType: 'Teaser' as const,
+      youtubeId: 'QF3BmojTrKQ',
+      youtubeUrl: 'https://www.youtube.com/watch?v=QF3BmojTrKQ',
+      duration: '03:37',
+      resolution: '4K UHD' as const,
+      privacyStatus: 'Unlisted' as const,
+      uploadedAt: nowIso,
+    },
+    {
+      id: `${event.id}-yt-02`,
+      title: `${event.title} — Vibrant Mehndi Night Full Coverage Reel`,
+      videoType: 'Mehndi Coverage' as const,
+      youtubeId: 'UgG6hsk5AU8',
+      youtubeUrl: 'https://www.youtube.com/watch?v=UgG6hsk5AU8',
+      duration: '28:26',
+      resolution: '4K UHD' as const,
+      privacyStatus: 'Unlisted' as const,
+      uploadedAt: nowIso,
+    },
+    {
+      id: `${event.id}-yt-03`,
+      title: `${event.title} — Barat Procession & Royal Nikah Cinema Film`,
+      videoType: 'Barat Coverage' as const,
+      youtubeId: 'wF_5efX_Kwo',
+      youtubeUrl: 'https://www.youtube.com/watch?v=wF_5efX_Kwo',
+      duration: '42:15',
+      resolution: '4K UHD' as const,
+      privacyStatus: 'Unlisted' as const,
+      uploadedAt: nowIso,
+    },
+    {
+      id: `${event.id}-yt-04`,
+      title: `${event.title} — Walima Reception & Aerial Drone Finale`,
+      videoType: 'Walima Coverage' as const,
+      youtubeId: 'IHpGkLHnmpU',
+      youtubeUrl: 'https://www.youtube.com/watch?v=IHpGkLHnmpU',
+      duration: '36:50',
+      resolution: '4K UHD' as const,
+      privacyStatus: 'Unlisted' as const,
+      uploadedAt: nowIso,
+    },
+  ];
+
+  const unlistedVideos =
+    client?.mediaDelivery?.unlistedVideos &&
+    client.mediaDelivery.unlistedVideos.length > 0
+      ? client.mediaDelivery.unlistedVideos
+      : defaultUnlistedVideos;
+
+  const playlistId = `PLRoyalStudio_${evtSlug.toUpperCase()}_${pin}`;
+  const youtubePlaylistUrl =
+    client?.mediaDelivery?.youtubePlaylistUrl ||
+    client?.youtubePlaylistUrl ||
+    `https://www.youtube.com/watch?v=QF3BmojTrKQ&list=${playlistId}`;
+
+  const adminCredentials: AdminOnlyGoogleDriveCredentials = {
+    googleAccountEmail,
+    googleAccountPassword,
+    recoveryEmail: 'royalstudio089@gmail.com',
+    recoveryPhone: '0308-4877073',
+    allocatedQuotaGb: 15,
+    usedStorageGb: totalGb,
+    provisionedAt: nowIso,
+    provisionedBy: 'Royal Studio Admin (Auto-Provisioned)',
+    adminInternalNotes: `Dedicated 15GB Free-Tier Google Drive account provisioned for ${client?.name || event.title}. Zero recurring cloud storage cost.`,
+  };
+
+  return {
+    approvalStatus:
+      event.status === 'Delivered' || event.status === 'Completed'
+        ? 'Delivered'
+        : 'Approved & Provisioned',
+    approvedAt: nowIso,
+    approvedBy: 'Royal Studio Admin',
+    driveFolderUrl,
+    driveFolderId: folderHash,
+    driveFolderName:
+      client?.mediaDelivery?.driveFolderName ||
+      `Royal Studio · ${event.title} (${totalGb} GB High-Res Archive)`,
+    totalDataVolumeGb: totalGb,
+    freeTierQuotaGb: 15,
+    totalHighResPhotos: totalPhotos,
+    rawAssetsIncluded: true,
+    driveTransferProgress: 100,
+    driveSubfolders: subfolders,
+    adminOnlyDriveCredentials: adminCredentials,
+    youtubePlaylistUrl,
+    youtubePlaylistId: extractYoutubePlaylistId(youtubePlaylistUrl) || playlistId,
+    youtubePlaylistTitle:
+      client?.mediaDelivery?.youtubePlaylistTitle ||
+      `${event.title} — Unlisted 4K Wedding Films Playlist`,
+    youtubePrivacyMode: 'Unlisted Playlist & Videos',
+    unlistedVideos,
+    clientDeliveryNotes:
+      'Stream your 4K Unlisted Wedding Films directly below or open your dedicated 15GB Google Drive folder to download full-resolution master photos & RAW archives.',
+    lastUpdatedAt: nowIso,
+  };
+}
+
+export function syncEventMediaDeliveryToClientProfile(
+  event: Event,
+  clients: Client[]
+): boolean {
+  if (!event?.mediaDelivery) return false;
+  const client = clients.find(c => c.id === event.clientId);
+  if (!client) return false;
+
+  let changed = false;
+  if (
+    event.mediaDelivery.driveFolderUrl &&
+    client.googleDriveFolderUrl !== event.mediaDelivery.driveFolderUrl
+  ) {
+    client.googleDriveFolderUrl = event.mediaDelivery.driveFolderUrl;
+    changed = true;
+  }
+  if (
+    event.mediaDelivery.youtubePlaylistUrl &&
+    client.youtubePlaylistUrl !== event.mediaDelivery.youtubePlaylistUrl
+  ) {
+    client.youtubePlaylistUrl = event.mediaDelivery.youtubePlaylistUrl;
+    changed = true;
+  }
+
+  const { adminOnlyDriveCredentials: _cred, ...safeVault } = event.mediaDelivery;
+  if (!client.mediaDelivery) {
+    client.mediaDelivery = safeVault;
+    changed = true;
+  } else if (
+    client.mediaDelivery.driveFolderUrl !== safeVault.driveFolderUrl ||
+    client.mediaDelivery.youtubePlaylistUrl !== safeVault.youtubePlaylistUrl ||
+    (safeVault.driveSubfolders?.length || 0) !==
+      (client.mediaDelivery.driveSubfolders?.length || 0) ||
+    (safeVault.unlistedVideos?.length || 0) !==
+      (client.mediaDelivery.unlistedVideos?.length || 0)
+  ) {
+    client.mediaDelivery = safeVault;
+    changed = true;
+  }
+
+  const creds = event.mediaDelivery.adminOnlyDriveCredentials;
+  if (creds) {
+    if (!Array.isArray(client.adminOnlyDriveAccounts)) {
+      client.adminOnlyDriveAccounts = [];
+      changed = true;
+    }
+    const existingIdx = client.adminOnlyDriveAccounts.findIndex(
+      a => a.eventId === event.id
+    );
+    const nextRecord = {
+      ...creds,
+      eventId: event.id,
+      eventTitle: event.title,
+      driveFolderUrl: event.mediaDelivery.driveFolderUrl,
+    };
+    if (existingIdx === -1) {
+      client.adminOnlyDriveAccounts.unshift(nextRecord);
+      changed = true;
+    } else if (
+      JSON.stringify(client.adminOnlyDriveAccounts[existingIdx]) !==
+      JSON.stringify(nextRecord)
+    ) {
+      client.adminOnlyDriveAccounts[existingIdx] = nextRecord;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * Strips strictly Admin-only Google Drive account credentials and internal studio financials
+ * before sending an Event object to any Customer / Client Portal or Staff endpoint.
+ */
+export function sanitizeEventForClient<T extends Partial<Event>>(event: T): T {
+  if (!event) return event;
+  const cloned: any = {
+    ...event,
+    staffCost: 0,
+    rentalCost: 0,
+    eventExpenses: 0,
+    netProfit: 0,
+    netMargin: 0,
+  };
+  if (cloned.mediaDelivery) {
+    const { adminOnlyDriveCredentials: _redacted, ...safeMediaDelivery } =
+      cloned.mediaDelivery;
+    cloned.mediaDelivery = safeMediaDelivery;
+  }
+  return cloned;
+}
+
+/**
+ * Strips strictly Admin-only Google Drive account credentials (`adminOnlyDriveAccounts`)
+ * before sending a Client profile object to any Customer / Client Portal endpoint.
+ */
+export function sanitizeClientForClientPortal<T extends Partial<Client>>(
+  client: T
+): T {
+  if (!client) return client;
+  const { adminOnlyDriveAccounts: _redacted, ...safeClient } = client as any;
+  if (safeClient.mediaDelivery) {
+    const { adminOnlyDriveCredentials: _cred, ...safeMd } = safeClient.mediaDelivery;
+    safeClient.mediaDelivery = safeMd;
+  }
+  return safeClient as T;
 }
 
 export class StudioDatabase {
@@ -1527,43 +1198,42 @@ export class StudioDatabase {
 
   private normalizeSchemaDefaults(): boolean {
     let needsSave = false;
+
+    // 1. Purge any legacy dummy user accounts (usr-client, usr-staff, tariq.mehmood@example.com, etc.)
+    const DUMMY_USER_IDS = new Set(['usr-staff', 'usr-client']);
+    const DUMMY_USER_EMAILS = new Set([
+      'staff@royalstudio.pk',
+      'admin@royalstudio.pk',
+      'tariq.mehmood@example.com',
+      'ayesha.siddiqui@example.pk',
+      'omer.sheikh@example.com',
+    ]);
+
     const existingAdmin = this.db.users?.find(u => u.role === 'ADMIN');
-    const hasDummyUsers = this.db.users?.some(
-      u => u.id === 'usr-staff' || u.email === 'staff@royalstudio.pk' || u.email === 'admin@royalstudio.pk'
+    const hasDummyOrClientUsers = this.db.users?.some(
+      u =>
+        DUMMY_USER_IDS.has(u.id) ||
+        DUMMY_USER_EMAILS.has(u.email?.toLowerCase() || '') ||
+        (u.role as string) === 'CLIENT'
     );
 
     if (
       !existingAdmin ||
       existingAdmin.email !== 'admin@royalstudio.online' ||
       !verifyPassword('admin123', existingAdmin.password) ||
-      hasDummyUsers
+      hasDummyOrClientUsers
     ) {
       const validPassHash =
         existingAdmin && verifyPassword('admin123', existingAdmin.password)
           ? existingAdmin.password
           : hashPassword('admin123');
 
-      const preservedNonAdminUsers = (this.db.users || []).filter(
+      const preservedStaffUsers = (this.db.users || []).filter(
         u =>
-          (u.role === 'STAFF' || u.role === 'CLIENT') &&
-          u.id !== 'usr-staff' &&
-          u.email !== 'staff@royalstudio.pk' &&
-          u.email !== 'admin@royalstudio.pk'
+          u.role === 'STAFF' &&
+          !DUMMY_USER_IDS.has(u.id) &&
+          !DUMMY_USER_EMAILS.has(u.email?.toLowerCase() || '')
       );
-
-      if (!preservedNonAdminUsers.some(u => u.role === 'CLIENT' && u.linkedClientId === 'cli-001')) {
-        preservedNonAdminUsers.push({
-          id: 'usr-client',
-          name: 'Tariq Mehmood',
-          email: 'tariq.mehmood@example.com',
-          role: 'CLIENT',
-          status: 'ACTIVE',
-          phone: '+92 300 9876543',
-          linkedClientId: 'cli-001',
-          password: hashPassword('client123'),
-          createdDate: '2026-08-10T10:00:00.000Z',
-        });
-      }
 
       this.db.users = [
         {
@@ -1577,27 +1247,50 @@ export class StudioDatabase {
           avatar: '/RoyalLogo.png',
           createdDate: '2026-01-01T00:00:00.000Z',
         },
-        ...preservedNonAdminUsers,
+        ...preservedStaffUsers,
       ];
       needsSave = true;
     }
 
-    // Ensure demo client user exists if cli-001 exists and has no linked user
-    if (
-      this.db.clients?.some(c => c.id === 'cli-001') &&
-      !this.db.users?.some(u => u.role === 'CLIENT' && u.linkedClientId === 'cli-001')
-    ) {
-      this.db.users.push({
-        id: 'usr-client',
-        name: 'Tariq Mehmood',
-        email: 'tariq.mehmood@example.com',
-        role: 'CLIENT',
-        status: 'ACTIVE',
-        phone: '+92 300 9876543',
-        linkedClientId: 'cli-001',
-        password: hashPassword('client123'),
-        createdDate: '2026-08-10T10:00:00.000Z',
-      });
+    // 2. Purge any legacy seeded dummy clients, events, team members, studio expenses, invoices, quotations, payments, and tasks
+    const DUMMY_CLIENT_IDS = new Set(['cli-001', 'cli-002', 'cli-003', 'cli-004', 'cli-005']);
+    const DUMMY_EVENT_IDS = new Set(['evt-001', 'evt-002', 'evt-003']);
+    const DUMMY_TEAM_IDS = new Set(['tm-001', 'tm-002', 'tm-003', 'tm-004', 'tm-005', 'tm-006', 'tm-007', 'tm-008']);
+    const DUMMY_STUDIO_EXPENSE_IDS = new Set(['sexp-001', 'sexp-002', 'sexp-003', 'sexp-004']);
+    const DUMMY_TEAM_PAYMENT_IDS = new Set(['tp-001', 'tp-002']);
+    const DUMMY_MAINTENANCE_IDS = new Set(['mnt-001']);
+
+    if (this.db.clients?.some(c => DUMMY_CLIENT_IDS.has(c.id))) {
+      this.db.clients = this.db.clients.filter(c => !DUMMY_CLIENT_IDS.has(c.id));
+      needsSave = true;
+    }
+    if (this.db.events?.some(e => DUMMY_EVENT_IDS.has(e.id))) {
+      this.db.events = this.db.events.filter(e => !DUMMY_EVENT_IDS.has(e.id));
+      this.db.daySchedules = (this.db.daySchedules || []).filter(d => !DUMMY_EVENT_IDS.has(d.eventId));
+      this.db.teamAssignments = (this.db.teamAssignments || []).filter(t => !DUMMY_EVENT_IDS.has(t.eventId));
+      this.db.equipmentAssignments = (this.db.equipmentAssignments || []).filter(eq => !DUMMY_EVENT_IDS.has(eq.eventId));
+      this.db.eventExpenses = (this.db.eventExpenses || []).filter(ex => !DUMMY_EVENT_IDS.has(ex.eventId));
+      this.db.invoices = (this.db.invoices || []).filter(inv => !DUMMY_EVENT_IDS.has(inv.eventId));
+      this.db.payments = (this.db.payments || []).filter(p => !DUMMY_EVENT_IDS.has(p.eventId));
+      this.db.quotations = (this.db.quotations || []).filter(q => !DUMMY_EVENT_IDS.has(q.eventId));
+      this.db.tasks = (this.db.tasks || []).filter(t => !DUMMY_EVENT_IDS.has(t.eventId));
+      this.db.teamPayments = (this.db.teamPayments || []).filter(tp => !tp.eventId || !DUMMY_EVENT_IDS.has(tp.eventId));
+      needsSave = true;
+    }
+    if (this.db.teamMembers?.some(tm => DUMMY_TEAM_IDS.has(tm.id))) {
+      this.db.teamMembers = this.db.teamMembers.filter(tm => !DUMMY_TEAM_IDS.has(tm.id));
+      needsSave = true;
+    }
+    if (this.db.studioExpenses?.some(se => DUMMY_STUDIO_EXPENSE_IDS.has(se.id))) {
+      this.db.studioExpenses = this.db.studioExpenses.filter(se => !DUMMY_STUDIO_EXPENSE_IDS.has(se.id));
+      needsSave = true;
+    }
+    if (this.db.teamPayments?.some(tp => DUMMY_TEAM_PAYMENT_IDS.has(tp.id))) {
+      this.db.teamPayments = this.db.teamPayments.filter(tp => !DUMMY_TEAM_PAYMENT_IDS.has(tp.id));
+      needsSave = true;
+    }
+    if (this.db.maintenanceLogs?.some(ml => DUMMY_MAINTENANCE_IDS.has(ml.id))) {
+      this.db.maintenanceLogs = this.db.maintenanceLogs.filter(ml => !DUMMY_MAINTENANCE_IDS.has(ml.id));
       needsSave = true;
     }
 
@@ -1621,30 +1314,178 @@ export class StudioDatabase {
       }
     });
 
-    // Sync client login status with user accounts
+    // Sync client portal login flags (clients access /client-portal via password)
     this.db.clients?.forEach(c => {
-      const linkedUser = this.db.users?.find(u => u.linkedClientId === c.id || (u.role === 'CLIENT' && u.id === c.userId));
-      if (linkedUser) {
-        if (!c.hasLogin || c.userId !== linkedUser.id || c.loginStatus !== linkedUser.status) {
-          c.hasLogin = true;
-          c.userId = linkedUser.id;
-          c.loginStatus = linkedUser.status;
+      if (c.userId) {
+        delete c.userId;
+        needsSave = true;
+      }
+      const hasPass = Boolean(c.portalPassword && c.portalPassword.trim());
+      if (c.loginStatus === 'NONE' || c.hasLogin === false || !hasPass) {
+        if (c.hasLogin !== false || c.loginStatus !== 'NONE' || hasPass) {
+          c.hasLogin = false;
+          c.loginStatus = 'NONE';
+          c.portalPassword = '';
           needsSave = true;
         }
       } else {
-        if (c.hasLogin || c.userId || c.loginStatus) {
-          c.hasLogin = false;
-          delete c.userId;
-          delete c.loginStatus;
+        if (c.hasLogin !== true) {
+          c.hasLogin = true;
+          needsSave = true;
+        }
+        if (c.loginStatus !== 'ACTIVE' && c.loginStatus !== 'DISABLED') {
+          c.loginStatus = 'ACTIVE';
+          needsSave = true;
+        }
+      }
+      if (c.mediaDelivery && Array.isArray(c.mediaDelivery.driveSubfolders)) {
+        c.mediaDelivery.driveSubfolders = c.mediaDelivery.driveSubfolders.map(f => ({
+          ...f,
+          folderUrl: f.folderUrl || f.driveUrl || c.mediaDelivery?.driveFolderUrl || '',
+          driveUrl: f.driveUrl || f.folderUrl || c.mediaDelivery?.driveFolderUrl || '',
+          folderType: f.folderType || 'High-Res Edited',
+          transferStatus: f.transferStatus || 'Verified',
+          updatedAt: f.updatedAt || f.uploadedAt || c.createdDate,
+        }));
+      }
+    });
+
+    // Ensure every payment has a valid clientId linked from its parent event
+    this.db.payments?.forEach(p => {
+      if (!p.clientId && p.eventId) {
+        const parentEvt = this.db.events?.find(e => e.id === p.eventId);
+        if (parentEvt?.clientId) {
+          p.clientId = parentEvt.clientId;
           needsSave = true;
         }
       }
     });
 
-    // Ensure every event has a Proofing Gallery initialized
+    // Deduplicate daySchedules by id and by eventId + dayNumber
+    if (Array.isArray(this.db.daySchedules)) {
+      const seenDsId = new Set<string>();
+      const seenDsKey = new Set<string>();
+      const dedupedDs: EventDaySchedule[] = [];
+      for (const ds of this.db.daySchedules) {
+        const key = `${ds.eventId}-d${ds.dayNumber}`;
+        if (!seenDsId.has(ds.id) && !seenDsKey.has(key)) {
+          seenDsId.add(ds.id);
+          seenDsKey.add(key);
+          dedupedDs.push(ds);
+        } else {
+          needsSave = true;
+        }
+      }
+      this.db.daySchedules = dedupedDs;
+    }
+
+    // Deduplicate quotations by id and by eventId (keep latest/approved)
+    if (Array.isArray(this.db.quotations)) {
+      const seenQuoId = new Set<string>();
+      const seenQuoEvent = new Set<string>();
+      const dedupedQuo: Quotation[] = [];
+      for (const q of this.db.quotations) {
+        const evKey = q.eventId ? `evt-${q.eventId}` : `quo-${q.id}`;
+        if (!seenQuoId.has(q.id) && !seenQuoEvent.has(evKey)) {
+          seenQuoId.add(q.id);
+          seenQuoEvent.add(evKey);
+          dedupedQuo.push(q);
+        } else {
+          needsSave = true;
+        }
+      }
+      this.db.quotations = dedupedQuo;
+    }
+
+    // Deduplicate invoices by id and by eventId
+    if (Array.isArray(this.db.invoices)) {
+      const seenInvId = new Set<string>();
+      const seenInvEvent = new Set<string>();
+      const dedupedInv: Invoice[] = [];
+      for (const inv of this.db.invoices) {
+        const evKey = inv.eventId ? `evt-${inv.eventId}` : `inv-${inv.id}`;
+        if (!seenInvId.has(inv.id) && !seenInvEvent.has(evKey)) {
+          seenInvId.add(inv.id);
+          seenInvEvent.add(evKey);
+          dedupedInv.push(inv);
+        } else {
+          needsSave = true;
+        }
+      }
+      this.db.invoices = dedupedInv;
+    }
+
+    // Deduplicate payments by id and by eventId + amount + reference
+    if (Array.isArray(this.db.payments)) {
+      const seenPayId = new Set<string>();
+      const seenPayKey = new Set<string>();
+      const dedupedPay: Payment[] = [];
+      for (const p of this.db.payments) {
+        const refKey = p.reference ? `${p.eventId}-${p.amount}-${p.reference.trim().toLowerCase()}` : '';
+        if (!seenPayId.has(p.id) && (!refKey || !seenPayKey.has(refKey))) {
+          seenPayId.add(p.id);
+          if (refKey) seenPayKey.add(refKey);
+          dedupedPay.push(p);
+        } else {
+          needsSave = true;
+        }
+      }
+      this.db.payments = dedupedPay;
+    }
+
+    // Ensure every event has a valid packagePrice, Proofing Gallery, and Media Delivery Vault
+    const validProofingUrls = new Set(defaultPortfolioItems.map(i => i.image));
     this.db.events?.forEach(ev => {
-      if (!ev.proofingGallery) {
+      if (!ev.packagePrice || ev.packagePrice <= 0) {
+        const eventDays = (this.db.daySchedules || []).filter(d => d.eventId === ev.id);
+        const daysSum = eventDays.reduce((s, d) => s + Number(d.customPrice || 0), 0);
+        ev.packagePrice = daysSum > 0 ? daysSum : 185000;
+        const paid = (this.db.payments || [])
+          .filter(p => p.eventId === ev.id && p.verificationStatus !== 'Rejected')
+          .reduce((s, p) => s + Number(p.amount || 0), 0);
+        ev.totalClientPayments = paid;
+        ev.remainingBalance = Math.max(0, ev.packagePrice - paid);
+        this.db.invoices?.forEach(inv => {
+          if (inv.eventId === ev.id && (!inv.total || inv.total <= 0)) {
+            inv.subtotal = ev.packagePrice;
+            inv.total = ev.packagePrice - Number(inv.discount || 0) + Number(inv.tax || 0);
+            inv.remainingAmount = Math.max(0, inv.total - Number(inv.paidAmount || 0));
+          }
+        });
+        this.db.quotations?.forEach(quo => {
+          if (quo.eventId === ev.id && (!quo.total || quo.total <= 0)) {
+            quo.subtotal = ev.packagePrice;
+            quo.total = ev.packagePrice - Number(quo.discount || 0) + Number(quo.tax || 0);
+          }
+        });
+        needsSave = true;
+      }
+
+      if (!ev.proofingGallery || !Array.isArray(ev.proofingGallery.photos) || ev.proofingGallery.photos.length === 0) {
         ev.proofingGallery = getDefaultProofingGalleryForEvent(ev.id, ev.title);
+        needsSave = true;
+      } else {
+        const defPhotos = getDefaultProofingGalleryForEvent(ev.id, ev.title).photos;
+        ev.proofingGallery.photos = ev.proofingGallery.photos.map((p, idx) => {
+          const url = String(p.url || '').trim();
+          if (url.startsWith('/portfolio/') && !validProofingUrls.has(url)) {
+            needsSave = true;
+            return {
+              ...p,
+              url: defPhotos[idx % defPhotos.length]?.url || '/portfolio/bridal-01-mirror-portrait.jpg',
+            };
+          }
+          return p;
+        });
+      }
+
+      // Ensure every event has Automated Media Delivery Vault (15GB Google Drive + YouTube Unlisted Playlist)
+      const linkedClient = this.db.clients?.find(c => c.id === ev.clientId);
+      if (!ev.mediaDelivery || !ev.mediaDelivery.driveFolderUrl || !ev.mediaDelivery.adminOnlyDriveCredentials) {
+        ev.mediaDelivery = buildDefaultMediaDeliveryVault(ev, linkedClient);
+        needsSave = true;
+      }
+      if (this.db.clients && syncEventMediaDeliveryToClientProfile(ev, this.db.clients)) {
         needsSave = true;
       }
     });
@@ -2023,6 +1864,14 @@ export class StudioDatabase {
       quotation.tax = tx;
       quotation.subtotal = event.packagePrice + disc;
       quotation.total = Math.max(0, event.packagePrice + tx);
+      if (event.approvedByClient) {
+        quotation.status = 'APPROVED';
+        quotation.approvedByName = event.approvedByClient;
+        quotation.approvedAt = event.approvedAt || new Date().toISOString();
+        if (!quotation.signatureData) {
+          quotation.signatureData = event.approvedByClient;
+        }
+      }
     }
 
     await this.save();

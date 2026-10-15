@@ -27,7 +27,6 @@ export const Topbar: React.FC<TopbarProps> = ({
   const {
     user,
     isAdmin,
-    isClient,
     idleRemainingSeconds,
     idleTimeoutMinutes,
     setIdleTimeoutMinutes,
@@ -45,12 +44,6 @@ export const Topbar: React.FC<TopbarProps> = ({
   const isWarningSoon = idleRemainingSeconds <= 120;
 
   const formatPathTitle = (path: string): string => {
-    if (isClient) {
-      if (path === '/invoices' || path === '/finance' || path === '/client-payments') return 'My Payments & Invoices';
-      if (path === '/client-gallery' || path === '/gallery') return 'Private Photo Proofing & Album Selection';
-      if (path === '/profile') return 'My Client Profile & Account';
-      return 'Booked Client Portal';
-    }
     if (path === '/' || path === '/dashboard') return 'Studio Overview';
     if (path === '/website-cms' || path === '/portfolio-cms') return 'Website & Portfolio CMS';
     if (path === '/theme-customizer' || path === '/theme' || path === '/appearance') return 'Admin Theme Customizer';
@@ -58,7 +51,8 @@ export const Topbar: React.FC<TopbarProps> = ({
     if (path === '/events') return 'Event Bookings & Schedules';
     if (path.startsWith('/events/')) return 'Operational Event Room';
     if (path === '/calendar') return 'Studio Master Calendar';
-    if (path === '/clients') return 'Client Directory & CRM';
+    if (path.startsWith('/clients')) return 'Clients, Portal Access & Proofing Galleries';
+    if (path === '/chatbot-manager') return 'Chatbot Manager & AI Concierge';
     if (path === '/team') return 'Production Crew & Talents';
     if (path === '/equipment') return 'Gear Locker & Maintenance';
     if (path === '/packages') return 'Package Service Master';

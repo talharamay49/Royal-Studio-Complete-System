@@ -13,7 +13,9 @@ import {
   Edit,
   Trash2,
   QrCode,
-  Camera
+  Camera,
+  ShieldCheck,
+  Upload
 } from 'lucide-react';
 import { useStudioData } from '../context/StudioDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -59,14 +61,6 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
   const [proposalShareEvent, setProposalShareEvent] = useState<Event | null>(null);
   const [qrModalEvent, setQrModalEvent] = useState<Event | null>(null);
 
-  // Quick-Create Inline Client mode inside New Event Booking modal
-  const [isQuickClientMode, setIsQuickClientMode] = useState(false);
-  const [newClientName, setNewClientName] = useState('');
-  const [newClientPhone, setNewClientPhone] = useState('');
-  const [newClientEmail, setNewClientEmail] = useState('');
-  const [bookingDiscount, setBookingDiscount] = useState<number>(0);
-  const [bookingTax, setBookingTax] = useState<number>(0);
-
   // Edit Event State & Modal
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
@@ -91,32 +85,9 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
   const [editIsMultiDay, setEditIsMultiDay] = useState<boolean>(false);
   const [editNotes, setEditNotes] = useState('');
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-
-  // New Event Form State
-  const [clientId, setClientId] = useState('');
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<EventCategory>('Wedding');
-  const [weddingSubtype, setWeddingSubtype] = useState<WeddingSubtype>('Barat');
-  const [packageId, setPackageId] = useState('');
-  const [eventDate, setEventDate] = useState(new Date().toISOString().split('T')[0]);
-  const [startTime, setStartTime] = useState('18:00');
-  const [endTime, setEndTime] = useState('23:30');
-  const [venue, setVenue] = useState('');
-  const [city, setCity] = useState('Lahore');
-  const [packagePrice, setPackagePrice] = useState<number>(150000);
-  const [advancePaid, setAdvancePaid] = useState<number>(50000);
-  const [isMultiDay, setIsMultiDay] = useState<boolean>(false);
-  const [notes, setNotes] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // When package changes, auto-fill price
-  const handlePackageChange = (pId: string) => {
-    setPackageId(pId);
-    const selected = packages.find(p => p.id === pId);
-    if (selected) {
-      setPackagePrice(selected.price);
-    }
-  };
+  const [initialBookingDate, setInitialBookingDate] = useState(
+    new Date().toISOString().split('T')[0]
+  );
 
   const handleEditPackageChange = (pId: string) => {
     setEditPackageId(pId);
@@ -199,80 +170,6 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
     }
   };
 
-  const handleCreateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!eventDate) {
-      addToast('Please select the main event date.', 'error');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      let resolvedClientId = clientId;
-      let resolvedClientName = clients.find(c => c.id === clientId)?.name || 'Client';
-
-      if (isQuickClientMode) {
-        if (!newClientName.trim() || !newClientPhone.trim()) {
-          addToast('Please enter the new client name and phone number.', 'error');
-          setIsSubmitting(false);
-          return;
-        }
-        const createdClient = await createClient({
-          name: newClientName.trim(),
-          phone: newClientPhone.trim(),
-          whatsapp: newClientPhone.trim(),
-          email: newClientEmail.trim(),
-          city: city || 'Burewala',
-          address: venue || city || 'Burewala',
-        });
-        resolvedClientId = createdClient.id;
-        resolvedClientName = createdClient.name;
-      }
-
-      if (!resolvedClientId) {
-        addToast('Please select an existing client or create a new client.', 'error');
-        setIsSubmitting(false);
-        return;
-      }
-
-      const finalTitle =
-        title.trim() ||
-        `${resolvedClientName} — ${category === 'Wedding' ? `${weddingSubtype} Wedding` : category}`;
-
-      const created = await createEvent({
-        clientId: resolvedClientId,
-        title: finalTitle,
-        category,
-        weddingSubtype: category === 'Wedding' ? weddingSubtype : undefined,
-        packageId: packageId || undefined,
-        eventDate,
-        startTime,
-        endTime,
-        venue: venue || city || 'Burewala',
-        city: city || 'Burewala',
-        packagePrice: Number(packagePrice || 0),
-        advancePaid: Number(advancePaid || 0),
-        discount: Number(bookingDiscount || 0),
-        tax: Number(bookingTax || 0),
-        notes,
-        isMultiDay
-      });
-
-      setIsCreateModalOpen(false);
-      setIsQuickClientMode(false);
-      setNewClientName('');
-      setNewClientPhone('');
-      setNewClientEmail('');
-      setBookingDiscount(0);
-      setBookingTax(0);
-      navigate(`/events/${created.id}`);
-    } catch (err: any) {
-      addToast(err.message || 'Failed to create event', 'error');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const filteredEvents = events.filter(evt => {
     const client = clients.find(c => c.id === evt.clientId);
     const matchesSearch =
@@ -290,13 +187,7 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
   if (!isAdmin) {
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-primary">My Assigned Events</h2>
-            <p className="text-xs text-text-muted">
-              Your scheduled event assignments showing event name, date, location, and time.
-            </p>
-          </div>
+        <div className="flex justify-end">
           <div className="relative w-full sm:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
             <input
@@ -409,14 +300,16 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
 
   return (
     <div className="space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Event Bookings & Multi-Day Schedules</h2>
-          <p className="text-xs text-gray-500">
-            Manage upcoming shoots, wedding schedules, crew assignments, and profit calculations.
-          </p>
-        </div>
+      {/* Top Actions */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => navigate('/clients')}
+          className="inline-flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+        >
+          <ShieldCheck className="w-4 h-4" />
+          <span>Manage Client Portal &amp; Galleries</span>
+        </button>
         <button
           onClick={() => {
             if (packages.length > 0 && !packageId) {
@@ -728,7 +621,7 @@ export const EventsPage: React.FC<EventsPageProps> = ({ navigate }) => {
       <IntegratedBookingModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        initialDate={eventDate}
+        initialDate={initialBookingDate}
         clients={clients}
         events={events}
         daySchedules={daySchedules}

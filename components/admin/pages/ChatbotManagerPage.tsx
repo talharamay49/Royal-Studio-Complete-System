@@ -353,21 +353,11 @@ export const ChatbotManagerPage: React.FC<ChatbotManagerPageProps> = ({ navigate
 
   return (
     <div className="space-y-6">
-      {/* Top Header Banner */}
-      <div className="bg-slate-950 text-white p-5 sm:p-6 rounded-2xl border border-amber-500/30 shadow-lg flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="space-y-1.5">
-          <div className="inline-flex items-center gap-2 text-amber-400 text-xs font-semibold uppercase tracking-widest">
-            <Bot className="w-4 h-4" />
-            <span>Zero-Cost Automated Sales Concierge · $0 Monthly Subscription</span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-display font-bold tracking-wide text-white">
-            Chatbot Manager &amp; AI Training Center
-          </h1>
-          <p className="text-xs text-slate-300 max-w-3xl leading-relaxed">
-            Train your portfolio’s interactive Wedding Sales Assistant, customize the 4-step
-            package estimator decision tree, manage Knowledge Base rates, and configure automatic
-            CRM Lead handshakes — synced in real time with the public portfolio.
-          </p>
+      {/* Top Action Controls */}
+      <div className="bg-slate-950 text-white p-4 rounded-2xl border border-amber-500/30 shadow-lg flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-2 text-amber-400 text-xs font-semibold uppercase tracking-widest">
+          <Bot className="w-4 h-4" />
+          <span>Zero-Cost Automated Sales Concierge · $0 Monthly Subscription</span>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">

@@ -67,14 +67,8 @@ export const StudioExpensesPage: React.FC<StudioExpensesPageProps> = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Studio Overhead Expenses (Admin)</h2>
-          <p className="text-xs text-gray-500">
-            Fixed operational overheads for {profile?.studioName || 'Royal Studio'} ({profile?.city || 'Burewala'} facility): studio rent, electricity, internet, and software licenses.
-          </p>
-        </div>
-        {isAdmin && (
+      {isAdmin && (
+        <div className="flex justify-end">
           <button
             onClick={() => setIsModalOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
@@ -82,8 +76,8 @@ export const StudioExpensesPage: React.FC<StudioExpensesPageProps> = () => {
             <Plus className="w-4 h-4" />
             <span>Record Overhead Expense</span>
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

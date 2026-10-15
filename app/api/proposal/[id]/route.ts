@@ -1,14 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { dbInstance } from "@/lib/admin/db";
+import {
+  dbInstance,
+  deriveDefaultPinForEvent,
+  sanitizeEventForClient,
+  sanitizeClientForClientPortal,
+} from "@/lib/admin/db";
 import { LUXURY_ADDON_CATALOG } from "@/lib/pricing/unifiedPricing";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await context.params;
     const decodedId = decodeURIComponent(id).trim();
+    const { searchParams } = new URL(req.url);
+    const providedPin = (
+      searchParams.get("pin") ||
+      req.headers.get("x-client-pin") ||
+      ""
+    ).trim();
     const db = await dbInstance.ensureHydrated();
 
     // Find event by eventId, quotationId/quotationNumber, invoiceId/invoiceNumber, or lead reference
@@ -163,8 +174,9 @@ export async function GET(
     }
 
     return NextResponse.json({
-      event,
-      client,
+      locked: false,
+      event: sanitizeEventForClient(event),
+      client: sanitizeClientForClientPortal(client),
       quotation,
       invoice,
       daySchedules,
@@ -210,10 +222,87 @@ export async function POST(
     }
 
     const action = body.action as
+      | "VERIFY_PIN"
       | "UPDATE_ADDONS"
       | "APPROVE_PROPOSAL"
       | "NOTIFY_ADMIN_APPROVAL"
       | "SUBMIT_DEPOSIT_RECEIPT";
+
+    if (action === "VERIFY_PIN") {
+      const enteredPin = String(body.pin || "").trim();
+      const cli = db.clients.find((c) => c.id === event!.clientId);
+      const phoneDigits = (cli?.phone || "").replace(/[^0-9]/g, "");
+      const phoneLast4 = phoneDigits.slice(-4);
+      const eventPin =
+        event.proofingGallery?.pinCode || deriveDefaultPinForEvent(event.id);
+      const valid =
+        event.proofingGallery?.isPinProtected === false ||
+        (enteredPin.length > 0 &&
+          (enteredPin === eventPin ||
+            (phoneLast4.length === 4 && enteredPin === phoneLast4)));
+
+      if (!valid) {
+        return NextResponse.json(
+          {
+            valid: false,
+            error:
+              "Invalid Proposal PIN. Please enter the 4-digit PIN provided by Royal Studio Admin (or the last 4 digits of your registered phone).",
+          },
+          { status: 401 }
+        );
+      }
+
+      const client = cli || {
+        id: "cli-guest",
+        name: event.title.split("—")[0]?.trim() || "Valued Client",
+        phone: "",
+        whatsapp: "",
+        email: "",
+        address: event.venue,
+        city: event.city,
+        notes: "",
+        createdDate: event.createdDate,
+        createdBy: "Royal Studio",
+      };
+      const daySchedules = db.daySchedules
+        .filter((ds) => ds.eventId === event!.id)
+        .sort((a, b) => a.dayNumber - b.dayNumber);
+      const quotation =
+        db.quotations.find((q) => q.eventId === event!.id) || {
+          id: `quo-${event.id.slice(-4)}`,
+          quotationNumber: `RS-QUO-${event.id.slice(-4).toUpperCase()}`,
+          clientId: client.id,
+          eventId: event.id,
+          issueDate:
+            event.createdDate?.split("T")[0] ||
+            new Date().toISOString().split("T")[0],
+          validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split("T")[0],
+          subtotal: (event.packagePrice || 0) + (event.discount || 0),
+          discount: event.discount || 0,
+          tax: event.tax || 0,
+          total: (event.packagePrice || 0) + (event.tax || 0),
+          paymentTerms: db.profile.paymentTerms,
+          notes: event.notes || "",
+          createdBy: "Royal Studio",
+        };
+      const invoice = db.invoices.find((i) => i.eventId === event!.id) || null;
+      const payments = db.payments.filter((p) => p.eventId === event!.id);
+
+      return NextResponse.json({
+        valid: true,
+        locked: false,
+        event: sanitizeEventForClient(event),
+        client: sanitizeClientForClientPortal(client),
+        quotation,
+        invoice,
+        daySchedules,
+        payments,
+        profile: db.profile,
+        addonCatalog: LUXURY_ADDON_CATALOG,
+      });
+    }
     const incomingAddons: string[] | undefined = Array.isArray(body.selectedAddons)
       ? body.selectedAddons.map((s: unknown) => String(s))
       : undefined;
@@ -239,19 +328,12 @@ export async function POST(
         (sum, ds) => sum + (Number(ds.customPrice) || 0),
         0
       );
-
-      if (daysSum > 0) {
-        event.packagePrice = Math.max(
-          0,
-          daysSum + newAddonsFee - (Number(event.discount) || 0)
-        );
-      } else {
-        const baseWithoutPrevAddons = Math.max(
-          0,
-          (Number(event.packagePrice) || 0) - prevAddonsFee
-        );
-        event.packagePrice = baseWithoutPrevAddons + newAddonsFee;
-      }
+      const basePkgWithoutAddons = Math.max(
+        0,
+        (Number(event.packagePrice) || 0) - prevAddonsFee
+      );
+      const basePrice = Math.max(daysSum, basePkgWithoutAddons);
+      event.packagePrice = basePrice + newAddonsFee;
 
       event.selectedAddons = incomingAddons;
       event.updatedDate = new Date().toISOString();
@@ -364,14 +446,17 @@ export async function POST(
       if (!Array.isArray(event.approvalHistory)) {
         event.approvalHistory = [];
       }
-      event.approvalHistory.push({
-        id: `hist-email-${Date.now()}`,
-        action: "ACCEPTED",
-        timestamp: emailNotification.timestamp,
-        actorName: signatureName,
-        signatureName,
-        details: `Admin email notification triggered immediately to ${emailNotification.recipient} upon clicking 'Digitally Accept & Approve Proposal'`,
-      });
+      const existingAccepted = event.approvalHistory.some((h) => h.action === "ACCEPTED");
+      if (!existingAccepted) {
+        event.approvalHistory.push({
+          id: `hist-notify-${Date.now()}`,
+          action: "VIEWED",
+          timestamp: emailNotification.timestamp,
+          actorName: signatureName,
+          signatureName,
+          details: `Admin email notification triggered to ${emailNotification.recipient} for proposal approval review`,
+        });
+      }
     }
 
     if (action === "APPROVE_PROPOSAL") {
@@ -405,16 +490,26 @@ export async function POST(
           details: `Proposal viewed online prior to acceptance`,
         });
       }
-      event.approvalHistory.push({
-        id: `hist-accepted-${Date.now()}`,
-        action: "ACCEPTED",
-        timestamp: nowIso,
-        actorName: signatureName,
-        signatureName,
-        details: `Proposal digitally accepted & signed by "${signatureName}"${
+      const existingAccepted = event.approvalHistory.find((h) => h.action === "ACCEPTED");
+      if (existingAccepted) {
+        existingAccepted.timestamp = nowIso;
+        existingAccepted.actorName = signatureName;
+        existingAccepted.signatureName = signatureName;
+        existingAccepted.details = `Proposal digitally accepted & signed by "${signatureName}"${
           clientComment ? ` — Note: "${clientComment}"` : ""
-        } (Admin email notification sent to ${emailNotification.recipient})`,
-      });
+        } (Admin email notification sent to ${emailNotification.recipient})`;
+      } else {
+        event.approvalHistory.push({
+          id: `hist-accepted-${Date.now()}`,
+          action: "ACCEPTED",
+          timestamp: nowIso,
+          actorName: signatureName,
+          signatureName,
+          details: `Proposal digitally accepted & signed by "${signatureName}"${
+            clientComment ? ` — Note: "${clientComment}"` : ""
+          } (Admin email notification sent to ${emailNotification.recipient})`,
+        });
+      }
 
       const approvalStamp = `[DIGITALLY APPROVED by ${signatureName} on ${
         nowIso.split("T")[0]
@@ -425,8 +520,14 @@ export async function POST(
       }
 
       const quo = db.quotations.find((q) => q.eventId === event!.id);
-      if (quo && !quo.notes.includes("[DIGITALLY APPROVED")) {
-        quo.notes = [quo.notes, approvalStamp].filter(Boolean).join(" | ");
+      if (quo) {
+        quo.status = "APPROVED";
+        quo.approvedByName = signatureName;
+        quo.approvedAt = nowIso;
+        quo.signatureData = signatureName;
+        if (!quo.notes.includes("[DIGITALLY APPROVED")) {
+          quo.notes = [quo.notes, approvalStamp].filter(Boolean).join(" | ");
+        }
       }
 
       // Sync CMS Lead if linked
@@ -457,12 +558,35 @@ export async function POST(
           ? body.receiptImageDataUrl
           : undefined;
 
+      const duplicatePayment = reference
+        ? db.payments.find(
+            (p) =>
+              p.eventId === event.id &&
+              p.amount === amountNum &&
+              (p.reference || "").trim().toLowerCase() === reference.toLowerCase()
+          )
+        : undefined;
+
+      if (duplicatePayment) {
+        return NextResponse.json({
+          success: true,
+          event: sanitizeEventForClient(event),
+          client: sanitizeClientForClientPortal(db.clients.find((c) => c.id === event!.clientId)),
+          quotation: db.quotations.find((q) => q.eventId === event!.id),
+          invoice: db.invoices.find((i) => i.eventId === event!.id),
+          payments: db.payments.filter((p) => p.eventId === event!.id),
+          payment: duplicatePayment,
+          message: "Deposit receipt already recorded.",
+        });
+      }
+
       const existingInv = db.invoices.find((i) => i.eventId === event!.id);
 
       createdDepositPayment = {
         id: `pay-${Date.now().toString().slice(-6)}`,
         paymentId: `PAY-${Date.now().toString().slice(-4)}`,
         eventId: event.id,
+        clientId: event.clientId,
         invoiceId: existingInv?.id,
         amount: amountNum,
         paymentDate: nowIso.split("T")[0],
@@ -471,6 +595,7 @@ export async function POST(
         notes: senderAccountTitle ? `${notes} (Sender: ${senderAccountTitle})` : notes,
         createdBy: "client-proposal",
         verificationStatus: "Pending Verification" as const,
+        receiptImageUrl: receiptImageDataUrl,
         receiptImageDataUrl,
         senderAccountTitle: senderAccountTitle || undefined,
         submittedByClientAt: nowIso,
@@ -519,8 +644,8 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      event,
-      client: updatedClient,
+      event: sanitizeEventForClient(event),
+      client: sanitizeClientForClientPortal(updatedClient),
       quotation: updatedQuotation,
       invoice: updatedInvoice,
       daySchedules: updatedDays,

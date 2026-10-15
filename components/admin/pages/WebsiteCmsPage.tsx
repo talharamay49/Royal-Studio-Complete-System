@@ -202,7 +202,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
     title: '',
     category: 'bridal',
     mediaType: 'image',
-    image: '/portfolio/bridal-01-crimson-lehenga.jpg',
+    image: '/portfolio/bridal-01-mirror-portrait.jpg',
     videoUrl: '',
     duration: '',
     aspect: 'tall',
@@ -327,6 +327,9 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
         body: JSON.stringify(nextState),
       });
       setCmsData(saved);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('royalstudio:cms-updated', { detail: saved }));
+      }
       addToast(successMsg, 'success');
     } catch (err: any) {
       addToast(err.message || 'Failed to save Website CMS changes', 'error');
@@ -342,6 +345,9 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
         method: 'POST',
       });
       setCmsData(saved);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('royalstudio:cms-updated', { detail: saved }));
+      }
       setIsResetConfirmOpen(false);
       addToast('Public website & portfolio content restored to Royal Studio defaults.', 'success');
     } catch (err: any) {
@@ -414,7 +420,7 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
       title: '',
       category: categoryFilter !== 'all' ? categoryFilter : 'bridal',
       mediaType: 'image',
-      image: '/portfolio/bridal-01-crimson-lehenga.jpg',
+      image: '/portfolio/bridal-01-mirror-portrait.jpg',
       videoUrl: '',
       duration: '',
       aspect: 'tall',
@@ -886,49 +892,34 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="p-6 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-2xl text-white shadow-lg border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 text-xs font-semibold mb-2 border border-amber-500/30">
-            <Globe className="w-3.5 h-3.5" />
-            <span>Public Website &amp; Portfolio Content Manager</span>
-          </div>
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight">
-            Complete Portfolio Website Customizer &amp; Social Media Hub
-          </h2>
-          <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-            Customize every section, heading, hero video, about story, wedding film, FAQ, and navigation menu across the public website — and select photos directly from connected social media accounts to showcase in your <strong>/portfolio</strong> gallery.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          <a
-            href="/portfolio"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold shadow-xs transition-colors"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            <span>View Public Portfolio</span>
-          </a>
-          <a
-            href="/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl text-xs font-semibold transition-colors"
-          >
-            <Globe className="w-3.5 h-3.5 text-amber-400" />
-            <span>Open Public Website</span>
-          </a>
-          <button
-            type="button"
-            onClick={() => setIsResetConfirmOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-rose-950/60 text-slate-300 hover:text-rose-200 border border-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset Defaults</span>
-          </button>
-        </div>
+      {/* Quick Action Bar */}
+      <div className="flex flex-wrap items-center justify-end gap-2.5">
+        <a
+          href="/portfolio"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-xs font-bold shadow-xs transition-colors"
+        >
+          <ExternalLink className="w-3.5 h-3.5" />
+          <span>View Public Portfolio</span>
+        </a>
+        <a
+          href="/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 rounded-xl text-xs font-semibold transition-colors"
+        >
+          <Globe className="w-3.5 h-3.5 text-amber-400" />
+          <span>Open Public Website</span>
+        </a>
+        <button
+          type="button"
+          onClick={() => setIsResetConfirmOpen(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800/80 hover:bg-rose-950/60 text-slate-300 hover:text-rose-200 border border-slate-700 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          <span>Reset Defaults</span>
+        </button>
       </div>
 
       {/* Navigation Tabs */}
@@ -939,9 +930,11 @@ export const WebsiteCmsPage: React.FC<WebsiteCmsPageProps> = ({ navigate }) => {
           { id: 'PORTFOLIO', label: `Portfolio Gallery (${cmsData.portfolioItems.length})`, icon: ImageIcon },
           {
             id: 'SOCIAL_PORTFOLIO',
-            label: `Social Media to Portfolio (${
+            label: `Social Media Sync (${
               (cmsData.socialMediaPosts || []).filter((p) => p.selectedForPortfolio).length
-            } Selected)`,
+            } Portfolio · ${
+              (cmsData.socialMediaPosts || []).filter((p) => p.selectedForWeddingFilms).length
+            } Films)`,
             icon: Share2,
           },
           { id: 'PACKAGES', label: `Public Packages (${cmsData.pricingPackages.length})`, icon: PackageIcon },

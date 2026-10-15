@@ -285,19 +285,21 @@ html.dark .admin-portal-root textarea {
 @media print {
   @page {
     size: A4 portrait;
-    margin: 8mm;
+    margin: 10mm 8mm;
   }
 
   html,
   body {
     width: 100% !important;
     height: auto !important;
+    min-height: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
     color: #0f172a !important;
     overflow: visible !important;
-    font-size: 10.5pt;
+    font-size: 10pt;
+    line-height: 1.4;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -313,31 +315,156 @@ html.dark .admin-portal-root textarea {
     display: none !important;
   }
 
+  /* When the A4 Print Preview Modal is open, suppress the background page so only the A4 sheet prints */
+  .proposal-print-page.print-modal-active > .max-w-5xl {
+    display: none !important;
+  }
+
+  .proposal-print-preview-backdrop {
+    position: static !important;
+    inset: auto !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    overflow: visible !important;
+    height: auto !important;
+    width: 100% !important;
+  }
+
+  .proposal-print-preview-wrapper {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+
+  .proposal-a4-sheet {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
   /* Proposal Page Direct A4 Print Normalization */
   .proposal-print-page {
-    min-height: auto !important;
+    min-height: 0 !important;
+    height: auto !important;
     background: #ffffff !important;
     color: #0f172a !important;
     padding: 0 !important;
     margin: 0 !important;
+    overflow: visible !important;
   }
 
-  .proposal-print-page .max-w-5xl {
+  .proposal-print-page > .max-w-5xl {
     max-width: 100% !important;
     width: 100% !important;
     margin: 0 !important;
-    gap: 10px !important;
+    display: block !important;
   }
 
-  .proposal-print-card {
+  /* Allow large multi-item section wrappers to paginate across multiple A4 sheets */
+  .proposal-print-card,
+  .proposal-print-section {
     background: #ffffff !important;
     color: #0f172a !important;
     border: 1px solid #cbd5e1 !important;
     box-shadow: none !important;
-    padding: 12px 14px !important;
+    padding: 10px 12px !important;
     margin-bottom: 10px !important;
-    break-inside: avoid;
-    page-break-inside: avoid;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .proposal-a4-sheet .proposal-print-section {
+    border: none !important;
+    padding: 0 !important;
+    margin-bottom: 12px !important;
+  }
+
+  /* Stack multi-column grids into full-width A4 blocks so milestone cards & summary tables never cramp or split */
+  .proposal-print-grid-stack {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  .proposal-print-grid-stack > * {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-bottom: 10px !important;
+  }
+
+  /* Keep section headings attached to the table or cards immediately following them */
+  h1,
+  h2,
+  h3,
+  h4,
+  .proposal-section-header {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    orphans: 3;
+    widows: 3;
+  }
+
+  /* Protect individual atomic cards, milestone cards, day schedules, and signature blocks from awkward page cuts */
+  .proposal-letterhead,
+  .proposal-day-card,
+  .proposal-milestone-card,
+  .proposal-addon-card,
+  .proposal-payment-channels,
+  .proposal-summary-box,
+  .proposal-signature-block,
+  .break-inside-avoid {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .proposal-milestone-card,
+  .proposal-day-card,
+  .proposal-addon-card,
+  .proposal-payment-channels,
+  .proposal-summary-box {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+    margin-bottom: 8px !important;
+  }
+
+  /* Table multi-page pagination: repeat thead on new A4 pages, never slice inside a table row or cell */
+  table,
+  .proposal-print-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+
+  tbody {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  tr,
+  td,
+  th {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 
   .proposal-print-page h1,
@@ -351,8 +478,9 @@ html.dark .admin-portal-root textarea {
   }
 
   .proposal-print-page p,
-  .proposal-print-page span {
-    color: #334155 !important;
+  .proposal-print-page span,
+  .proposal-print-page div {
+    color: #1e293b;
   }
 
   .proposal-print-page .payment-status-badge-full {
@@ -371,13 +499,5 @@ html.dark .admin-portal-root textarea {
     background-color: #f1f5f9 !important;
     color: #334155 !important;
     border: 1px solid #cbd5e1 !important;
-  }
-
-  /* Prevent awkward splits across A4 page boundaries */
-  tr,
-  table,
-  .break-inside-avoid {
-    break-inside: avoid;
-    page-break-inside: avoid;
   }
 }

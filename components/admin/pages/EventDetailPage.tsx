@@ -1298,16 +1298,15 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
             <span>Offline Crew Mode</span>
           </button>
 
-          <a
-            href={`/gallery/${event.id}`}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => navigate(`/clients/${client?.id || event.clientId}`)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-colors shadow-xs cursor-pointer"
-            title="Open Client Private Photo Selection & Luxury Album Proofing Gallery"
+            title="Manage Client Portal Password, Proofing Gallery & Uploads in Client Profile"
           >
             <Heart className="w-3.5 h-3.5" />
-            <span>Proofing Gallery</span>
-          </a>
+            <span>Manage Client Portal &amp; Gallery</span>
+          </button>
 
           <button
             type="button"
@@ -1564,6 +1563,14 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
                 )}
               </div>
               <div className="text-xs text-gray-500">{client?.address}, {client?.city}</div>
+              <button
+                type="button"
+                onClick={() => navigate(`/clients/${client?.id || event.clientId}`)}
+                className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 hover:text-rose-800 pt-1 cursor-pointer"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Manage Portal Password, Proofing Gallery &amp; Uploads in Client Profile →</span>
+              </button>
             </div>
 
             <div className="space-y-1 md:text-right border-t md:border-t-0 md:border-l border-gray-100 pt-3 md:pt-0 md:pl-6">
@@ -1645,19 +1652,6 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
               }`}
             >
               Invoices & Payments ({eventPayments.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('proofing')}
-              className={`pb-3 px-3 border-b-2 transition-colors whitespace-nowrap flex items-center gap-1.5 ${
-                activeTab === 'proofing'
-                  ? 'border-rose-500 text-rose-600 font-bold'
-                  : 'border-transparent text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              <Heart className="w-3.5 h-3.5 text-rose-500" />
-              <span>
-                Album Proofing ({proofingGallery.photos.filter(p => p.isSelectedForAlbum).length}/{proofingGallery.maxAlbumSelection})
-              </span>
             </button>
           </div>
 
@@ -2452,255 +2446,6 @@ export const EventDetailPage: React.FC<EventDetailPageProps> = ({ eventId, navig
                     })}
                   </tbody>
                 </table>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 7: PRIVATE PHOTO PROOFING & LUXURY ALBUM SELECTION */}
-          {activeTab === 'proofing' && (
-            <div className="space-y-4">
-              <div className="p-5 bg-white rounded-xl border border-rose-200 shadow-xs space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-4">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-rose-100 text-rose-800">
-                        Luxury Album Proofing Engine
-                      </span>
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          proofingGallery.selectionStatus === 'Submitted'
-                            ? 'bg-amber-100 text-amber-800'
-                            : proofingGallery.selectionStatus === 'Approved'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-blue-100 text-blue-800'
-                        }`}
-                      >
-                        Status: {proofingGallery.selectionStatus}
-                      </span>
-                    </div>
-                    <h3 className="text-base font-bold text-gray-900 mt-1">
-                      Client Private Photo Selection &amp; Retouching Notes
-                    </h3>
-                    <p className="text-xs text-gray-500">
-                      Share <code className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">/gallery/{event.id}</code> with {client?.name || 'the couple'} to heart their favorite {proofingGallery.minAlbumSelection}–{proofingGallery.maxAlbumSelection} frames and leave retouching instructions.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const url = `${window.location.origin}/gallery/${event.id}`;
-                        navigator.clipboard.writeText(url);
-                        addToast('Private Proofing Gallery link copied to clipboard!');
-                      }}
-                      className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Gallery Link</span>
-                    </button>
-                    <a
-                      href={`/gallery/${event.id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Open Client Gallery</span>
-                    </a>
-                  </div>
-                </div>
-
-                {/* Gallery PIN & Controls */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold uppercase text-gray-500">PIN Protection</span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateEventProofingGallery(event.id, {
-                            isPinProtected: !proofingGallery.isPinProtected,
-                          })
-                        }
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer ${
-                          proofingGallery.isPinProtected
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-gray-200 text-gray-700'
-                        }`}
-                      >
-                        {proofingGallery.isPinProtected ? (
-                          <>
-                            <Lock className="w-3 h-3" /> PIN Active ({proofingGallery.pinCode})
-                          </>
-                        ) : (
-                          <>
-                            <Unlock className="w-3 h-3" /> Unlocked
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        value={galleryPinEdit || proofingGallery.pinCode}
-                        onChange={e => setGalleryPinEdit(e.target.value)}
-                        placeholder="4-6 digit PIN"
-                        className="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs font-mono font-bold"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!galleryPinEdit.trim()) return;
-                          updateEventProofingGallery(event.id, { pinCode: galleryPinEdit.trim() });
-                        }}
-                        className="px-2.5 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-bold cursor-pointer whitespace-nowrap"
-                      >
-                        Save PIN
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-rose-50/60 border border-rose-200 space-y-1">
-                    <span className="text-[11px] font-bold uppercase text-rose-700">Selected for Luxury Album</span>
-                    <div className="text-xl font-black text-rose-900 font-mono">
-                      {proofingGallery.photos.filter((p) => p.isSelectedForAlbum).length} / {proofingGallery.maxAlbumSelection || proofingGallery.targetCountMax || 150}
-                    </div>
-                    <div className="text-[11px] text-rose-700">
-                      {proofingGallery.photos.filter((p) => p.retouchingNote && p.retouchingNote.trim().length > 0).length} frames with retouching notes
-                    </div>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200 flex flex-col justify-between gap-2">
-                    <div>
-                      <span className="text-[11px] font-bold uppercase text-gray-500">Album Production Status</span>
-                      <p className="text-xs text-gray-700 font-medium mt-0.5">
-                        {proofingGallery.clientSubmissionNote
-                          ? `"${proofingGallery.clientSubmissionNote}"`
-                          : 'Waiting for client final album submission or admin lock.'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateEventProofingGallery(event.id, {
-                            selectionStatus: 'Approved',
-                          })
-                        }
-                        className="flex-1 py-1.5 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold cursor-pointer"
-                      >
-                        Approve for Printing
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          updateEventProofingGallery(event.id, {
-                            selectionStatus: 'Open',
-                          })
-                        }
-                        className="py-1.5 px-2.5 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 rounded-lg text-[11px] font-bold cursor-pointer"
-                      >
-                        Re-open
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Add New Proofing Frame Form */}
-                <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
-                  <div className="text-xs font-bold text-gray-800">Add High-Res Proofing Frame to Client Gallery</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                    <input
-                      type="text"
-                      value={newPhotoTitle}
-                      onChange={e => setNewPhotoTitle(e.target.value)}
-                      placeholder="Frame Title (e.g. Royal Stage Portrait)"
-                      className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs"
-                    />
-                    <input
-                      type="url"
-                      value={newPhotoUrl}
-                      onChange={e => setNewPhotoUrl(e.target.value)}
-                      placeholder="Image URL (https://...)"
-                      className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs"
-                    />
-                    <select
-                      value={newPhotoCat}
-                      onChange={e => setNewPhotoCat(e.target.value as any)}
-                      className="px-2.5 py-1.5 bg-white border border-gray-300 rounded-lg text-xs"
-                    >
-                      <option value="Couple Portrait">Couple Portrait</option>
-                      <option value="Bridal Portrait">Bridal Portrait</option>
-                      <option value="Stage & Decor">Stage & Decor</option>
-                      <option value="Family & Guests">Family & Guests</option>
-                      <option value="Candid Moments">Candid Moments</option>
-                      <option value="Details & Jewelry">Details & Jewelry</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!newPhotoTitle.trim() || !newPhotoUrl.trim()) return;
-                        const nextPhoto = {
-                          id: `prf-${Date.now()}`,
-                          code: `RS-${proofingGallery.photos.length + 101}`,
-                          title: newPhotoTitle.trim(),
-                          url: newPhotoUrl.trim(),
-                          dayLabel: newPhotoDay || 'Barat',
-                          category: newPhotoCat,
-                          isSelectedForAlbum: false,
-                        };
-                        updateEventProofingGallery(event.id, {
-                          photos: [nextPhoto, ...proofingGallery.photos],
-                        });
-                        setNewPhotoTitle('');
-                        setNewPhotoUrl('');
-                      }}
-                      className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold cursor-pointer"
-                    >
-                      + Add Proofing Frame
-                    </button>
-                  </div>
-                </div>
-
-                {/* Selected & Commented Photos Preview Table */}
-                <div className="overflow-x-auto border border-gray-200 rounded-xl">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] border-b border-gray-200">
-                      <tr>
-                        <th className="py-2 px-3">Frame</th>
-                        <th className="py-2 px-3">Category / Day</th>
-                        <th className="py-2 px-3">Album Selection</th>
-                        <th className="py-2 px-3">Client Retouching Note</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {proofingGallery.photos.slice(0, 18).map(photo => (
-                        <tr key={photo.id} className="hover:bg-gray-50/60">
-                          <td className="py-2 px-3 font-semibold text-gray-900">
-                            <span className="font-mono text-[10px] text-gray-500 mr-1.5">{photo.code}</span>
-                            {photo.title}
-                          </td>
-                          <td className="py-2 px-3 text-gray-600">
-                            {photo.category} • {photo.dayLabel}
-                          </td>
-                          <td className="py-2 px-3">
-                            {photo.isSelectedForAlbum ? (
-                              <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-bold">
-                                ♥ Selected for Album
-                              </span>
-                            ) : (
-                              <span className="text-gray-400 text-[10px]">Not selected</span>
-                            )}
-                          </td>
-                          <td className="py-2 px-3 text-amber-800 font-medium">
-                            {photo.retouchingNote || <span className="text-gray-300">—</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
               </div>
             </div>
           )}

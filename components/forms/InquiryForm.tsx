@@ -934,11 +934,19 @@ export default function InquiryForm() {
         </div>
 
         <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3 pt-2">
-          {confirmation.proposalUrl && (
+          {confirmation.eventId && (
             <Button asChild variant="accent" className="w-full sm:w-auto">
+              <a href={`/client-portal?eventId=${encodeURIComponent(confirmation.eventId)}`}>
+                <Sparkles size={16} />
+                Open My Client Portal &amp; Proofing Hub
+              </a>
+            </Button>
+          )}
+          {confirmation.proposalUrl && (
+            <Button asChild variant="outline" className="w-full sm:w-auto">
               <a href={confirmation.proposalUrl}>
                 <Sparkles size={16} />
-                Open Interactive Proposal &amp; Online Approval Link
+                Open Interactive Proposal &amp; Approval
               </a>
             </Button>
           )}

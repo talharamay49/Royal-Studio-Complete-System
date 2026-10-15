@@ -20,6 +20,8 @@ import {
 import { useStudioData } from '../context/StudioDataContext';
 import { formatPKR, formatDate } from '../utils/calculations';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { StudioExpensesPage } from './StudioExpensesPage';
+import { ReportsPage } from './ReportsPage';
 
 interface FinancePageProps {
   navigate: (path: string) => void;
@@ -27,6 +29,7 @@ interface FinancePageProps {
 
 export const FinancePage: React.FC<FinancePageProps> = ({ navigate }) => {
   const { profile, events, clients, studioExpenses, invoices, payments, verifyPayment } = useStudioData();
+  const [activeFinanceTab, setActiveFinanceTab] = useState<'OVERVIEW' | 'OVERHEADS' | 'REPORTS'>('OVERVIEW');
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState<string | null>(null);
   const [paymentFilter, setPaymentFilter] = useState<'ALL' | 'PENDING' | 'VERIFIED'>('ALL');
@@ -76,16 +79,54 @@ export const FinancePage: React.FC<FinancePageProps> = ({ navigate }) => {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Financial Performance & Margins</h2>
-          <p className="text-xs text-gray-500">
-            Comprehensive audit of revenue, production costs, studio overheads, and event profit margins.
-          </p>
+      {/* Unified Finance Module Navigation */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center p-1 bg-white border border-gray-200 rounded-xl shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setActiveFinanceTab('OVERVIEW')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              activeFinanceTab === 'OVERVIEW'
+                ? 'bg-slate-900 text-white'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
+            <span>Profit &amp; Payment Verification</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFinanceTab('OVERHEADS')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              activeFinanceTab === 'OVERHEADS'
+                ? 'bg-slate-900 text-white'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Building className="w-3.5 h-3.5 text-rose-500" />
+            <span>Studio Overheads</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveFinanceTab('REPORTS')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              activeFinanceTab === 'REPORTS'
+                ? 'bg-slate-900 text-white'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <PieIcon className="w-3.5 h-3.5 text-amber-500" />
+            <span>Reports &amp; CSV Exports</span>
+          </button>
         </div>
       </div>
 
+      {activeFinanceTab === 'OVERHEADS' ? (
+        <StudioExpensesPage navigate={navigate} />
+      ) : activeFinanceTab === 'REPORTS' ? (
+        <ReportsPage />
+      ) : (
+        <>
       {/* Primary KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-5 bg-white rounded-xl border border-gray-100 shadow-xs">
@@ -479,6 +520,8 @@ export const FinancePage: React.FC<FinancePageProps> = ({ navigate }) => {
           </table>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

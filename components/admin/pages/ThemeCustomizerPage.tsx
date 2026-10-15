@@ -157,46 +157,29 @@ export const ThemeCustomizerPage: React.FC<ThemeCustomizerPageProps> = ({ naviga
 
   return (
     <div className="space-y-6 max-w-6xl">
-      {/* Top Banner */}
-      <div className="p-6 bg-[#111111] text-white rounded-2xl border border-white/10 shadow-premium-lg flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <Palette className="w-5 h-5 text-accent" />
-            <h2 className="font-display text-2xl sm:text-3xl font-semibold tracking-wide text-white">
-              Admin Theme Customizer
-            </h2>
-            <span className="text-xs text-accent font-medium">
-              · Synchronized ERP & Public Portfolio
-            </span>
-          </div>
-          <p className="text-xs text-white/70 max-w-2xl leading-relaxed">
-            Dynamically customize the studio&apos;s Accent Color, Primary Color, Border-Radius, Typography, and Light/Dark Mode. All changes are persisted in the unified ERP database and applied globally for all users on reload.
-          </p>
-        </div>
+      {/* Theme Controls Bar */}
+      <div className="flex flex-wrap items-center justify-end gap-2.5">
+        <ThemeToggle className="bg-surface text-primary border-border hover:bg-background" />
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <ThemeToggle className="bg-white/10 text-white border-white/20 hover:bg-white/15" />
+        <button
+          type="button"
+          onClick={handleResetDefaults}
+          disabled={isSavingTheme || !isAdmin}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-surface hover:bg-background text-primary border border-border rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
+        >
+          <RotateCcw className="w-3.5 h-3.5 text-accent" />
+          <span>Reset Default</span>
+        </button>
 
-          <button
-            type="button"
-            onClick={handleResetDefaults}
-            disabled={isSavingTheme || !isAdmin}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-white/10 hover:bg-white/15 text-white border border-white/15 rounded-xl text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-accent" />
-            <span>Reset Default</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleSaveTheme()}
-            disabled={isSavingTheme || !isAdmin}
-            className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent hover:bg-accent-light text-[#111111] rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md cursor-pointer disabled:opacity-50"
-          >
-            <Save className="w-4 h-4" />
-            <span>{isSavingTheme ? 'Persisting...' : 'Save Global Theme'}</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => handleSaveTheme()}
+          disabled={isSavingTheme || !isAdmin}
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent hover:bg-accent-light text-[#111111] rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md cursor-pointer disabled:opacity-50"
+        >
+          <Save className="w-4 h-4" />
+          <span>{isSavingTheme ? 'Persisting...' : 'Save Global Theme'}</span>
+        </button>
       </div>
 
       <form onSubmit={handleSaveTheme} className="grid grid-cols-1 lg:grid-cols-12 gap-6">

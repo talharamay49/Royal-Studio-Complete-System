@@ -30,6 +30,7 @@ export interface PortfolioItem {
   duration?: string;
   caption?: string;
   likesCount?: number;
+  commentsCount?: number;
   viewsCount?: string;
   postedAt?: string;
   sourcePlatform?: "upload" | "instagram" | "facebook" | "tiktok" | "youtube";
@@ -55,6 +56,7 @@ export interface ConnectedSocialAccount {
   handle: string;
   profileUrl: string;
   connected: boolean;
+  avatarUrl?: string;
   autoSyncToGallery?: boolean;
   accessTokenHint?: string;
   lastSyncedAt?: string;
@@ -163,9 +165,14 @@ export interface WebsiteCustomizationConfig {
       description?: string;
       channelHandle?: string;
       viewsCount?: string;
+      likesCount?: number;
+      commentsCount?: number;
       publishedAt?: string;
       thumbnailUrl?: string;
       sourceSocialPostId?: string;
+      sourcePlatform?: SocialPlatformId;
+      category?: Exclude<PortfolioCategory, "all">;
+      permalink?: string;
       youtubeUrl?: string;
     }[];
   };

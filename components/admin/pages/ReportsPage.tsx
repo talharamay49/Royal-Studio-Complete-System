@@ -105,29 +105,20 @@ export const ReportsPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Studio Reports & CSV Data Exports</h2>
-          <p className="text-xs text-gray-500">
-            Yearly performance, margin auditing, crew compensation metrics, and clean CSV data downloads.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <select
-            value={selectedYear}
-            onChange={e => setSelectedYear(e.target.value)}
-            className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-900 shadow-xs"
-          >
-            <option value="ALL">All Years (Cumulative)</option>
-            {availableYears.map((yr) => (
-              <option key={yr} value={yr}>
-                Financial Year {yr}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Year Filter */}
+      <div className="flex justify-end">
+        <select
+          value={selectedYear}
+          onChange={e => setSelectedYear(e.target.value)}
+          className="px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-900 shadow-xs"
+        >
+          <option value="ALL">All Years (Cumulative)</option>
+          {availableYears.map((yr) => (
+            <option key={yr} value={yr}>
+              Financial Year {yr}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Yearly Summary Cards */}

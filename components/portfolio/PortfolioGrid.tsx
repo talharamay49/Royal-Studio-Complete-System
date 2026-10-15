@@ -50,9 +50,18 @@ export default function PortfolioGrid({
   showHeading = true,
   showViewAll = true,
 }: PortfolioGridProps) {
-  const { portfolioItems, websiteCustomization, isLoading } = usePublicWebsiteCMS();
+  const {
+    portfolioItems,
+    websiteCustomization,
+    socialMediaPosts,
+    connectedSocialAccounts,
+    isLoading,
+  } = usePublicWebsiteCMS();
   const [activeFilter, setActiveFilter] = useState<PortfolioCategory>("all");
   const [mediaFilter, setMediaFilter] = useState<"all" | "image" | "video">("all");
+  const [sourceFilter, setSourceFilter] = useState<
+    "all" | "instagram" | "youtube" | "facebook" | "tiktok"
+  >("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [layoutMode, setLayoutMode] = useState<"masonry" | "grid">("masonry");
   const [lightbox, setLightbox] = useState<PortfolioItem | null>(null);
@@ -80,52 +89,206 @@ export default function PortfolioGrid({
     }
   }, []);
 
-  // Merge CMS portfolio items with curated 4K Wedding Films so the "Films" filter and categories are rich
+  // Merge CMS portfolio items with Admin-selected Connected Social Media posts & Wedding Films
   const visiblePortfolioItems = useMemo(() => {
-    const baseItems = portfolioItems.filter((item) => item.visible !== false);
-    const existingIds = new Set(baseItems.map((i) => i.id));
+    const connectedPlatformSet = new Set(
+      (connectedSocialAccounts || [])
+        .filter((acc) => acc.connected !== false)
+        .map((acc) => acc.platform)
+    );
+    const socialPostsList = socialMediaPosts || [];
+
+    // 1. Start with base portfolio items and enrich any matched social posts with complete synced metadata
+    const unselectedPostIds = new Set(
+      socialPostsList.filter((sp) => !sp.selectedForPortfolio).map((sp) => sp.id)
+    );
+    const baseItems: PortfolioItem[] = portfolioItems
+      .filter((item) => {
+        if (item.visible === false) return false;
+        if (item.socialPostId && unselectedPostIds.has(item.socialPostId)) return false;
+        if (
+          item.sourcePlatform &&
+          item.sourcePlatform !== "upload" &&
+          connectedPlatformSet.size > 0 &&
+          !connectedPlatformSet.has(item.sourcePlatform as any)
+        ) {
+          return false;
+        }
+        return true;
+      })
+      .map((item) => {
+        const matchedSocial = socialPostsList.find(
+          (sp) =>
+            sp.selectedForPortfolio &&
+            ((item.socialPostId && sp.id === item.socialPostId) ||
+              (sp.image === item.image && sp.title === item.title) ||
+              (sp.youtubeId &&
+                item.videoUrl &&
+                extractYoutubeId(item.videoUrl) === sp.youtubeId))
+        );
+        if (!matchedSocial) return item;
+        const isVid =
+          item.mediaType === "video" ||
+          matchedSocial.mediaType === "video" ||
+          Boolean(matchedSocial.youtubeId);
+        const ytId =
+          item.youtubeId ||
+          matchedSocial.youtubeId ||
+          (item.videoUrl ? extractYoutubeId(item.videoUrl) : undefined);
+        return {
+          ...item,
+          mediaType: isVid ? "video" : "image",
+          videoUrl:
+            item.videoUrl ||
+            matchedSocial.videoUrl ||
+            (ytId ? `https://www.youtube.com/watch?v=${ytId}` : undefined),
+          youtubeId: ytId,
+          duration: item.duration || matchedSocial.duration,
+          caption: item.caption || matchedSocial.caption,
+          likesCount: item.likesCount ?? matchedSocial.likesCount,
+          commentsCount: item.commentsCount ?? matchedSocial.commentsCount,
+          viewsCount: item.viewsCount || matchedSocial.viewsCount,
+          postedAt: item.postedAt || matchedSocial.postedAt,
+          sourcePlatform:
+            item.sourcePlatform && item.sourcePlatform !== "upload"
+              ? item.sourcePlatform
+              : matchedSocial.platform,
+          socialHandle: item.socialHandle || matchedSocial.accountHandle,
+          socialPermalink: item.socialPermalink || matchedSocial.permalink,
+          socialPostUrl:
+            item.socialPostUrl || item.socialPermalink || matchedSocial.permalink,
+          socialPostId: item.socialPostId || matchedSocial.id,
+        };
+      });
+
+    // 2. Include any social media posts explicitly selected for Portfolio by Admin
+    let maxId = Math.max(0, ...baseItems.map((i) => i.id || 0));
+    const selectedSocialItems: PortfolioItem[] = [];
+    for (const post of socialPostsList) {
+      if (!post.selectedForPortfolio) continue;
+      if (connectedPlatformSet.size > 0 && !connectedPlatformSet.has(post.platform)) {
+        continue;
+      }
+      const alreadyInBase = baseItems.some(
+        (b) =>
+          (b.socialPostId && b.socialPostId === post.id) ||
+          (b.image === post.image && b.title === post.title) ||
+          (post.youtubeId &&
+            b.videoUrl &&
+            extractYoutubeId(b.videoUrl) === post.youtubeId &&
+            b.sourcePlatform === post.platform)
+      );
+      if (!alreadyInBase) {
+        maxId += 1;
+        const isVid = post.mediaType === "video" || Boolean(post.youtubeId);
+        const ytId = post.youtubeId || (isVid ? extractYoutubeId(post.permalink) : undefined);
+        selectedSocialItems.push({
+          id: maxId,
+          title: post.title,
+          category: post.category || "bridal",
+          image:
+            post.image ||
+            (ytId
+              ? `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`
+              : "/portfolio/bridal-01-mirror-portrait.jpg"),
+          aspect: post.aspect || (isVid ? "wide" : "tall"),
+          location: post.location || "Burewala",
+          mediaType: isVid ? "video" : "image",
+          videoUrl:
+            post.videoUrl || (ytId ? `https://www.youtube.com/watch?v=${ytId}` : undefined),
+          youtubeId: ytId,
+          duration: post.duration,
+          caption: post.caption,
+          likesCount: post.likesCount,
+          commentsCount: post.commentsCount,
+          viewsCount: post.viewsCount,
+          postedAt: post.postedAt,
+          sourcePlatform: post.platform,
+          socialHandle: post.accountHandle,
+          socialPermalink: post.permalink,
+          socialPostUrl: post.permalink,
+          socialPostId: post.id,
+          visible: true,
+        });
+      }
+    }
+
+    const combined = [...selectedSocialItems, ...baseItems];
     const existingYoutubeIds = new Set(
-      baseItems
-        .filter((i) => i.videoUrl)
-        .map((i) => extractYoutubeId(i.videoUrl))
+      combined
+        .filter((i) => i.videoUrl || i.youtubeId)
+        .map((i) => i.youtubeId || extractYoutubeId(i.videoUrl))
     );
 
-    const filmItems: PortfolioItem[] = weddingFilms
-      .filter(
-        (film) =>
-          !existingIds.has(9000 + Number(film.id)) &&
-          !existingYoutubeIds.has(film.youtubeId)
-      )
+    // 3. Include Admin-configured Wedding Films so the 4K Films tab reflects live CMS selections
+    const cmsFilmsList =
+      websiteCustomization?.films?.weddingFilms &&
+      websiteCustomization.films.weddingFilms.length > 0
+        ? websiteCustomization.films.weddingFilms
+        : weddingFilms;
+
+    const filmItems: PortfolioItem[] = cmsFilmsList
+      .filter((film) => {
+        const cleanYt = extractYoutubeId(film.youtubeId);
+        return !existingYoutubeIds.has(cleanYt);
+      })
       .map((film, idx) => {
+        const cleanYt = extractYoutubeId(film.youtubeId);
+        const matchedSocial = socialPostsList.find(
+          (sp) =>
+            (film.sourceSocialPostId && sp.id === film.sourceSocialPostId) ||
+            sp.youtubeId === cleanYt
+        );
         const titleLower = film.title.toLowerCase();
-        let cat: Exclude<PortfolioCategory, "all"> = "barat";
-        if (titleLower.includes("mehndi") || titleLower.includes("mayoun")) {
-          cat = "mehndi";
-        } else if (titleLower.includes("walima")) {
-          cat = "walima";
-        } else if (titleLower.includes("nikah")) {
-          cat = "nikah";
-        } else if (titleLower.includes("groom")) {
-          cat = "groom";
+        let cat: Exclude<PortfolioCategory, "all"> =
+          film.category || matchedSocial?.category || "barat";
+        if (!film.category && !matchedSocial?.category) {
+          if (titleLower.includes("mehndi") || titleLower.includes("mayoun")) {
+            cat = "mehndi";
+          } else if (titleLower.includes("walima")) {
+            cat = "walima";
+          } else if (titleLower.includes("nikah")) {
+            cat = "nikah";
+          } else if (titleLower.includes("groom")) {
+            cat = "groom";
+          }
         }
         return {
           id: 9000 + (Number(film.id) || idx + 1),
           title: film.title,
           category: cat,
-          image: `https://i.ytimg.com/vi/${film.youtubeId}/hqdefault.jpg`,
+          image:
+            film.thumbnailUrl ||
+            matchedSocial?.image ||
+            `https://i.ytimg.com/vi/${cleanYt}/hqdefault.jpg`,
           aspect: "wide",
-          location: film.location,
+          location: film.location || matchedSocial?.location || "Burewala",
           mediaType: "video",
-          videoUrl: `https://www.youtube.com/watch?v=${film.youtubeId}`,
-          duration: film.duration,
-          sourcePlatform: "youtube",
-          socialHandle: "@royalstudio089",
+          videoUrl: `https://www.youtube.com/watch?v=${cleanYt}`,
+          youtubeId: cleanYt,
+          duration: film.duration || matchedSocial?.duration,
+          caption: film.description || matchedSocial?.caption,
+          likesCount: film.likesCount ?? matchedSocial?.likesCount,
+          commentsCount: film.commentsCount ?? matchedSocial?.commentsCount,
+          viewsCount: film.viewsCount || matchedSocial?.viewsCount,
+          postedAt: film.publishedAt || matchedSocial?.postedAt,
+          sourcePlatform: film.sourcePlatform || matchedSocial?.platform || "youtube",
+          socialHandle:
+            film.channelHandle || matchedSocial?.accountHandle || "@royalstudio089",
+          socialPermalink:
+            film.permalink ||
+            matchedSocial?.permalink ||
+            `https://www.youtube.com/watch?v=${cleanYt}`,
+          socialPostUrl:
+            film.permalink ||
+            matchedSocial?.permalink ||
+            `https://www.youtube.com/watch?v=${cleanYt}`,
           visible: true,
         };
       });
 
-    return [...baseItems, ...filmItems];
-  }, [portfolioItems]);
+    return [...combined, ...filmItems];
+  }, [portfolioItems, socialMediaPosts, connectedSocialAccounts, websiteCustomization]);
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = { all: visiblePortfolioItems.length };
@@ -152,15 +315,18 @@ export default function PortfolioGrid({
       const typeMatch =
         mediaFilter === "all" ||
         (mediaFilter === "video" ? item.mediaType === "video" : item.mediaType !== "video");
+      const platMatch =
+        sourceFilter === "all" || item.sourcePlatform === sourceFilter;
       const queryMatch =
         !q ||
         item.title.toLowerCase().includes(q) ||
         item.category.toLowerCase().includes(q) ||
         (item.location && item.location.toLowerCase().includes(q)) ||
-        (item.caption && item.caption.toLowerCase().includes(q));
-      return catMatch && typeMatch && queryMatch;
+        (item.caption && item.caption.toLowerCase().includes(q)) ||
+        (item.socialHandle && item.socialHandle.toLowerCase().includes(q));
+      return catMatch && typeMatch && platMatch && queryMatch;
     });
-  }, [visiblePortfolioItems, activeFilter, mediaFilter, searchQuery]);
+  }, [visiblePortfolioItems, activeFilter, mediaFilter, sourceFilter, searchQuery]);
 
   const displayed = effectiveLimit
     ? filtered.slice(0, effectiveLimit)
@@ -261,12 +427,16 @@ export default function PortfolioGrid({
                 Showing <strong className="text-primary">{displayed.length}</strong> of{" "}
                 <strong className="text-primary">{filtered.length}</strong> works
               </span>
-              {(activeFilter !== "all" || mediaFilter !== "all" || searchQuery.trim() !== "") && (
+              {(activeFilter !== "all" ||
+                mediaFilter !== "all" ||
+                sourceFilter !== "all" ||
+                searchQuery.trim() !== "") && (
                 <button
                   type="button"
                   onClick={() => {
                     setActiveFilter("all");
                     setMediaFilter("all");
+                    setSourceFilter("all");
                     setSearchQuery("");
                     setVisibleCount(limit ?? 16);
                   }}
@@ -404,6 +574,50 @@ export default function PortfolioGrid({
                     <span className="hidden md:inline">Grid</span>
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* Connected Social Accounts Filter Row */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-2.5">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-text-muted mr-1">
+                  Connected Feeds:
+                </span>
+                {(
+                  [
+                    { id: "all", label: "All Sources" },
+                    { id: "instagram", label: "Instagram" },
+                    { id: "youtube", label: "YouTube 4K" },
+                    { id: "facebook", label: "Facebook" },
+                    { id: "tiktok", label: "TikTok Reels" },
+                  ] as const
+                ).map((src) => {
+                  const active = sourceFilter === src.id;
+                  const count =
+                    src.id === "all"
+                      ? visiblePortfolioItems.length
+                      : visiblePortfolioItems.filter((i) => i.sourcePlatform === src.id).length;
+                  if (src.id !== "all" && count === 0) return null;
+                  return (
+                    <button
+                      key={src.id}
+                      type="button"
+                      onClick={() => {
+                        setSourceFilter(src.id);
+                        setVisibleCount(limit ?? 16);
+                      }}
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-all cursor-pointer ${
+                        active
+                          ? "bg-accent text-[#111111] font-semibold shadow-2xs"
+                          : "border border-border/70 bg-surface text-text-muted hover:border-accent hover:text-primary"
+                      }`}
+                    >
+                      {src.id !== "all" && renderPlatformBadge(src.id)}
+                      <span>{src.label}</span>
+                      <span className="text-[10px] opacity-80">({count})</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -707,9 +921,9 @@ export default function PortfolioGrid({
                         {lightbox.viewsCount.toLocaleString()} views
                       </span>
                     ) : null}
-                    {lightbox.socialPostUrl && (
+                    {(lightbox.socialPostUrl || lightbox.socialPermalink) && (
                       <a
-                        href={lightbox.socialPostUrl}
+                        href={lightbox.socialPostUrl || lightbox.socialPermalink}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1 text-accent hover:underline"

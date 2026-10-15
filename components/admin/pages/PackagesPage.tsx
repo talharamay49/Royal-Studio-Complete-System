@@ -413,50 +413,40 @@ export const PackagesPage: React.FC<PackagesPageProps> = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">
-            Service Packages &amp; Unified Tier Pricing
-          </h2>
-          <p className="text-xs text-gray-500">
-            Unified Category + Crew Tier pricing (Cat 1+Tier 1 = 10k/cam, Cat 2+Tier 2 = 15k/cam, Cat 3+Tier 3 = 20k/cam) &amp; multi-day custom package builder.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={() => setShowAdminBreakdownTable((prev) => !prev)}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+        >
+          <Calculator className="w-4 h-4 text-slate-700" />
+          <span>
+            {showAdminBreakdownTable
+              ? 'Hide Detailed Event Price Breakdown'
+              : 'View Detailed Event Price Breakdown'}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowBuilder((prev) => !prev)}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+        >
+          <Layers className="w-4 h-4 text-amber-600" />
+          <span>
+            {showBuilder
+              ? 'Hide Custom Day & Mixed-Tier Builder'
+              : 'Open Custom Day & Mixed-Tier Builder'}
+          </span>
+        </button>
+        {isAdmin && (
           <button
-            type="button"
-            onClick={() => setShowAdminBreakdownTable((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+            onClick={handleOpenCreate}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
           >
-            <Calculator className="w-4 h-4 text-slate-700" />
-            <span>
-              {showAdminBreakdownTable
-                ? 'Hide Detailed Event Price Breakdown'
-                : 'View Detailed Event Price Breakdown'}
-            </span>
+            <Plus className="w-4 h-4" />
+            <span>Create New Package</span>
           </button>
-          <button
-            type="button"
-            onClick={() => setShowBuilder((prev) => !prev)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
-          >
-            <Layers className="w-4 h-4 text-amber-600" />
-            <span>
-              {showBuilder
-                ? 'Hide Custom Day & Mixed-Tier Builder'
-                : 'Open Custom Day & Mixed-Tier Builder'}
-            </span>
-          </button>
-          {isAdmin && (
-            <button
-              onClick={handleOpenCreate}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create New Package</span>
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* CUSTOMER & ADMIN PRICE BREAKDOWN VIEW MANAGEMENT PANEL */}

@@ -63,15 +63,132 @@ export default function RoyalChatbotWidget() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
+  // Y-Axis Only Movable Position (strictly locked to the right side)
+  const [bottomY, setBottomY] = useState<number>(16);
+  const [viewportHeight, setViewportHeight] = useState<number>(800);
+  const dragStateRef = useRef<{
+    active: boolean;
+    moved: boolean;
+    startY: number;
+    startBottom: number;
+  }>({
+    active: false,
+    moved: false,
+    startY: 0,
+    startBottom: 16,
+  });
+
+  const clampBottomToViewport = useCallback((rawBottom: number) => {
+    if (typeof window === "undefined") return 16;
+    const minBottom = 12;
+    const maxBottom = Math.max(minBottom, window.innerHeight - 84);
+    return clampVal(rawBottom, minBottom, maxBottom);
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
+    setViewportHeight(window.innerHeight);
     try {
       window.localStorage.removeItem("royal_chatbot_floating_pos_v1");
       window.localStorage.removeItem(CHATBOT_POS_STORAGE_KEY);
+      const savedY = window.localStorage.getItem("royal_chatbot_y_pos_v3");
+      if (savedY) {
+        const parsed = Number(savedY);
+        if (!Number.isNaN(parsed)) {
+          setBottomY(clampBottomToViewport(parsed));
+        }
+      }
     } catch {
       // Ignore storage cleanup error
     }
-  }, []);
+
+    const handleResize = () => {
+      setViewportHeight(window.innerHeight);
+      setBottomY((prev) => clampBottomToViewport(prev));
+    };
+    const handleRailSync = (e: Event) => {
+      const ce = e as CustomEvent<{ source: string; bottomY: number }>;
+      if (ce.detail?.source === "whatsapp" && typeof ce.detail.bottomY === "number") {
+        const syncedBottom = clampBottomToViewport(Math.max(16, ce.detail.bottomY - 60));
+        setBottomY(syncedBottom);
+        try {
+          window.localStorage.setItem("royal_chatbot_y_pos_v3", String(syncedBottom));
+        } catch {
+          // Ignore
+        }
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("royalstudio:floating-rail-sync", handleRailSync);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("royalstudio:floating-rail-sync", handleRailSync);
+    };
+  }, [clampBottomToViewport]);
+
+  const handleResetY = () => {
+    setBottomY(16);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem("royal_chatbot_y_pos_v3");
+        window.dispatchEvent(
+          new CustomEvent("royalstudio:floating-rail-sync", {
+            detail: { source: "chatbot", bottomY: 16 },
+          })
+        );
+      } catch {
+        // Ignore
+      }
+    }
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragStateRef.current = {
+      active: true,
+      moved: false,
+      startY: e.clientY,
+      startBottom: bottomY,
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    if (!dragStateRef.current.active) return;
+    const dy = e.clientY - dragStateRef.current.startY;
+    if (Math.abs(dy) > 4) {
+      dragStateRef.current.moved = true;
+    }
+    if (dragStateRef.current.moved) {
+      const nextBottom = clampBottomToViewport(dragStateRef.current.startBottom - dy);
+      setBottomY(nextBottom);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("royalstudio:floating-rail-sync", {
+            detail: { source: "chatbot", bottomY: nextBottom },
+          })
+        );
+      }
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLElement>) => {
+    if (!dragStateRef.current.active) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+    const wasMoved = dragStateRef.current.moved;
+    dragStateRef.current.active = false;
+    if (wasMoved && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem("royal_chatbot_y_pos_v3", String(bottomY));
+      } catch {
+        // Ignore
+      }
+    }
+  };
 
   // Inquiry draft state for the 4-step decision tree + auto-calculator
   const [draft, setDraft] = useState<ChatbotInquiryDraft>(() => ({
@@ -576,9 +693,11 @@ export default function RoyalChatbotWidget() {
     return null;
   }
 
+  const panelBottom = clampVal(bottomY + 58, 16, Math.max(16, viewportHeight - 540));
+
   return (
     <>
-      {/* Strictly Corner-Anchored Chat Window Panel (Bottom-Right) */}
+      {/* Right-Edge Anchored Chat Window Panel */}
       <AnimatePresence>
         {isOpen && (
           <motion.div
@@ -586,10 +705,21 @@ export default function RoyalChatbotWidget() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 14, scale: 0.96 }}
             transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="no-print fixed bottom-20 right-5 z-50 flex w-[calc(100vw-2.5rem)] sm:w-[400px] max-h-[min(620px,calc(100vh-7rem))] flex-col rounded-2xl border border-[#C9A76A]/35 bg-[#111113]/95 backdrop-blur-xl text-[#F5F2EB] shadow-[0_24px_70px_rgba(0,0,0,0.75)] overflow-hidden select-text"
+            style={{ bottom: `${panelBottom}px` }}
+            className="no-print fixed right-4 sm:right-5 z-50 flex w-[calc(100vw-2rem)] sm:w-[400px] max-h-[min(600px,calc(100vh-6rem))] flex-col rounded-2xl border border-[#C9A76A]/35 bg-[#111113]/95 backdrop-blur-xl text-[#F5F2EB] shadow-[0_24px_70px_rgba(0,0,0,0.75)] overflow-hidden select-text"
           >
-            {/* Luxury Charcoal & Brass Header */}
-            <div className="px-3.5 py-3 bg-gradient-to-r from-[#16161A] via-[#1C1A17] to-[#16161A] border-b border-[#C9A76A]/25 flex items-center justify-between gap-2 shrink-0 select-none">
+            {/* Luxury Charcoal & Brass Header (Y-Axis Drag Handle) */}
+            <div
+              onPointerDown={(e) => {
+                if ((e.target as HTMLElement).closest("button")) return;
+                handlePointerDown(e);
+              }}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              style={{ touchAction: "none" }}
+              className="px-3.5 py-3 bg-gradient-to-r from-[#16161A] via-[#1C1A17] to-[#16161A] border-b border-[#C9A76A]/25 flex items-center justify-between gap-2 shrink-0 cursor-ns-resize select-none"
+            >
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#C9A76A]/15 border border-[#C9A76A]/40 text-[#C9A76A]">
                   <Bot className="w-4 h-4" />
@@ -1210,20 +1340,33 @@ export default function RoyalChatbotWidget() {
         )}
       </AnimatePresence>
 
-      {/* Strictly Corner-Aligned Bottom-Right Floating Chat Trigger Button */}
-      <div className="no-print fixed bottom-5 right-5 z-50 select-none">
+      {/* Right-Edge Anchored, Y-Axis Only Movable Floating Chat Trigger Button */}
+      <div
+        style={{
+          bottom: `${bottomY}px`,
+          touchAction: "none",
+        }}
+        className="no-print fixed right-4 sm:right-5 z-50 select-none"
+      >
         <button
           type="button"
-          onClick={() => setIsOpen((prev) => !prev)}
-          title="Royal Assistant AI — Plan Wedding & Quote"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onClick={() => {
+            if (dragStateRef.current.moved) return;
+            setIsOpen((prev) => !prev);
+          }}
+          title="Royal Assistant AI — Drag up/down along right edge"
           aria-label={isOpen ? "Close Royal Assistant Chatbot" : "Open Royal Assistant Chatbot"}
-          className="group relative flex h-12 w-12 sm:h-12 sm:w-auto items-center justify-center sm:gap-2.5 rounded-full border border-[#C9A76A]/55 bg-[#111113]/95 backdrop-blur-xl p-0 sm:px-4 text-left text-[#F5F2EB] shadow-[0_12px_32px_rgba(0,0,0,0.65)] hover:border-[#C9A76A] hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+          className="group relative flex h-12 w-12 sm:h-11 sm:w-auto items-center justify-center sm:gap-2.5 rounded-full border border-[#C9A76A]/55 bg-[#111113]/95 backdrop-blur-xl p-0 sm:px-3.5 text-left text-[#F5F2EB] shadow-[0_12px_32px_rgba(0,0,0,0.65)] hover:border-[#C9A76A] transition-colors duration-200 cursor-ns-resize"
         >
-          <div className="relative flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#C9A76A] to-[#9E7B3E] text-[#111113] shadow-inner shrink-0">
+          <div className="relative flex h-8 w-8 sm:h-7 sm:w-7 items-center justify-center rounded-full bg-gradient-to-br from-[#C9A76A] to-[#9E7B3E] text-[#111113] shadow-inner shrink-0">
             {isOpen ? (
-              <X className="w-4 h-4" />
+              <X className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
             ) : (
-              <MessageSquare className="w-4 h-4" />
+              <MessageSquare className="w-4 h-4 sm:w-3.5 sm:h-3.5" />
             )}
             <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />

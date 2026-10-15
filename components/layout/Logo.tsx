@@ -27,18 +27,18 @@ export default function Logo({ variant = "nav", className }: LogoProps) {
     <Link
       href="/"
       className={cn(
-        "group inline-flex items-center gap-2.5 shrink-0 transition-transform duration-300 hover:scale-[1.01]",
+        "group inline-flex items-center shrink-0 transition-transform duration-300 hover:scale-[1.01]",
         className
       )}
     >
-      <span className="inline-flex items-center justify-center overflow-hidden rounded-lg bg-[#111111] px-2 py-1 border border-[#c9a76a]/30 shadow-xs">
+      <span className="inline-flex items-center justify-center bg-transparent p-0">
         {isDataUri ? (
           <img
             src={logoSrc}
             alt={`${studioName} — ${tagline}`}
             width={width}
             height={height}
-            className={imgClass}
+            className={cn(imgClass, "drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]")}
           />
         ) : (
           <Image
@@ -46,7 +46,7 @@ export default function Logo({ variant = "nav", className }: LogoProps) {
             alt={`${studioName} — ${tagline}`}
             width={width}
             height={height}
-            className={imgClass}
+            className={cn(imgClass, "drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]")}
             priority={variant === "nav"}
             referrerPolicy="no-referrer"
           />

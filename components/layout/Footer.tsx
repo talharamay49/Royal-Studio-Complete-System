@@ -188,15 +188,22 @@ export default function Footer() {
             &copy; {new Date().getFullYear()} {studioName}. Founded by{" "}
             {siteConfig.founders.join(" & ")}. All rights reserved.
           </p>
-          <div className="flex items-center gap-4 text-xs text-text-muted">
+          <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-text-muted">
             <span>{footerSubtext}</span>
+            <span>·</span>
+            <Link
+              href="/client-portal"
+              className="font-medium text-accent hover:underline"
+            >
+              Client Portal
+            </Link>
             <span>·</span>
             <Link
               href="/admin"
               className="inline-flex items-center gap-1 font-medium text-accent hover:underline"
             >
               <ShieldCheck size={14} />
-              Studio Portal
+              Studio ERP
             </Link>
           </div>
         </div>

@@ -152,19 +152,17 @@ export const AdminCopilotWidget: React.FC<AdminCopilotWidgetProps> = ({
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const clampPositionToViewport = useCallback(
-    (rawRight: number, rawBottom: number) => {
+    (_rawRight: number, rawBottom: number) => {
       if (typeof window === "undefined") return { right: 16, bottom: 16 };
-      const barW = microBarRef.current?.offsetWidth || 320;
       const barH = microBarRef.current?.offsetHeight || 52;
-      const margin = 12;
+      const margin = 16;
       const topSafeMargin = 72;
-      const maxRight = Math.max(margin, window.innerWidth - barW - margin);
       const maxBottom = Math.max(
         margin,
         window.innerHeight - barH - topSafeMargin
       );
       return {
-        right: clampVal(rawRight, margin, maxRight),
+        right: 16,
         bottom: clampVal(rawBottom, margin, maxBottom),
       };
     },
@@ -247,14 +245,13 @@ export const AdminCopilotWidget: React.FC<AdminCopilotWidgetProps> = ({
 
   const handlePointerMove = (e: React.PointerEvent<HTMLElement>) => {
     if (!dragStateRef.current.active) return;
-    const dx = e.clientX - dragStateRef.current.startX;
     const dy = e.clientY - dragStateRef.current.startY;
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+    if (Math.abs(dy) > 4) {
       dragStateRef.current.moved = true;
     }
     if (dragStateRef.current.moved) {
       const next = clampPositionToViewport(
-        dragStateRef.current.startRight - dx,
+        16,
         dragStateRef.current.startBottom - dy
       );
       setPos(next);

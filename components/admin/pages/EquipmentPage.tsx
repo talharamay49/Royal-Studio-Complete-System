@@ -173,22 +173,6 @@ export const EquipmentPage: React.FC<EquipmentPageProps> = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Equipment Locker & Maintenance</h2>
-          <p className="text-xs text-gray-500">
-            High-end cameras, GM lenses, Mavic drones, studio strobes, and automated usage calibration logs.
-          </p>
-        </div>
-        <button
-          onClick={handleOpenCreate}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Gear Item</span>
-        </button>
-      </div>
-
       {/* Filter / Search Bar */}
       <div className="p-4 bg-white rounded-xl border border-gray-100 shadow-xs flex flex-wrap gap-3 items-center justify-between">
         <div className="relative w-full sm:w-72">
@@ -202,20 +186,30 @@ export const EquipmentPage: React.FC<EquipmentPageProps> = () => {
           />
         </div>
 
-        <select
-          value={categoryFilter}
-          onChange={e => setCategoryFilter(e.target.value)}
-          className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700"
-        >
-          <option value="ALL">All Categories</option>
-          <option value="Camera">Cameras</option>
-          <option value="Lens">Lenses</option>
-          <option value="Drone">Drones</option>
-          <option value="Light">Lights & Strobes</option>
-          <option value="Audio">Audio & Wireless</option>
-          <option value="Gimbal">Gimbals</option>
-          <option value="Other">Other</option>
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={categoryFilter}
+            onChange={e => setCategoryFilter(e.target.value)}
+            className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs font-medium text-gray-700"
+          >
+            <option value="ALL">All Categories</option>
+            <option value="Camera">Cameras</option>
+            <option value="Lens">Lenses</option>
+            <option value="Drone">Drones</option>
+            <option value="Light">Lights & Strobes</option>
+            <option value="Audio">Audio & Wireless</option>
+            <option value="Gimbal">Gimbals</option>
+            <option value="Other">Other</option>
+          </select>
+
+          <button
+            onClick={handleOpenCreate}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Gear Item</span>
+          </button>
+        </div>
       </div>
 
       {/* Equipment Grid */}

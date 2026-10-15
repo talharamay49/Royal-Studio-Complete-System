@@ -12,6 +12,7 @@ import { useStudioData } from '../context/StudioDataContext';
 import { useAuth } from '../context/AuthContext';
 import { formatPKR, formatDate } from '../utils/calculations';
 import { Modal } from '../components/common/Modal';
+import { PayoutBatchPage } from './PayoutBatchPage';
 import { TeamPaymentType, PaymentMethod } from '../types';
 
 interface TeamPaymentsPageProps {
@@ -22,6 +23,7 @@ export const TeamPaymentsPage: React.FC<TeamPaymentsPageProps> = ({ navigate }) 
   const { teamPayments, teamMembers, events, createTeamPayment, addToast } = useStudioData();
   const { isAdmin } = useAuth();
 
+  const [activeTab, setActiveTab] = useState<'LEDGER' | 'BATCH'>('LEDGER');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [memberId, setMemberId] = useState('');
   const [eventId, setEventId] = useState('');
@@ -55,34 +57,49 @@ export const TeamPaymentsPage: React.FC<TeamPaymentsPageProps> = ({ navigate }) 
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Crew Payroll & Remuneration Ledger</h2>
-          <p className="text-xs text-gray-500">
-            Event compensations, monthly editor salaries, shoot advances, and reimbursements.
-          </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex items-center p-1 bg-white border border-gray-200 rounded-xl shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setActiveTab('LEDGER')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              activeTab === 'LEDGER'
+                ? 'bg-slate-900 text-white'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <CreditCard className="w-3.5 h-3.5" />
+            <span>Crew Payment Ledger</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('BATCH')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+              activeTab === 'BATCH'
+                ? 'bg-slate-900 text-white'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5 text-amber-500" />
+            <span>Batch Payout</span>
+          </button>
         </div>
-        <div className="flex items-center gap-2">
-          {isAdmin && (
-            <>
-              <button
-                onClick={() => navigate('/payout-batch')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-gray-300 text-gray-800 rounded-xl text-xs font-semibold hover:bg-gray-50 transition-colors shadow-xs"
-              >
-                <Layers className="w-4 h-4 text-amber-600" />
-                <span>Process Batch Payout</span>
-              </button>
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-colors shadow-xs"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Record Crew Payment</span>
-              </button>
-            </>
-          )}
-        </div>
+
+        {isAdmin && activeTab === 'LEDGER' && (
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-colors shadow-xs cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Record Crew Payment</span>
+          </button>
+        )}
       </div>
+
+      {activeTab === 'BATCH' ? (
+        <PayoutBatchPage navigate={navigate} />
+      ) : (
+        <>
 
       {/* Summary KPI */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -269,6 +286,8 @@ export const TeamPaymentsPage: React.FC<TeamPaymentsPageProps> = ({ navigate }) 
           </div>
         </form>
       </Modal>
+        </>
+      )}
     </div>
   );
 };

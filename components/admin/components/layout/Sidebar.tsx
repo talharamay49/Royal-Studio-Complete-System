@@ -44,7 +44,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isCollapsed,
   setIsCollapsed
 }) => {
-  const { user, isAdmin, isClient, logout } = useAuth();
+  const { user, isAdmin, logout } = useAuth();
   const { profile } = useStudioData();
   const { resolvedMode, toggleThemeMode, themeConfig } = useStudioTheme();
 
@@ -81,14 +81,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { label: 'My Profile', path: '/profile', icon: Settings }
   ];
 
-  const clientNavItems = [
-    { label: 'My Events & Schedule', path: '/events', icon: CalendarDays },
-    { label: 'Payments & Invoices', path: '/invoices', icon: CreditCard },
-    { label: 'Photo Proofing Gallery', path: '/client-gallery', icon: Camera },
-    { label: 'My Client Profile', path: '/profile', icon: UserIcon }
-  ];
-
-  const navItems = isAdmin ? adminNavItems : isClient ? clientNavItems : staffNavItems;
+  const navItems = isAdmin ? adminNavItems : staffNavItems;
 
   return (
     <aside
@@ -112,11 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <img
               src={logoSrc}
               alt={studioName}
-              className={`w-10 h-10 rounded-xl object-contain p-1 border shrink-0 ${
-                isEditorialLight
-                  ? 'bg-background border-border'
-                  : 'bg-[#1a1a1a] border-white/10'
-              }`}
+              className="h-9 w-auto max-w-[110px] object-contain bg-transparent p-0 shrink-0 drop-shadow-[0_1px_2px_rgba(0,0,0,0.4)]"
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).src = '/RoyalLogo.png';
               }}
@@ -162,11 +151,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           }`}
         >
           {!isCollapsed &&
-            (isAdmin
-              ? 'Studio Management'
-              : isClient
-              ? 'Client Portal'
-              : 'Staff Workspace')}
+            (isAdmin ? 'Studio Management' : 'Staff Workspace')}
         </div>
         {navItems.map((item) => {
           const isActive =

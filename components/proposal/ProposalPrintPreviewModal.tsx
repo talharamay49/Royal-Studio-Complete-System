@@ -51,6 +51,8 @@ interface ProposalPrintPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   onDownloadPDF: () => void;
+  onTriggerPrint?: () => void;
+  isOfflineMode?: boolean;
   event: Event;
   client: Client;
   quotation: Quotation;
@@ -79,6 +81,8 @@ export default function ProposalPrintPreviewModal({
   isOpen,
   onClose,
   onDownloadPDF,
+  onTriggerPrint,
+  isOfflineMode = false,
   event,
   client,
   quotation,
@@ -100,6 +104,7 @@ export default function ProposalPrintPreviewModal({
 }: ProposalPrintPreviewModalProps) {
   const [showUnselectedAddons, setShowUnselectedAddons] = useState(false);
   const [printQrDataUrl, setPrintQrDataUrl] = useState<string>("");
+  const [logoLoadFailed, setLogoLoadFailed] = useState(false);
 
   useEffect(() => {
     if (!isOpen || typeof window === "undefined") return;
@@ -124,6 +129,10 @@ export default function ProposalPrintPreviewModal({
   );
 
   const handleTriggerPrint = () => {
+    if (onTriggerPrint) {
+      onTriggerPrint();
+      return;
+    }
     if (typeof window !== "undefined") {
       window.print();
     }
@@ -131,52 +140,31 @@ export default function ProposalPrintPreviewModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm overflow-y-auto print:static print:bg-white print:overflow-visible"
+      className="proposal-print-preview-backdrop fixed inset-0 z-50 bg-black/85 backdrop-blur-sm overflow-y-auto print:static print:bg-white print:overflow-visible"
       role="dialog"
       aria-modal="true"
       aria-label="A4 Print Preview Modal"
     >
-      {/* Print-specific global rule so only the A4 sheet prints cleanly */}
-      <style>{`
-        @media print {
-          @page {
-            size: A4 portrait;
-            margin: 10mm;
-          }
-          body * {
-            visibility: hidden;
-          }
-          #proposal-a4-print-root,
-          #proposal-a4-print-root * {
-            visibility: visible;
-          }
-          #proposal-a4-print-root {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            box-shadow: none !important;
-            background: #ffffff !important;
-            color: #0f172a !important;
-          }
-        }
-      `}</style>
-
       {/* Sticky Top Control Bar (Hidden when printing) */}
-      <div className="sticky top-0 z-20 bg-[#121216]/95 border-b border-white/15 px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 print:hidden">
+      <div className="no-print sticky top-0 z-20 bg-[#121216]/95 border-b border-white/15 px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-[#D4AF37]/20 border border-[#D4AF37]/40 flex items-center justify-center text-[#D4AF37]">
             <FileText className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-xs font-bold text-[#F5F2EB] flex items-center gap-2">
+            <div className="text-xs font-bold text-[#F5F2EB] flex flex-wrap items-center gap-2">
               <span>A4 Print Preview — Official Client Record</span>
               <span className="px-2 py-0.5 rounded bg-white/10 font-mono text-[10px] text-[#D4AF37]">
                 {quotation.quotationNumber}
               </span>
+              {isOfflineMode && (
+                <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-[10px] font-semibold text-amber-300">
+                  Offline Cached Data Ready
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-[#A39E93]">
-              Formatted for standard A4 paper (210mm × 297mm) · Includes day-by-day quote, add-on schedule &amp; payment milestones
+              Formatted for multi-page A4 paper (210mm × 297mm) · Paginates cleanly across tables &amp; milestone cards
             </p>
           </div>
         </div>
@@ -198,7 +186,7 @@ export default function ProposalPrintPreviewModal({
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#D4AF37] hover:opacity-90 text-[#111111] text-xs font-bold transition-opacity cursor-pointer shadow-sm"
           >
             <Printer className="w-3.5 h-3.5" />
-            <span>Print A4 Client Record</span>
+            <span>{isOfflineMode ? "Print Cached A4 Record" : "Print A4 Client Record"}</span>
           </button>
 
           <button
@@ -222,19 +210,26 @@ export default function ProposalPrintPreviewModal({
       </div>
 
       {/* Main A4 Sheet Container */}
-      <div className="py-8 px-3 sm:px-6 print:p-0">
+      <div className="proposal-print-preview-wrapper py-8 px-3 sm:px-6 print:p-0">
         <div
           id="proposal-a4-print-root"
-          className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white text-slate-900 rounded-sm shadow-2xl border border-slate-200 p-6 sm:p-10 md:p-12 space-y-6 print:border-0 print:shadow-none print:p-0"
+          className="proposal-a4-sheet w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white text-slate-900 rounded-sm shadow-2xl border border-slate-200 p-6 sm:p-10 md:p-12 space-y-6 print:border-0 print:shadow-none print:p-0"
         >
           {/* 1. Studio Letterhead Header */}
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b-2 border-slate-900 pb-5">
+          <div className="proposal-letterhead flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b-2 border-slate-900 pb-5 break-inside-avoid">
             <div className="flex items-start gap-3.5">
-              <img
-                src={profile.logo || "/RoyalLogo.png"}
-                alt={profile.studioName || "Royal Studio"}
-                className="w-14 h-14 object-contain rounded-lg border border-slate-200 p-1 bg-slate-950"
-              />
+              {!logoLoadFailed ? (
+                <img
+                  src={profile.logo || "/RoyalLogo.png"}
+                  alt={profile.studioName || "Royal Studio"}
+                  onError={() => setLogoLoadFailed(true)}
+                  className="w-14 h-14 object-contain rounded-lg border border-slate-200 p-1 bg-slate-950 shrink-0"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-lg border border-slate-300 bg-slate-900 text-amber-400 flex items-center justify-center font-serif font-bold text-lg shrink-0">
+                  RS
+                </div>
+              )}
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.25em] text-amber-700">
                   WE CAPTURE YOUR MEMORIES
@@ -425,8 +420,8 @@ export default function ProposalPrintPreviewModal({
           </div>
 
           {/* 3. Day-by-Day Quote & Production Crew Breakdown */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-300 pb-1.5">
+          <div className="proposal-print-section space-y-3">
+            <div className="proposal-section-header flex items-center justify-between border-b border-slate-300 pb-1.5">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-amber-700 block">
                   Section 01
@@ -450,7 +445,7 @@ export default function ProposalPrintPreviewModal({
                   return (
                     <div
                       key={day.id}
-                      className="border border-slate-200 rounded-lg overflow-hidden break-inside-avoid"
+                      className="proposal-day-card border border-slate-200 rounded-lg overflow-hidden break-inside-avoid"
                     >
                       <div className="bg-slate-100 px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200">
                         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -479,7 +474,7 @@ export default function ProposalPrintPreviewModal({
                       </div>
 
                       {structuredServices.length > 0 ? (
-                        <table className="w-full text-left text-[11px]">
+                        <table className="proposal-print-table w-full text-left text-[11px]">
                           <thead className="bg-slate-50 text-slate-500 uppercase text-[9px] border-b border-slate-200">
                             <tr>
                               <th className="py-1.5 px-3">Role</th>
@@ -496,7 +491,7 @@ export default function ProposalPrintPreviewModal({
                                 srv.cameraCategory
                               );
                               return (
-                                <tr key={srv.id}>
+                                <tr key={srv.id} className="break-inside-avoid">
                                   <td className="py-1.5 px-3 font-semibold text-slate-900">
                                     {srv.serviceType}
                                   </td>
@@ -541,7 +536,7 @@ export default function ProposalPrintPreviewModal({
                 })}
               </div>
             ) : (
-              <div className="border border-slate-200 rounded-lg p-3.5 flex items-center justify-between text-xs">
+              <div className="proposal-day-card border border-slate-200 rounded-lg p-3.5 flex items-center justify-between text-xs break-inside-avoid">
                 <div>
                   <div className="font-bold text-slate-900">
                     {event.title} — Complete Studio Production Coverage
@@ -554,8 +549,8 @@ export default function ProposalPrintPreviewModal({
           </div>
 
           {/* 4. Add-On Deliverables List */}
-          <div className="space-y-2.5 break-inside-avoid">
-            <div className="flex items-center justify-between border-b border-slate-300 pb-1.5">
+          <div className="proposal-print-section space-y-2.5">
+            <div className="proposal-section-header flex items-center justify-between border-b border-slate-300 pb-1.5">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-amber-700 block">
                   Section 02
@@ -570,7 +565,7 @@ export default function ProposalPrintPreviewModal({
             </div>
 
             {selectedAddonItems.length > 0 ? (
-              <table className="w-full text-left text-[11px] border border-slate-200 rounded-lg overflow-hidden">
+              <table className="proposal-print-table w-full text-left text-[11px] border border-slate-200 rounded-lg overflow-hidden">
                 <thead className="bg-slate-100 text-slate-600 uppercase text-[9px] border-b border-slate-200">
                   <tr>
                     <th className="py-1.5 px-3">Deliverable / Add-On Item</th>
@@ -581,7 +576,7 @@ export default function ProposalPrintPreviewModal({
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {selectedAddonItems.map((addon) => (
-                    <tr key={addon.id}>
+                    <tr key={addon.id} className="break-inside-avoid">
                       <td className="py-1.5 px-3 font-semibold text-slate-900">
                         {addon.shortLabel || addon.label}
                       </td>
@@ -601,13 +596,13 @@ export default function ProposalPrintPreviewModal({
                 </tbody>
               </table>
             ) : (
-              <div className="border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs text-slate-500">
+              <div className="border border-slate-200 rounded-lg px-3.5 py-2.5 text-xs text-slate-500 break-inside-avoid">
                 No optional add-on deliverables selected. Standard package coverage applies.
               </div>
             )}
 
             {showUnselectedAddons && unselectedAddonItems.length > 0 && (
-              <div className="pt-2">
+              <div className="pt-2 break-inside-avoid">
                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
                   Optional Available Upgrades (Not Currently Selected)
                 </div>
@@ -615,7 +610,7 @@ export default function ProposalPrintPreviewModal({
                   {unselectedAddonItems.map((item) => (
                     <div
                       key={item.id}
-                      className="border border-dashed border-slate-300 rounded px-2.5 py-1.5 flex items-center justify-between text-slate-600"
+                      className="proposal-addon-card border border-dashed border-slate-300 rounded px-2.5 py-1.5 flex items-center justify-between text-slate-600 break-inside-avoid"
                     >
                       <span className="truncate pr-2">{item.shortLabel}</span>
                       <span className="font-mono font-semibold shrink-0">
@@ -629,10 +624,10 @@ export default function ProposalPrintPreviewModal({
           </div>
 
           {/* 5. Payment Milestone Schedule & Financial Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-5 pt-1 break-inside-avoid">
+          <div className="proposal-print-grid-stack grid grid-cols-1 md:grid-cols-12 gap-5 pt-1">
             {/* Left 7 Cols: Payment Schedule & Bank Info */}
-            <div className="md:col-span-7 space-y-3">
-              <div className="border-b border-slate-300 pb-1.5">
+            <div className="proposal-print-section md:col-span-7 space-y-3">
+              <div className="proposal-section-header border-b border-slate-300 pb-1.5">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-amber-700 block">
                   Section 03
                 </span>
@@ -641,7 +636,7 @@ export default function ProposalPrintPreviewModal({
                 </h2>
               </div>
 
-              <table className="w-full text-left text-[11px] border border-slate-200 rounded-lg overflow-hidden">
+              <table className="proposal-print-table w-full text-left text-[11px] border border-slate-200 rounded-lg overflow-hidden">
                 <thead className="bg-slate-100 text-slate-600 uppercase text-[9px] border-b border-slate-200">
                   <tr>
                     <th className="py-1.5 px-3">Installment Stage</th>
@@ -655,7 +650,7 @@ export default function ProposalPrintPreviewModal({
                       m.paymentStatus ||
                       (m.isPaid ? "FULL" : "UNPAID");
                     return (
-                      <tr key={idx}>
+                      <tr key={idx} className="proposal-milestone-card break-inside-avoid">
                         <td className="py-2 px-3">
                           <div className="font-bold text-slate-900">{m.stage}</div>
                           <div className="text-[10px] text-slate-500">{m.description}</div>
@@ -687,7 +682,7 @@ export default function ProposalPrintPreviewModal({
               </table>
 
               {profile.bankName && (
-                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] space-y-0.5">
+                <div className="proposal-payment-channels bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] space-y-0.5 break-inside-avoid">
                   <div className="font-bold text-slate-900 flex items-center gap-1.5">
                     <CreditCard className="w-3.5 h-3.5 text-amber-700" />
                     <span>Official Studio Bank Transfer Coordinates</span>
@@ -705,9 +700,9 @@ export default function ProposalPrintPreviewModal({
             </div>
 
             {/* Right 5 Cols: Grand Total Summary Box */}
-            <div className="md:col-span-5 flex flex-col justify-between border border-slate-300 rounded-lg p-4 bg-slate-50/70 space-y-4">
+            <div className="proposal-summary-box md:col-span-5 flex flex-col justify-between border border-slate-300 rounded-lg p-4 bg-slate-50/70 space-y-4 break-inside-avoid">
               <div className="space-y-2.5">
-                <div className="border-b border-slate-300 pb-1.5">
+                <div className="proposal-section-header border-b border-slate-300 pb-1.5">
                   <span className="text-[10px] font-bold uppercase tracking-widest text-amber-700 block">
                     Section 04
                   </span>
@@ -780,7 +775,7 @@ export default function ProposalPrintPreviewModal({
           </div>
 
           {/* 6. Signatures & Record Footer */}
-          <div className="pt-6 border-t-2 border-slate-900 grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs break-inside-avoid">
+          <div className="proposal-signature-block pt-6 border-t-2 border-slate-900 grid grid-cols-1 sm:grid-cols-2 gap-6 text-xs break-inside-avoid">
             <div className="space-y-1">
               <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
                 Client Acceptance &amp; Record Sign-Off

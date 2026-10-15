@@ -15,6 +15,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL(siteConfig.url),
   manifest: "/manifest.json",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -62,7 +66,7 @@ export default function RootLayout({
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{if('caches' in window){caches.keys().then(function(keys){var stale=keys.filter(function(k){return k!=='royal-studio-pwa-v5';});if(stale.length>0){Promise.all(stale.map(function(k){return caches.delete(k);})).then(function(){if('serviceWorker' in navigator){navigator.serviceWorker.getRegistrations().then(function(regs){Promise.all(regs.map(function(r){return r.unregister();})).then(function(){if(!sessionStorage.getItem('rs_sw_clean_v5')){sessionStorage.setItem('rs_sw_clean_v5','1');window.location.reload();}});});}});}});}catch(e){}})();`,
+            __html: `(function(){try{var allowed=['royal-studio-pwa-v6','royal-studio-offline-data-v2','royal-studio-offline-images-v2','royal-studio-static-assets-v2','workbox-precache-v2'];if('caches' in window){caches.keys().then(function(keys){var stale=keys.filter(function(k){return allowed.indexOf(k)===-1 && k.indexOf('workbox')===-1;});stale.forEach(function(k){caches.delete(k);});});}}catch(e){}})();`,
           }}
         />
         <script

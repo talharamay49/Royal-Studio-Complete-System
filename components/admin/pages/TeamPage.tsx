@@ -228,13 +228,7 @@ export const TeamPage: React.FC<TeamPageProps> = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Production Crew & Talents</h2>
-          <p className="text-xs text-gray-500">
-            Photographers, cinematographers, drone pilots, and editors with standard daily/event rates.
-          </p>
-        </div>
+      <div className="flex justify-end">
         <button
           onClick={handleOpenCreate}
           className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"

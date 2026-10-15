@@ -1,11 +1,18 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { usePathname } from "next/navigation";
-import { MessageCircle, X, ExternalLink, PhoneCall } from "lucide-react";
+import { MessageCircle, X, ExternalLink, PhoneCall, MoveVertical, RotateCcw } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { siteConfig } from "@/lib/data";
 import { usePublicStudioProfile, usePublicWebsiteCMS } from "@/components/shared/StudioProfileContext";
+
+const WA_Y_STORAGE_KEY = "royal_whatsapp_y_pos_v3";
+const DEFAULT_WA_BOTTOM = 76;
+
+function clamp(val: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, val));
+}
 
 function toWhatsAppUrl(phoneStr: string, studioName: string, lineLabel: string): string {
   const digits = phoneStr.replace(/[^0-9]/g, "");
@@ -15,25 +22,140 @@ function toWhatsAppUrl(phoneStr: string, studioName: string, lineLabel: string):
 }
 
 /**
- * Strictly corner-anchored Floating WhatsApp Button (Bottom-Left)
- * Aligned on the exact same horizontal baseline (bottom-5 / 20px) as the bottom-right Royal Chatbot button.
+ * Right-side aligned Floating WhatsApp Button (stacked above the Royal Chatbot button)
+ * Movable strictly along the Y-axis (vertical rail on the right edge only).
  */
 export default function FloatingWhatsAppButton() {
   const pathname = usePathname();
   const profile = usePublicStudioProfile();
   const { websiteCustomization } = usePublicWebsiteCMS();
   const [isOpen, setIsOpen] = useState(false);
+  const [bottomY, setBottomY] = useState<number>(DEFAULT_WA_BOTTOM);
+  const [viewportHeight, setViewportHeight] = useState<number>(800);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<{
+    active: boolean;
+    moved: boolean;
+    startY: number;
+    startBottom: number;
+  }>({
+    active: false,
+    moved: false,
+    startY: 0,
+    startBottom: DEFAULT_WA_BOTTOM,
+  });
+
+  const clampBottomToViewport = useCallback((rawBottom: number) => {
+    if (typeof window === "undefined") return DEFAULT_WA_BOTTOM;
+    const minBottom = 16;
+    const maxBottom = Math.max(minBottom, window.innerHeight - 84);
+    return clamp(rawBottom, minBottom, maxBottom);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    setViewportHeight(window.innerHeight);
     try {
       window.localStorage.removeItem("royal_whatsapp_floating_pos_v1");
       window.localStorage.removeItem("royal_whatsapp_floating_pos_v2");
+      const saved = window.localStorage.getItem(WA_Y_STORAGE_KEY);
+      if (saved) {
+        const parsed = Number(saved);
+        if (!Number.isNaN(parsed)) {
+          setBottomY(clampBottomToViewport(parsed));
+        }
+      }
     } catch {
-      // Ignore storage cleanup error
+      // Ignore storage error
     }
-  }, []);
+
+    const handleResize = () => {
+      setViewportHeight(window.innerHeight);
+      setBottomY((prev) => clampBottomToViewport(prev));
+    };
+    const handleRailSync = (e: Event) => {
+      const ce = e as CustomEvent<{ source: string; bottomY: number }>;
+      if (ce.detail?.source === "chatbot" && typeof ce.detail.bottomY === "number") {
+        const syncedBottom = clampBottomToViewport(ce.detail.bottomY + 60);
+        setBottomY(syncedBottom);
+        try {
+          window.localStorage.setItem(WA_Y_STORAGE_KEY, String(syncedBottom));
+        } catch {
+          // Ignore
+        }
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    window.addEventListener("royalstudio:floating-rail-sync", handleRailSync);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("royalstudio:floating-rail-sync", handleRailSync);
+    };
+  }, [clampBottomToViewport]);
+
+  const handleResetY = () => {
+    setBottomY(DEFAULT_WA_BOTTOM);
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(WA_Y_STORAGE_KEY);
+        window.dispatchEvent(
+          new CustomEvent("royalstudio:floating-rail-sync", {
+            detail: { source: "whatsapp", bottomY: DEFAULT_WA_BOTTOM },
+          })
+        );
+      } catch {
+        // Ignore
+      }
+    }
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragStateRef.current = {
+      active: true,
+      moved: false,
+      startY: e.clientY,
+      startBottom: bottomY,
+    };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragStateRef.current.active) return;
+    const dy = e.clientY - dragStateRef.current.startY;
+    if (Math.abs(dy) > 4) {
+      dragStateRef.current.moved = true;
+    }
+    if (dragStateRef.current.moved) {
+      const nextBottom = clampBottomToViewport(Math.max(76, dragStateRef.current.startBottom - dy));
+      setBottomY(nextBottom);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("royalstudio:floating-rail-sync", {
+            detail: { source: "whatsapp", bottomY: nextBottom },
+          })
+        );
+      }
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!dragStateRef.current.active) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+    const wasMoved = dragStateRef.current.moved;
+    dragStateRef.current.active = false;
+    if (wasMoved && typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(WA_Y_STORAGE_KEY, String(bottomY));
+      } catch {
+        // Ignore
+      }
+    }
+  };
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -90,6 +212,8 @@ export default function FloatingWhatsAppButton() {
       : []),
   ];
 
+  const popupBottom = clamp(bottomY + 56, 16, Math.max(16, viewportHeight - 220));
+
   return (
     <div ref={containerRef} className="no-print">
       <AnimatePresence>
@@ -99,7 +223,8 @@ export default function FloatingWhatsAppButton() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.18 }}
-            className="fixed bottom-20 left-5 z-50 w-72 sm:w-80 max-w-[calc(100vw-2.5rem)] overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-premium-lg select-none"
+            style={{ bottom: `${popupBottom}px` }}
+            className="fixed right-4 sm:right-5 z-50 w-72 sm:w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-premium-lg select-none"
           >
             <div className="flex items-center justify-between bg-[#25D366] px-4 py-3 text-white">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -109,18 +234,30 @@ export default function FloatingWhatsAppButton() {
                     {studioName} WhatsApp
                   </p>
                   <p className="truncate text-[10px] text-white/90">
-                    Instant Booking &amp; Availability Desk
+                    Drag up/down along edge · Tap to chat
                   </p>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                aria-label="Close WhatsApp menu"
-                className="rounded-full p-1 text-white/85 hover:bg-black/15 hover:text-white cursor-pointer"
-              >
-                <X size={14} />
-              </button>
+              <div className="flex items-center gap-1">
+                {bottomY !== DEFAULT_WA_BOTTOM && (
+                  <button
+                    type="button"
+                    onClick={handleResetY}
+                    title="Reset vertical position"
+                    className="rounded-full p-1 text-white/85 hover:bg-black/15 hover:text-white cursor-pointer"
+                  >
+                    <RotateCcw size={13} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  aria-label="Close WhatsApp menu"
+                  className="rounded-full p-1 text-white/85 hover:bg-black/15 hover:text-white cursor-pointer"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
 
             <div className="p-3 space-y-2 bg-surface">
@@ -157,15 +294,28 @@ export default function FloatingWhatsAppButton() {
         )}
       </AnimatePresence>
 
-      {/* Strictly Corner-Aligned Bottom-Left WhatsApp Button */}
-      <div className="fixed bottom-5 left-5 z-40 select-none">
+      {/* Right-Edge Anchored, Y-Axis Only Movable WhatsApp Button */}
+      <div
+        style={{
+          bottom: `${bottomY}px`,
+          touchAction: "none",
+        }}
+        className="fixed right-4 sm:right-5 z-40 select-none"
+      >
         <button
           type="button"
-          onClick={() => setIsOpen((prev) => !prev)}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onClick={() => {
+            if (dragStateRef.current.moved) return;
+            setIsOpen((prev) => !prev);
+          }}
           aria-expanded={isOpen}
-          aria-label={`Open ${studioName} WhatsApp options`}
-          title={`WhatsApp ${studioName}`}
-          className="group flex h-12 w-12 sm:h-12 sm:w-auto items-center justify-center sm:gap-2.5 rounded-full bg-[#25D366] hover:bg-[#20bd5a] text-white sm:px-4 shadow-[0_10px_28px_rgba(37,211,102,0.35)] border border-white/25 transition-all duration-200 hover:-translate-y-0.5 cursor-pointer"
+          aria-label={`Open ${studioName} WhatsApp options (Drag vertically to adjust height)`}
+          title={`WhatsApp ${studioName} — Drag up/down along right edge`}
+          className="group flex h-12 w-12 sm:h-11 sm:w-auto items-center justify-center sm:gap-2 rounded-full bg-[#25D366] hover:bg-[#20bd5a] text-white sm:px-3.5 shadow-[0_10px_28px_rgba(37,211,102,0.35)] border border-white/25 transition-colors duration-200 cursor-ns-resize"
         >
           <span className="relative flex h-5 w-5 items-center justify-center shrink-0">
             {isOpen ? (
@@ -175,8 +325,9 @@ export default function FloatingWhatsAppButton() {
             )}
           </span>
           <span className="hidden sm:inline-block text-xs font-bold tracking-wide whitespace-nowrap">
-            WhatsApp Us
+            WhatsApp
           </span>
+          <MoveVertical className="hidden sm:inline-block w-3 h-3 text-white/75 opacity-60 group-hover:opacity-100 transition-opacity" />
         </button>
       </div>
     </div>

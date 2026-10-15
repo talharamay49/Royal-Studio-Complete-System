@@ -74,6 +74,8 @@ export default function PublicPricingGrid() {
   const [errorMessage, setErrorMessage] = useState("");
   const [bookingReceipt, setBookingReceipt] = useState<{
     referenceId: string;
+    eventId?: string;
+    proposalUrl?: string;
     clientName: string;
     whatsappUrl: string;
   } | null>(null);
@@ -173,6 +175,7 @@ export default function PublicPricingGrid() {
           functions: selectedFunctions,
           addons: selectedAddonLabels,
           budget: `Estimated PKR ${estimatedTotal.toLocaleString()}`,
+          calculatedEstimate: estimatedTotal,
           message:
             notes.trim() ||
             `Selected ${selectedPackageName} package covering ${selectedFunctions.join(", ")}${
@@ -186,6 +189,8 @@ export default function PublicPricingGrid() {
       if (res.ok && data.success) {
         setBookingReceipt({
           referenceId: data.referenceId || "RS-INQ",
+          eventId: data.eventId,
+          proposalUrl: data.proposalUrl,
           clientName: data.clientName || brideName.trim(),
           whatsappUrl: data.whatsappUrl || "",
         });
@@ -587,6 +592,22 @@ export default function PublicPricingGrid() {
                       {profile?.city || "Burewala"} booking team has received your customized package selection.
                     </p>
                     <div className="flex flex-col gap-2 pt-1">
+                      {bookingReceipt.eventId && (
+                        <Button asChild variant="accent" size="sm" className="w-full">
+                          <Link href={`/client-portal?eventId=${encodeURIComponent(bookingReceipt.eventId)}`}>
+                            <Sparkles size={15} />
+                            <span>Open My Client Portal</span>
+                          </Link>
+                        </Button>
+                      )}
+                      {bookingReceipt.proposalUrl && (
+                        <Button asChild variant="outline" size="sm" className="w-full">
+                          <Link href={bookingReceipt.proposalUrl}>
+                            <span>Open Interactive Proposal &amp; Approval</span>
+                            <ArrowRight size={14} />
+                          </Link>
+                        </Button>
+                      )}
                       {bookingReceipt.whatsappUrl && (
                         <Button asChild variant="whatsapp" size="sm" className="w-full">
                           <a

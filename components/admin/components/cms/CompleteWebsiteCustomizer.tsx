@@ -1265,6 +1265,17 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                                     duration: videoPost.duration || '2:15',
                                     description: videoPost.caption,
                                     channelHandle: videoPost.accountHandle,
+                                    viewsCount: videoPost.viewsCount,
+                                    likesCount: videoPost.likesCount,
+                                    commentsCount: videoPost.commentsCount,
+                                    publishedAt: videoPost.postedAt,
+                                    thumbnailUrl:
+                                      videoPost.image ||
+                                      `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+                                    sourceSocialPostId: videoPost.id,
+                                    sourcePlatform: videoPost.platform,
+                                    category: videoPost.category,
+                                    permalink: videoPost.permalink,
                                     youtubeUrl: `https://www.youtube.com/watch?v=${ytId}`,
                                   },
                                   ...nextWeddingFilms,
@@ -1278,12 +1289,29 @@ export const CompleteWebsiteCustomizer: React.FC<CompleteWebsiteCustomizerProps>
                                 },
                               };
                               setDraft(nextDraft);
-                              await onSave(
-                                nextDraft,
-                                !isInWeddingFilms
-                                  ? `Linked "${videoPost.title}" to Wedding Films (/wedding-films)`
-                                  : `Removed "${videoPost.title}" from Wedding Films`
+                              const nextSocialPosts = socialPosts.map((p) =>
+                                (p.youtubeId || extractYoutubeId(p.permalink)) === ytId
+                                  ? { ...p, selectedForWeddingFilms: !isInWeddingFilms }
+                                  : p
                               );
+                              if (onSaveSocialState) {
+                                await onSaveSocialState(
+                                  connectedAccounts,
+                                  nextSocialPosts,
+                                  portfolioItems,
+                                  !isInWeddingFilms
+                                    ? `Linked "${videoPost.title}" (${videoPost.accountHandle}) to Wedding Films Section!`
+                                    : `Removed "${videoPost.title}" from Wedding Films Section`,
+                                  nextDraft
+                                );
+                              } else {
+                                await onSave(
+                                  nextDraft,
+                                  !isInWeddingFilms
+                                    ? `Linked "${videoPost.title}" to Wedding Films (/wedding-films)`
+                                    : `Removed "${videoPost.title}" from Wedding Films`
+                                );
+                              }
                             }}
                             className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
                               isInWeddingFilms

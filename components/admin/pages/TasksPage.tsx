@@ -133,18 +133,16 @@ export const TasksPage: React.FC<TasksPageProps> = ({ navigate }) => {
 
   return (
     <div className="space-y-6">
-      {/* Header & Progress Bar */}
+      {/* Controls & Progress Bar */}
       <div className="p-5 bg-surface rounded-2xl border border-border shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <h2 className="font-display text-xl sm:text-2xl font-bold text-primary">
-              {isAdmin ? 'Post-Production Kanban Pipeline' : 'My Assigned Work (Kanban Board)'}
-            </h2>
-            <p className="text-xs text-text-muted mt-0.5">
-              {isAdmin
-                ? 'Drag and drop tasks across stages or generate mobile QR assignment passes for the crew.'
-                : 'Drag and drop your assigned tasks across columns to update your work progress visually.'}
-            </p>
+          <div className="flex items-center gap-2 text-xs text-text-muted">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <span>
+              <strong className="text-primary">{completedCount}</strong> of{' '}
+              <strong className="text-primary">{filteredTasks.length}</strong> assigned tasks
+              completed ({progressPercent}%)
+            </span>
           </div>
           <div className="flex flex-wrap items-center gap-2.5">
             <div className="relative w-full sm:w-56">
@@ -187,21 +185,11 @@ export const TasksPage: React.FC<TasksPageProps> = ({ navigate }) => {
         </div>
 
         {/* Visual Progress Bar */}
-        <div className="pt-2 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-text-muted">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-            <span>
-              <strong className="text-primary">{completedCount}</strong> of{' '}
-              <strong className="text-primary">{filteredTasks.length}</strong> assigned tasks
-              completed ({progressPercent}%)
-            </span>
-          </div>
-          <div className="w-full sm:w-64 h-2 bg-background rounded-full overflow-hidden border border-border">
-            <div
-              className="h-full bg-emerald-500 transition-all duration-300"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
+        <div className="w-full h-2 bg-background rounded-full overflow-hidden border border-border">
+          <div
+            className="h-full bg-emerald-500 transition-all duration-300"
+            style={{ width: `${progressPercent}%` }}
+          />
         </div>
       </div>
 

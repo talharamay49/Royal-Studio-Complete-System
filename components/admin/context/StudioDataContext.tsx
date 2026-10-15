@@ -78,7 +78,7 @@ export interface StudioDataContextType {
   resetProfileToDefaults: () => Promise<void>;
   createClient: (clientData: Partial<Client>) => Promise<Client>;
   updateClient: (id: string, clientData: Partial<Client>) => Promise<void>;
-  deleteClient: (id: string) => Promise<void>;
+  deleteClient: (id: string, cascade?: boolean) => Promise<void>;
 
   createEvent: (eventData: any) => Promise<Event>;
   updateEvent: (id: string, eventData: Partial<Event>) => Promise<void>;
@@ -132,16 +132,9 @@ export interface StudioDataContextType {
 
   fetchAIBriefing: () => Promise<AIBriefing>;
 
-  // User Accounts, Staff & Client Login Management
+  // User Accounts & Staff Login Management
   createStaffUser: (userData: {
     teamMemberId: string;
-    email: string;
-    password: string;
-    name?: string;
-    phone?: string;
-  }) => Promise<User>;
-  createClientUser: (userData: {
-    clientId: string;
     email: string;
     password: string;
     name?: string;
@@ -292,6 +285,9 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
         body: JSON.stringify(clientData),
       });
       erpDatabase.updateRecord('clients', id, updated);
+      if (clientData.mediaDelivery) {
+        await erpDatabase.syncAllFromServer();
+      }
       addToast('Client updated successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -299,10 +295,12 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   };
 
-  const deleteClient = async (id: string) => {
+  const deleteClient = async (id: string, cascade?: boolean) => {
     try {
-      await apiRequest(`/api/clients/${id}`, { method: 'DELETE' });
+      const query = cascade ? '?cascade=true' : '';
+      await apiRequest(`/api/clients/${id}${query}`, { method: 'DELETE' });
       erpDatabase.deleteRecord('clients', id);
+      await erpDatabase.syncAllFromServer();
       addToast('Client deleted successfully.');
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -834,28 +832,6 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   };
 
-  const createClientUser = async (userData: {
-    clientId: string;
-    email: string;
-    password: string;
-    name?: string;
-    phone?: string;
-  }) => {
-    try {
-      const created = await apiRequest<User>('/api/users/client-login', {
-        method: 'POST',
-        body: JSON.stringify(userData),
-      });
-      erpDatabase.insertRecord('users', created, false);
-      await erpDatabase.syncAllFromServer();
-      addToast(`Client Portal login credentials created for ${created.name}`);
-      return created;
-    } catch (err: any) {
-      addToast(err.message || 'Failed to create client login', 'error');
-      throw err;
-    }
-  };
-
   const verifyPayment = async (
     paymentId: string,
     verificationStatus: 'Verified' | 'Rejected' | 'Pending Verification',
@@ -884,7 +860,7 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
       return {
         ...evt.proofingGallery,
         eventId,
-        isPinProtected: evt.proofingGallery.isPinProtected ?? Boolean(evt.proofingGallery.pinCode),
+        isPinProtected: false,
         minAlbumSelection: evt.proofingGallery.minAlbumSelection || evt.proofingGallery.targetCountMin || 100,
         maxAlbumSelection: evt.proofingGallery.maxAlbumSelection || evt.proofingGallery.targetCountMax || 150,
       };
@@ -892,7 +868,7 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     return {
       eventId,
       pinCode: '7860',
-      isPinProtected: true,
+      isPinProtected: false,
       isPublished: true,
       targetCountMin: 100,
       targetCountMax: 150,
@@ -904,7 +880,7 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
           id: `prf-${eventId}-1`,
           code: 'RS-101',
           title: 'Royal Stage Portrait',
-          url: '/portfolio/weddings/barat-stage-couple-portrait.jpg',
+          url: '/portfolio/barat-02-groom-turban-moment.jpg',
           dayLabel: 'Barat',
           category: 'Couple Portrait',
           isSelectedForAlbum: true,
@@ -914,7 +890,7 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
           id: `prf-${eventId}-2`,
           code: 'RS-102',
           title: 'Bridal Jewelry & Dupatta Detail',
-          url: '/portfolio/weddings/bridal-portrait-2.jpg',
+          url: '/portfolio/bridal-01-mirror-portrait.jpg',
           dayLabel: 'Barat',
           category: 'Bridal Portrait',
           isSelectedForAlbum: true,
@@ -923,10 +899,19 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
           id: `prf-${eventId}-3`,
           code: 'RS-103',
           title: 'Grand Floral Stage & Chandelier Decor',
-          url: '/portfolio/weddings/Stage-1.jpg',
+          url: '/portfolio/walima-02-hall-decor.jpg',
           dayLabel: 'Walima',
           category: 'Stage & Decor',
           isSelectedForAlbum: false,
+        },
+        {
+          id: `prf-${eventId}-4`,
+          code: 'RS-104',
+          title: 'Golden Hour Couple Portrait',
+          url: '/portfolio/couple-02-annum-ali-mehndi.jpg',
+          dayLabel: 'Mehndi',
+          category: 'Couple Portrait',
+          isSelectedForAlbum: true,
         },
       ],
     };
@@ -940,10 +925,20 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     const updated: EventProofingGallery = {
       ...current,
       ...patch,
+      isPinProtected: false,
     };
-    await updateEvent(eventId, { proofingGallery: updated });
-    addToast('Proofing gallery updated.');
-    return updated;
+    try {
+      const updatedEvt = await apiRequest<Event>(`/api/events/${eventId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ proofingGallery: updated }),
+      });
+      erpDatabase.updateRecord('events', eventId, updatedEvt);
+      addToast('Proofing gallery updated.');
+      return updated;
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update proofing gallery', 'error');
+      throw err;
+    }
   };
 
   const syncFieldCrewEventState = async (eventId: string, payload: any) => {
@@ -1073,7 +1068,6 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
         processPayoutBatch,
         fetchAIBriefing,
         createStaffUser,
-        createClientUser,
         updateUserStatus,
         resetUserPassword,
         deleteUser,

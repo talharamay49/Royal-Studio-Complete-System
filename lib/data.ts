@@ -288,7 +288,7 @@ export const featuredFilm = {
   description: "A cinematic look at the quiet moments before the celebration — the groom getting ready ahead of his Barat, captured with Royal Studio's signature editorial style.",
 };
 
-export const weddingFilms = [
+export const weddingFilms: WebsiteCustomizationConfig["films"]["weddingFilms"] = [
   { id: 1, title: "Barat Ceremony — Grand Vista", youtubeId: "QF3BmojTrKQ", location: "Wah Cantt", duration: "0:37" },
   { id: 2, title: "The Most Epic Mehndi Night", youtubeId: "UgG6hsk5AU8", location: "Punjab, Pakistan", duration: "2:26" },
   { id: 3, title: "Walima Day, Made Timeless", youtubeId: "IHpGkLHnmpU", location: "Punjab, Pakistan", duration: "0:56" },
@@ -698,7 +698,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     title: "Royal Crimson Bridal Editorial — Burewala",
     caption: "Timeless bridal elegance in hand-embroidered crimson zardozi. Shot on Sony A7R V 85mm f/1.4 GM ✨ #RoyalStudio #BridalEditorial #PakistaniBride",
     image: "/portfolio/bridal-01-mirror-portrait.jpg",
-    permalink: "https://www.instagram.com/royalstudio089/",
+    permalink: "https://www.instagram.com/royalstudio089/#post-101",
     postedAt: "2026-09-28",
     location: "Burewala",
     likesCount: 1842,
@@ -716,7 +716,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     title: "Annum & Ali — Mehndi Couple Portrait",
     caption: "Golden hour romance and vibrant colors. Every glance tells a story of forever. 🌿💍 #CoupleGoals #MehndiPortraits #RoyalStudio",
     image: "/portfolio/couple-02-annum-ali-mehndi.jpg",
-    permalink: "https://www.instagram.com/royalstudio089/",
+    permalink: "https://www.instagram.com/royalstudio089/#post-102",
     postedAt: "2026-09-25",
     location: "Lahore",
     likesCount: 2310,
@@ -734,7 +734,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     title: "Barat Groom Ready — Shehroz Bhatti (Instagram Reel)",
     caption: "Grand Barat preparation and royal turban moment captured in 4K vertical cinema ✨🔥 #BaratNight #GroomReel #LuxuryWeddingsPakistan",
     image: "/portfolio/barat-01-shehroz-groom-ready.jpg",
-    permalink: "https://www.instagram.com/royalstudio089/",
+    permalink: "https://www.instagram.com/royalstudio089/#post-103",
     postedAt: "2026-09-21",
     location: "Multan",
     likesCount: 3490,
@@ -754,7 +754,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     title: "Pastel Walima Couture Portrait",
     caption: "Soft ivory and champagne tones for an unforgettable Walima evening in Islamabad. #WalimaBride #FineArtWedding",
     image: "/portfolio/couple-03-walima-laugh.jpg",
-    permalink: "https://www.instagram.com/royalstudio089/",
+    permalink: "https://www.instagram.com/royalstudio089/#post-104",
     postedAt: "2026-09-18",
     location: "Islamabad",
     likesCount: 2105,
@@ -763,6 +763,150 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     mediaType: "image",
     category: "walima",
     aspect: "wide",
+    selectedForPortfolio: true,
+  },
+  {
+    id: "ig-post-105",
+    platform: "instagram",
+    accountHandle: "@royalstudio089",
+    title: "Royal Sapphire Lehenga — Courtyard Bridal Editorial",
+    caption: "Hand-crafted royal blue velvet lehenga styled in heritage courtyard architecture. Shot on Sony A7R V 50mm f/1.2 GM ✨ #PakistaniBridal #RoyalStudioBurewala",
+    image: "/portfolio/bridal-06-blue-lehnga.jpg",
+    permalink: "https://www.instagram.com/royalstudio089/#post-105",
+    postedAt: "2026-09-16",
+    location: "Burewala",
+    likesCount: 2640,
+    commentsCount: 134,
+    viewsCount: "27.3K",
+    mediaType: "image",
+    category: "bridal",
+    aspect: "tall",
+    selectedForPortfolio: true,
+  },
+  {
+    id: "ig-post-106",
+    platform: "instagram",
+    accountHandle: "@royalstudio089",
+    title: "Rubab Chikankari Luxury Lawn Campaign",
+    caption: "Editorial fashion lookbook featuring intricate pastel chikankari embroidery and soft golden-hour lighting. #FashionEditorial #RoyalStudio",
+    image: "/portfolio/fashion-02-rubab-chikankari.jpg",
+    permalink: "https://www.instagram.com/royalstudio089/#post-106",
+    postedAt: "2026-09-12",
+    location: "Lahore",
+    likesCount: 1920,
+    commentsCount: 76,
+    viewsCount: "16.9K",
+    mediaType: "image",
+    category: "fashion",
+    aspect: "tall",
+    selectedForPortfolio: false,
+  },
+  {
+    id: "ig-post-107",
+    platform: "instagram",
+    accountHandle: "@royalstudio089",
+    title: "Intricate Bridal Henna & Gold Jewelry Detail",
+    caption: "Close-up artistry of traditional bridal mehndi and heirloom gold kundan jewelry before the Nikah ceremony. #BridalMehndi #PakistaniWeddings",
+    image: "/portfolio/bridal-02-henna-hands.jpg",
+    permalink: "https://www.instagram.com/royalstudio089/#post-107",
+    postedAt: "2026-09-10",
+    location: "Burewala",
+    likesCount: 2480,
+    commentsCount: 112,
+    viewsCount: "23.1K",
+    mediaType: "image",
+    category: "bridal",
+    aspect: "wide",
+    selectedForPortfolio: true,
+  },
+  {
+    id: "ig-post-108",
+    platform: "instagram",
+    accountHandle: "@royalstudio089",
+    title: "Heritage Courtyard Bridal Portrait",
+    caption: "Regal bridal poise captured in natural courtyard light with signature warm editorial grading. #BridalPortrait #RoyalStudio",
+    image: "/portfolio/bridal-04-courtyard-portrait.jpg",
+    permalink: "https://www.instagram.com/royalstudio089/#post-108",
+    postedAt: "2026-09-07",
+    location: "Multan",
+    likesCount: 2190,
+    commentsCount: 98,
+    viewsCount: "19.6K",
+    mediaType: "image",
+    category: "bridal",
+    aspect: "tall",
+    selectedForPortfolio: false,
+  },
+  {
+    id: "ig-post-109",
+    platform: "instagram",
+    accountHandle: "@royalstudio089",
+    title: "Sacred Nikah Venue Floral Architecture",
+    caption: "White roses and crystal chandeliers set the stage for an intimate daytime Nikah ceremony. #NikahSetup #LuxuryWeddingDecor",
+    image: "/portfolio/nikah-01-venue-setup.jpg",
+    permalink: "https://www.instagram.com/royalstudio089/#post-109",
+    postedAt: "2026-09-04",
+    location: "Chishtian",
+    likesCount: 1765,
+    commentsCount: 69,
+    viewsCount: "15.8K",
+    mediaType: "image",
+    category: "nikah",
+    aspect: "wide",
+    selectedForPortfolio: true,
+  },
+  {
+    id: "ig-post-110",
+    platform: "instagram",
+    accountHandle: "@royalstudio089",
+    title: "Emerald & Gold Eid Couture Campaign — Zaib",
+    caption: "High-fashion luxury studio campaign shot with medium-format clarity and dramatic sculpting light. #PakistaniFashion #CoutureShoot",
+    image: "/portfolio/fashion-03-zaib.jpg",
+    permalink: "https://www.instagram.com/royalstudio089/#post-110",
+    postedAt: "2026-08-29",
+    location: "Lahore",
+    likesCount: 1640,
+    commentsCount: 58,
+    viewsCount: "14.5K",
+    mediaType: "image",
+    category: "fashion",
+    aspect: "tall",
+    selectedForPortfolio: false,
+  },
+  {
+    id: "ig-post-111",
+    platform: "instagram",
+    accountHandle: "@royalstudio089",
+    title: "Romantic Pillars Couple Portrait",
+    caption: "Architectural symmetry meets timeless romance during our golden-hour couple portrait session. #CoupleShoot #WeddingPhotographyPakistan",
+    image: "/portfolio/couple-01-pillars.jpg",
+    permalink: "https://www.instagram.com/royalstudio089/#post-111",
+    postedAt: "2026-08-24",
+    location: "Burewala",
+    likesCount: 2890,
+    commentsCount: 141,
+    viewsCount: "29.4K",
+    mediaType: "image",
+    category: "couple",
+    aspect: "square",
+    selectedForPortfolio: false,
+  },
+  {
+    id: "ig-post-112",
+    platform: "instagram",
+    accountHandle: "@royalstudio089",
+    title: "Crimson Velvet Couture — Bridal Fashion Editorial",
+    caption: "Bold crimson tones and editorial styling from our latest winter bridal campaign. #BridalCouture #RoyalStudio089",
+    image: "/portfolio/fashion-09-red-outfit.jpg",
+    permalink: "https://www.instagram.com/royalstudio089/#post-112",
+    postedAt: "2026-08-19",
+    location: "Faisalabad",
+    likesCount: 2050,
+    commentsCount: 84,
+    viewsCount: "17.9K",
+    mediaType: "image",
+    category: "fashion",
+    aspect: "square",
     selectedForPortfolio: false,
   },
   {
@@ -772,7 +916,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     title: "Floral Canopy Indoor Reception Decor",
     caption: "Full venue transformation & architectural lighting captured by our senior cinema crew in Burewala.",
     image: "/portfolio/indoor-01-floral-ceiling-decor.jpg",
-    permalink: "https://www.facebook.com/royalstudio089",
+    permalink: "https://www.facebook.com/royalstudio089/#post-201",
     postedAt: "2026-09-15",
     location: "Burewala",
     likesCount: 940,
@@ -781,7 +925,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     mediaType: "image",
     category: "indoor",
     aspect: "wide",
-    selectedForPortfolio: false,
+    selectedForPortfolio: true,
   },
   {
     id: "fb-post-202",
@@ -790,7 +934,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     title: "Vibrant Mehndi Dholki Celebration Film",
     caption: "Colors, choreography, and candid joy from a 3-day royal wedding celebration at Chishtiya Taj Palace.",
     image: "/portfolio/mehndi-01-chishtiya-taj-palace.jpg",
-    permalink: "https://www.facebook.com/royalstudio089",
+    permalink: "https://www.facebook.com/royalstudio089/#post-202",
     postedAt: "2026-09-11",
     location: "Vehari",
     likesCount: 1680,
@@ -801,7 +945,8 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     duration: "2:26",
     category: "mehndi",
     aspect: "wide",
-    selectedForPortfolio: false,
+    selectedForPortfolio: true,
+    selectedForWeddingFilms: true,
   },
   {
     id: "fb-post-203",
@@ -810,7 +955,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     title: "Regal Groom Sherwani Editorial",
     caption: "Classic heritage sherwani portrait captured before the Barat departure.",
     image: "/portfolio/groom-01-amir-outdoor-ready.jpg",
-    permalink: "https://www.facebook.com/royalstudio089",
+    permalink: "https://www.facebook.com/royalstudio089/#post-203",
     postedAt: "2026-09-08",
     location: "Sahiwal",
     likesCount: 875,
@@ -818,6 +963,96 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     viewsCount: "8.2K",
     mediaType: "image",
     category: "groom",
+    aspect: "wide",
+    selectedForPortfolio: true,
+  },
+  {
+    id: "fb-post-204",
+    platform: "facebook",
+    accountHandle: "RoyalStudio089",
+    title: "Annum & Ali — Grand Walima Stage Portrait",
+    caption: "Full family & couple Walima reception album from Grand Marquess Banquet Hall, Burewala.",
+    image: "/portfolio/couple-04-annum-ali-walima.jpg",
+    permalink: "https://www.facebook.com/royalstudio089/#post-204",
+    postedAt: "2026-09-06",
+    location: "Burewala",
+    likesCount: 1430,
+    commentsCount: 88,
+    viewsCount: "15.4K",
+    mediaType: "image",
+    category: "walima",
+    aspect: "wide",
+    selectedForPortfolio: false,
+  },
+  {
+    id: "fb-post-205",
+    platform: "facebook",
+    accountHandle: "RoyalStudio089",
+    title: "Grand Walima Reception Hall — Aerial Overview",
+    caption: "Luxury banquet hall lighting and floral stage setup documented with full-frame wide lenses in Burewala.",
+    image: "/portfolio/walima-01-reception-hall.jpg",
+    permalink: "https://www.facebook.com/royalstudio089/#post-205",
+    postedAt: "2026-09-02",
+    location: "Burewala",
+    likesCount: 1120,
+    commentsCount: 63,
+    viewsCount: "12.7K",
+    mediaType: "image",
+    category: "walima",
+    aspect: "wide",
+    selectedForPortfolio: false,
+  },
+  {
+    id: "fb-post-206",
+    platform: "facebook",
+    accountHandle: "RoyalStudio089",
+    title: "Royal Barat Turban Tying Ceremony",
+    caption: "Emotional family moments as the groom prepares for the grand Barat procession.",
+    image: "/portfolio/barat-02-groom-turban-moment.jpg",
+    permalink: "https://www.facebook.com/royalstudio089/#post-206",
+    postedAt: "2026-08-28",
+    location: "Multan",
+    likesCount: 1540,
+    commentsCount: 79,
+    viewsCount: "16.3K",
+    mediaType: "image",
+    category: "barat",
+    aspect: "wide",
+    selectedForPortfolio: false,
+  },
+  {
+    id: "fb-post-207",
+    platform: "facebook",
+    accountHandle: "RoyalStudio089",
+    title: "Superior College Burewala — Annual Convocation & Gala",
+    caption: "Official corporate event photography and stage coverage by Royal Studio commercial team.",
+    image: "/portfolio/corporate-04-superior-college.jpg",
+    permalink: "https://www.facebook.com/royalstudio089/#post-207",
+    postedAt: "2026-08-21",
+    location: "Burewala",
+    likesCount: 980,
+    commentsCount: 47,
+    viewsCount: "11.1K",
+    mediaType: "image",
+    category: "corporate",
+    aspect: "wide",
+    selectedForPortfolio: false,
+  },
+  {
+    id: "fb-post-208",
+    platform: "facebook",
+    accountHandle: "RoyalStudio089",
+    title: "Garden Birthday Celebration & Luxury Pastel Decor",
+    caption: "Outdoor family birthday celebration captured with natural candid storytelling.",
+    image: "/portfolio/birthday-02-garden-party.jpg",
+    permalink: "https://www.facebook.com/royalstudio089/#post-208",
+    postedAt: "2026-08-15",
+    location: "Burewala",
+    likesCount: 830,
+    commentsCount: 39,
+    viewsCount: "9.4K",
+    mediaType: "image",
+    category: "birthday",
     aspect: "wide",
     selectedForPortfolio: false,
   },
@@ -828,7 +1063,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     title: "Outdoor Heritage Tree Bridal Video Reel",
     caption: "Behind the scenes of our viral bridal portrait session in Bahawalpur! 🎬✨ #BridalShoot #BehindTheScenes #RoyalStudio",
     image: "/portfolio/bridal-03-outdoor-tree.jpg",
-    permalink: "https://www.tiktok.com/@royalstudio089",
+    permalink: "https://www.tiktok.com/@royalstudio089/#post-301",
     postedAt: "2026-09-05",
     location: "Bahawalpur",
     likesCount: 5420,
@@ -839,7 +1074,8 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     duration: "0:56",
     category: "outdoor",
     aspect: "tall",
-    selectedForPortfolio: false,
+    selectedForPortfolio: true,
+    selectedForWeddingFilms: true,
   },
   {
     id: "tt-post-302",
@@ -848,7 +1084,7 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     title: "Barat Car Arrival with Colored Smoke — Viral Reel",
     caption: "Grand groom entry with colored smoke and dhol beats! 🔥🚗 #BaratEntry #PakistaniWeddings",
     image: "/portfolio/barat-11-car-smoke.jpg",
-    permalink: "https://www.tiktok.com/@royalstudio089",
+    permalink: "https://www.tiktok.com/@royalstudio089/#post-302",
     postedAt: "2026-09-03",
     location: "Burewala",
     likesCount: 6810,
@@ -859,6 +1095,46 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
     duration: "0:36",
     category: "barat",
     aspect: "square",
+    selectedForPortfolio: true,
+    selectedForWeddingFilms: true,
+  },
+  {
+    id: "tt-post-303",
+    platform: "tiktok",
+    accountHandle: "@royalstudio089",
+    title: "Groom Squad Night Entry — Slow Motion Reel",
+    caption: "When the groom squad enters the Mehndi arena in full style! 🕺🔥 #GroomSquad #MehndiEntry #RoyalStudio",
+    image: "/portfolio/boys-01-squad-night-out.jpg",
+    permalink: "https://www.tiktok.com/@royalstudio089/#post-303",
+    postedAt: "2026-09-01",
+    location: "Multan",
+    likesCount: 4920,
+    commentsCount: 210,
+    viewsCount: "76.8K",
+    mediaType: "video",
+    youtubeId: "zZ1eGi64B00",
+    duration: "0:18",
+    category: "boys",
+    aspect: "tall",
+    selectedForPortfolio: false,
+    selectedForWeddingFilms: false,
+  },
+  {
+    id: "tt-post-304",
+    platform: "tiktok",
+    accountHandle: "@royalstudio089",
+    title: "Groom's Grand Mehndi Dance Floor Entry",
+    caption: "Dhol beats, sparklers, and high-energy choreography! ✨🔥 #MehndiNight #PakistaniGroom #RoyalStudio089",
+    image: "/portfolio/mehndi-07-groom-entry.jpg",
+    permalink: "https://www.tiktok.com/@royalstudio089/#post-304",
+    postedAt: "2026-08-26",
+    location: "Burewala",
+    likesCount: 5190,
+    commentsCount: 244,
+    viewsCount: "84.2K",
+    mediaType: "image",
+    category: "mehndi",
+    aspect: "wide",
     selectedForPortfolio: false,
   },
   {
@@ -1011,35 +1287,52 @@ export const defaultSocialMediaPosts: SocialMediaPostItem[] = [
   },
 ];
 
-export function extractYoutubeId(rawInput?: string): string {
-  if (!rawInput) return "QF3BmojTrKQ";
+export function tryExtractYoutubeId(rawInput?: string): string | null {
+  if (!rawInput) return null;
   const str = rawInput.trim();
+  if (!str) return null;
   if (/^[a-zA-Z0-9_-]{11}$/.test(str)) return str;
 
   try {
     const url = new URL(str.startsWith("http") ? str : `https://${str}`);
-    if (url.hostname.includes("youtu.be")) {
+    const host = url.hostname.toLowerCase();
+    if (host.includes("youtu.be")) {
       const id = url.pathname.replace(/^\//, "").split("/")[0];
-      if (id && id.length >= 8) return id.slice(0, 11);
+      if (id && /^[a-zA-Z0-9_-]{11}$/.test(id.slice(0, 11))) return id.slice(0, 11);
     }
-    const vParam = url.searchParams.get("v");
-    if (vParam && vParam.length >= 8) return vParam.slice(0, 11);
+    if (host.includes("youtube.com") || host.includes("youtube-nocookie.com")) {
+      const vParam = url.searchParams.get("v");
+      if (vParam && /^[a-zA-Z0-9_-]{11}$/.test(vParam.slice(0, 11))) return vParam.slice(0, 11);
 
-    const pathParts = url.pathname.split("/").filter(Boolean);
-    const markerIdx = pathParts.findIndex((p) =>
-      ["shorts", "embed", "live", "v"].includes(p.toLowerCase())
-    );
-    if (markerIdx !== -1 && pathParts[markerIdx + 1]) {
-      return pathParts[markerIdx + 1].slice(0, 11);
+      const pathParts = url.pathname.split("/").filter(Boolean);
+      const markerIdx = pathParts.findIndex((p) =>
+        ["shorts", "embed", "live", "v"].includes(p.toLowerCase())
+      );
+      if (markerIdx !== -1 && pathParts[markerIdx + 1]) {
+        const candidate = pathParts[markerIdx + 1].slice(0, 11);
+        if (/^[a-zA-Z0-9_-]{11}$/.test(candidate)) return candidate;
+      }
     }
   } catch {
-    // Fallback regex
+    // Fallback regex below
   }
 
   const match = str.match(
     /(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
   );
   if (match && match[1]) return match[1];
+  return null;
+}
+
+export function extractYoutubeId(rawInput?: string): string {
+  if (!rawInput) return "QF3BmojTrKQ";
+  const extracted = tryExtractYoutubeId(rawInput);
+  if (extracted) return extracted;
+  const str = rawInput.trim();
+  // Never return a non-YouTube URL or path as a YouTube video ID
+  if (str.includes("/") || str.includes(".") || str.includes(":")) {
+    return "";
+  }
   return str;
 }
 

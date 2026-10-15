@@ -1,7 +1,8 @@
 {
+  "id": "/",
   "name": "Royal Studio — Luxury Wedding Photography & Production ERP",
   "short_name": "Royal Studio",
-  "description": "Royal Studio Pakistan — Luxury Wedding Photography, Cinematography, Client Proofing Portal & Offline Field Crew ERP.",
+  "description": "Royal Studio Pakistan — Luxury Wedding Photography, Cinematography, Offline Saved Proposals, Gallery Favorites & Field Crew ERP.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -20,22 +21,35 @@
       "src": "/RoyalLogo.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/RoyalLogo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
     {
-      "name": "Client & Crew Portal",
-      "short_name": "Portal Login",
-      "description": "Sign in to Client Portal, Staff Field Crew Mode, or Admin ERP",
-      "url": "/admin",
+      "name": "Saved Proposals",
+      "short_name": "Proposals",
+      "description": "View wedding proposals, coverage breakdowns, and add-ons offline",
+      "url": "/proposal",
       "icons": [{ "src": "/RoyalLogo.png", "sizes": "192x192" }]
     },
     {
-      "name": "Wedding Packages",
-      "short_name": "Packages",
-      "description": "Explore Royal Studio wedding photography & film packages",
-      "url": "/pricing",
+      "name": "Gallery Favorites",
+      "short_name": "Favorites",
+      "description": "Browse hearted album favorites and retouching notes offline",
+      "url": "/gallery",
+      "icons": [{ "src": "/RoyalLogo.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Client Portal",
+      "short_name": "Client Portal",
+      "description": "Access your interactive celebration portal, proofing, and payments",
+      "url": "/client-portal",
       "icons": [{ "src": "/RoyalLogo.png", "sizes": "192x192" }]
     }
   ]

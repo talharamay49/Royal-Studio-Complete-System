@@ -110,40 +110,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ navigate }) => {
 
   return (
     <div className="space-y-6">
-      {/* Top Welcome & AI Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-6 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 rounded-2xl text-white shadow-xl border border-slate-800">
-        <div>
-          <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 text-xs font-semibold mb-2 border border-amber-500/30">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>AI Executive Briefing Ready</span>
-          </div>
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight">
-            Royal Studio Command Center
-          </h2>
-          <p className="text-xs md:text-sm text-slate-300 mt-1 max-w-xl">
-            Live operations, wedding schedules, crew availability, public portfolio CMS, and financial performance across Burewala, Lahore &amp; Pakistan.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => navigate('/website-cms')}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-amber-500/30 font-bold text-xs rounded-xl transition-all cursor-pointer"
-          >
-            <Globe className="w-4 h-4" />
-            <span>Manage Public Portfolio &amp; Website</span>
-          </button>
-          <button
-            onClick={handleGenerateAI}
-            disabled={isGeneratingAI}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-50"
-          >
-            <Sparkles className={`w-4 h-4 ${isGeneratingAI ? 'animate-spin' : ''}`} />
-            <span>{isGeneratingAI ? 'Analyzing Live Database...' : 'Generate AI Insights'}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Dashboard View Tabs: Executive Overview vs Activity Log */}
+      {/* Dashboard View Tabs & Quick Actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 pb-3">
         <div className="inline-flex items-center gap-1.5 p-1 bg-white border border-gray-200 rounded-xl shadow-2xs">
           <button
@@ -175,7 +142,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ navigate }) => {
           </button>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-gray-500">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+          <button
+            type="button"
+            onClick={() => navigate('/website-cms')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg font-semibold text-gray-700 cursor-pointer"
+          >
+            <Globe className="w-3.5 h-3.5 text-amber-600" />
+            <span>Manage Public Website</span>
+          </button>
           <button
             type="button"
             onClick={() => navigate('/packages')}
@@ -191,6 +166,15 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ navigate }) => {
           >
             <Building2 className="w-3.5 h-3.5 text-amber-600" />
             <span>Studio Expenses</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerateAI}
+            disabled={isGeneratingAI}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-bold text-xs rounded-lg shadow-xs transition-all cursor-pointer disabled:opacity-50"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${isGeneratingAI ? 'animate-spin' : ''}`} />
+            <span>{isGeneratingAI ? 'Analyzing...' : 'Generate AI Insights'}</span>
           </button>
         </div>
       </div>

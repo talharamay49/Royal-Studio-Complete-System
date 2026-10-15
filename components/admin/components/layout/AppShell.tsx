@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
-import { Footer } from './Footer';
 import { ToastContainer } from '../common/ToastContainer';
 import { EventQrModal } from '../common/EventQrModal';
 import { AdminCopilotWidget } from '../copilot/AdminCopilotWidget';
@@ -29,7 +28,6 @@ interface AppShellProps {
 export const AppShell: React.FC<AppShellProps> = ({ currentPath, navigate, children }) => {
   const {
     isAdmin,
-    isClient,
     showIdleWarning,
     idleRemainingSeconds,
     extendSession,
@@ -58,13 +56,6 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPath, navigate, child
         { label: 'Events', path: '/events', icon: CalendarDays },
         { label: 'Billing', path: '/invoices', icon: FileText },
         { label: 'Website', path: '/website-cms', icon: Globe },
-      ]
-    : isClient
-    ? [
-        { label: 'My Events', path: '/events', icon: CalendarDays },
-        { label: 'Payments', path: '/invoices', icon: CreditCard },
-        { label: 'Proofing', path: '/client-gallery', icon: FileText },
-        { label: 'Profile', path: '/profile', icon: Globe },
       ]
     : [
         { label: 'Assigned Work', path: '/tasks', icon: CheckSquare },
@@ -126,7 +117,6 @@ export const AppShell: React.FC<AppShellProps> = ({ currentPath, navigate, child
         <main className="flex-1 overflow-y-auto p-3 sm:p-5 md:p-6 lg:p-8 2xl:p-10 pb-20 lg:pb-8 flex flex-col justify-between">
           <div className="max-w-7xl 2xl:max-w-[1600px] mx-auto space-y-5 sm:space-y-6 w-full flex-1">
             {children}
-            <Footer />
           </div>
         </main>
 
