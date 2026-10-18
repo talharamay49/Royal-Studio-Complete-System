@@ -162,7 +162,13 @@ const MainContent: React.FC = () => {
       return <PackagesPage navigate={navigate} />;
     }
 
-    if (currentPath === '/invoices') {
+    if (
+      currentPath === '/invoices' ||
+      currentPath === '/quotations' ||
+      currentPath === '/quotes' ||
+      currentPath === '/billing' ||
+      currentPath === '/receipts'
+    ) {
       if (!isAdmin) return renderRestricted('Invoices & Client Billing');
       return <InvoicesPage navigate={navigate} />;
     }
@@ -196,7 +202,7 @@ const MainContent: React.FC = () => {
       return <ThemeCustomizerPage navigate={navigate} />;
     }
 
-    if (currentPath === '/profile') {
+    if (currentPath === '/profile' || currentPath === '/settings') {
       return <ProfilePage />;
     }
 

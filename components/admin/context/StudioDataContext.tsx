@@ -122,6 +122,8 @@ export interface StudioDataContextType {
   deletePayment: (id: string) => Promise<void>;
 
   createQuotation: (data: Partial<Quotation>) => Promise<void>;
+  updateQuotation: (id: string, data: Partial<Quotation>) => Promise<void>;
+  deleteQuotation: (id: string) => Promise<void>;
 
   createTask: (data: Partial<EventTask>) => Promise<void>;
   updateTask: (id: string, data: Partial<EventTask>) => Promise<void>;
@@ -729,6 +731,32 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
     }
   };
 
+  const updateQuotation = async (id: string, data: Partial<Quotation>) => {
+    try {
+      await apiRequest(`/api/quotations/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      });
+      await erpDatabase.syncAllFromServer();
+      addToast('Quotation updated successfully.');
+    } catch (err: any) {
+      addToast(err.message, 'error');
+      throw err;
+    }
+  };
+
+  const deleteQuotation = async (id: string) => {
+    try {
+      await apiRequest(`/api/quotations/${id}`, { method: 'DELETE' });
+      erpDatabase.deleteRecord('quotations', id);
+      await erpDatabase.syncAllFromServer();
+      addToast('Quotation deleted.');
+    } catch (err: any) {
+      addToast(err.message, 'error');
+      throw err;
+    }
+  };
+
   const createTask = async (data: Partial<EventTask>) => {
     try {
       await apiRequest('/api/tasks', {
@@ -1061,6 +1089,8 @@ export const StudioDataProvider: React.FC<{ children: ReactNode }> = ({ children
         createPayment,
         deletePayment,
         createQuotation,
+        updateQuotation,
+        deleteQuotation,
         createTask,
         updateTask,
         deleteTask,

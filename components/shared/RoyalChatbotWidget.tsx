@@ -689,7 +689,14 @@ export default function RoyalChatbotWidget() {
     }
   };
 
-  if (pathname?.startsWith("/admin") || !config.enabled) {
+  if (
+    pathname?.startsWith("/admin") ||
+    pathname?.startsWith("/client-portal") ||
+    pathname?.startsWith("/portal") ||
+    pathname?.startsWith("/proposal") ||
+    pathname?.startsWith("/gallery") ||
+    !config.enabled
+  ) {
     return null;
   }
 

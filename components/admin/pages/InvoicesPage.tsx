@@ -35,7 +35,7 @@ interface InvoicesPageProps {
 }
 
 export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
-  const { invoices, quotations, events, clients, daySchedules, payments, profile, createPayment, deleteInvoice, addToast } = useStudioData();
+  const { invoices, quotations, events, clients, daySchedules, payments, profile, createPayment, deleteInvoice, deleteQuotation, addToast } = useStudioData();
   const { isAdmin } = useAuth();
 
   const [mainTab, setMainTab] = useState<'invoices' | 'quotations' | 'receipts'>('invoices');
@@ -578,6 +578,15 @@ export const InvoicesPage: React.FC<InvoicesPageProps> = ({ navigate }) => {
                           >
                             <Download className="w-4 h-4" />
                           </button>
+                          {isAdmin && (
+                            <button
+                              onClick={() => deleteQuotation(quo.id)}
+                              className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded cursor-pointer"
+                              title="Delete Quotation"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

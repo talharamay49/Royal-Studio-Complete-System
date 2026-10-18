@@ -174,6 +174,10 @@ export default function FloatingWhatsAppButton() {
 
   if (
     pathname?.startsWith("/admin") ||
+    pathname?.startsWith("/client-portal") ||
+    pathname?.startsWith("/portal") ||
+    pathname?.startsWith("/proposal") ||
+    pathname?.startsWith("/gallery") ||
     websiteCustomization?.sectionVisibility?.showFloatingWhatsapp === false
   ) {
     return null;

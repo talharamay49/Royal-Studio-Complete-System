@@ -1,6 +1,6 @@
 {
   "name": "Royal Studio",
-  "description": "Luxury Wedding Photography & Cinematic Filmmaking in Pakistan",
+  "description": "Luxury wedding photography and cinematic filmmaking across Pakistan. 3000+ weddings documented with timeless artistry since 2018",
   "capabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"],
   "requestFramePermissions": ["microphone"]

@@ -204,7 +204,7 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
 
     if (matchedUser.role !== 'ADMIN' && matchedUser.role !== 'STAFF') {
       return NextResponse.json(
-        { error: 'This portal (/admin) is strictly for Studio Administrators and Staff. Booked clients please sign in at /client-portal using your Event ID & PIN.' },
+        { error: 'This portal (/admin) is strictly for Studio Administrators and Staff. Booked clients please sign in at /client-portal using your registered Email / Phone and Password.' },
         { status: 403 }
       );
     }
@@ -2172,6 +2172,25 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
       db.quotations = db.quotations.filter(q => q.clientId !== id);
     }
     db.clients = db.clients.filter(c => c.id !== id);
+
+    // Clean up linked client user accounts in db.users & any active sessions
+    const linkedUserIds = new Set<string>();
+    db.users.forEach(u => {
+      if (u.linkedClientId === id || (u as any).clientId === id || (targetClient.userId && u.id === targetClient.userId)) {
+        linkedUserIds.add(u.id);
+      }
+    });
+    if (linkedUserIds.size > 0) {
+      db.users = db.users.filter(u => !linkedUserIds.has(u.id));
+      if (db.sessions) {
+        for (const [token, session] of Object.entries(db.sessions)) {
+          if (linkedUserIds.has(session.userId)) {
+            delete db.sessions[token];
+          }
+        }
+      }
+    }
+
     recordAdminAudit(
       'Clients & Portal Accounts',
       ['deleted'],
@@ -3138,8 +3157,45 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const id = slug[1];
+    const targetMember = db.teamMembers.find(m => m.id === id);
+    if (!targetMember) return NextResponse.json({ error: 'Team member not found' }, { status: 404 });
+
+    // Clean up linked user account in db.users & any active sessions
+    const linkedUserIds = new Set<string>();
+    db.users.forEach(u => {
+      if (u.linkedTeamMemberId === id || (targetMember.userId && u.id === targetMember.userId)) {
+        linkedUserIds.add(u.id);
+      }
+    });
+    if (linkedUserIds.size > 0) {
+      db.users = db.users.filter(u => !linkedUserIds.has(u.id));
+      if (db.sessions) {
+        for (const [token, session] of Object.entries(db.sessions)) {
+          if (linkedUserIds.has(session.userId)) {
+            delete db.sessions[token];
+          }
+        }
+      }
+    }
+
+    // Find all events affected by this member's assignments
+    const affectedEventIds = new Set(
+      db.teamAssignments.filter(a => a.teamMemberId === id).map(a => a.eventId)
+    );
+    db.teamAssignments = db.teamAssignments.filter(a => a.teamMemberId !== id);
     db.teamMembers = db.teamMembers.filter(m => m.id !== id);
-    dbInstance.save();
+
+    for (const evtId of affectedEventIds) {
+      await dbInstance.recalculateEvent(evtId);
+    }
+
+    recordAdminAudit(
+      'Production Team & Crew Management',
+      ['deleted'],
+      `Deleted team member profile "${targetMember.name}" (${targetMember.role}) and cleaned up linked credentials & assignments.`
+    );
+
+    await dbInstance.save();
     return NextResponse.json({ success: true });
   }
 
@@ -3239,8 +3295,27 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     const err = requireAdminCheck();
     if (err) return err;
     const id = slug[1];
+    const targetEquip = db.equipment.find(e => e.id === id);
+    if (!targetEquip) return NextResponse.json({ error: 'Equipment not found' }, { status: 404 });
+
+    const affectedEventIds = new Set(
+      db.equipmentAssignments.filter(ea => ea.equipmentId === id).map(ea => ea.eventId)
+    );
+    db.equipmentAssignments = db.equipmentAssignments.filter(ea => ea.equipmentId !== id);
+    db.maintenanceLogs = db.maintenanceLogs.filter(ml => ml.equipmentId !== id);
     db.equipment = db.equipment.filter(e => e.id !== id);
-    dbInstance.save();
+
+    for (const evtId of affectedEventIds) {
+      await dbInstance.recalculateEvent(evtId);
+    }
+
+    recordAdminAudit(
+      'Gear Locker & Equipment Master',
+      ['deleted'],
+      `Deleted equipment item "${targetEquip.name}" (${targetEquip.category}) and cleaned up assignments.`
+    );
+
+    await dbInstance.save();
     return NextResponse.json({ success: true });
   }
 
@@ -3574,6 +3649,9 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     if (err) return err;
     const id = slug[1];
     db.invoices = db.invoices.filter(i => i.id !== id);
+    db.payments.forEach(p => {
+      if (p.invoiceId === id) delete p.invoiceId;
+    });
     dbInstance.save();
     return NextResponse.json({ success: true });
   }
@@ -3769,6 +3847,30 @@ export async function handleAdminApi(req: Request, slug: string[]): Promise<Resp
     db.quotations.unshift(newQuo);
     dbInstance.save();
     return NextResponse.json(newQuo);
+  }
+
+  if (slug[0] === 'quotations' && slug.length === 2 && method === 'PUT') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    const id = slug[1];
+    const body = await parseJsonBody(req);
+    const index = db.quotations.findIndex(q => q.id === id);
+    if (index === -1) return NextResponse.json({ error: 'Quotation not found' }, { status: 404 });
+    const existing = db.quotations[index];
+    const updated = { ...existing, ...body };
+    updated.total = (Number(updated.subtotal) || 0) - (Number(updated.discount) || 0) + (Number(updated.tax) || 0);
+    db.quotations[index] = updated;
+    dbInstance.save();
+    return NextResponse.json(updated);
+  }
+
+  if (slug[0] === 'quotations' && slug.length === 2 && method === 'DELETE') {
+    const err = requireAdminCheck();
+    if (err) return err;
+    const id = slug[1];
+    db.quotations = db.quotations.filter(q => q.id !== id);
+    dbInstance.save();
+    return NextResponse.json({ success: true });
   }
 
   // ================= TASKS =================
